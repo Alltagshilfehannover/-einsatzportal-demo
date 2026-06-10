@@ -205,6 +205,29 @@
     .content{padding:20px 16px}.form-row,.form-row-3,.input-with-select{grid-template-columns:1fr}
   }
   .menu-toggle{display:none;width:38px;height:38px;border-radius:9px;place-items:center;font-size:20px;color:var(--petrol)}
+  /* Kalender + Funktionslisten */
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .cal-head{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);text-align:center;padding:6px 0}
+  .cal-cell{min-height:78px;border:1px solid var(--line);border-radius:9px;padding:6px;background:#fff;font-size:12px;cursor:pointer;transition:.12s}
+  .cal-cell:hover{border-color:var(--petrol);background:var(--petrol-soft)}
+  .cal-cell.empty{background:transparent;border:none;cursor:default}
+  .cal-cell.today{border-color:var(--petrol);box-shadow:0 0 0 1px var(--petrol)}
+  .cal-cell .cn{font-weight:700;color:var(--muted)}
+  .cal-cell.today .cn{color:var(--petrol)}
+  .cal-ev{margin-top:4px;background:var(--petrol-soft);color:var(--petrol-dark);border-radius:5px;padding:2px 5px;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cal-nav{display:flex;align-items:center;gap:12px}
+  .cal-nav b{font-size:15px;min-width:150px;text-align:center}
+  .list-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid #eef3f3;flex-wrap:wrap}
+  .list-row:last-child{border-bottom:none}
+  .list-row .li-main b{font-size:14.5px}
+  .list-row .li-sub{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .note-card{border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-bottom:11px;background:#fff}
+  .note-card .nc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:10px;flex-wrap:wrap}
+  .note-card .nc-text{font-size:14px}
+  .note-card .nc-meta{font-size:12px;color:var(--muted)}
+  .timer-box{text-align:center;padding:22px;background:var(--petrol-soft);border-radius:12px;margin-bottom:16px}
+  .timer-box .tval{font-size:40px;font-weight:700;color:var(--petrol-dark);font-variant-numeric:tabular-nums;letter-spacing:1px}
+  .timer-box .tlabel{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -327,6 +350,29 @@ let applications=[
 ];
 
 let nextStaffId=3, nextCustomerId=4, nextJobId=5, nextAppId=2;
+
+/* Termine, Stundeneinträge, Leistungsnachweise, Notizen */
+let appointments=[
+  {id:1,staffId:0,customerId:0,date:'2026-06-11',time:'09:00',duration:120,note:'Einkauf + Reinigung'},
+  {id:2,staffId:0,customerId:2,date:'2026-06-12',time:'14:00',duration:90,note:'Gesellschaft & Spaziergang'},
+];
+let timesheets=[
+  {id:1,staffId:0,customerId:0,date:'2026-06-09',start:'09:00',end:'11:00',task:'Haushaltshilfe & Einkauf',status:'offen',proof:false},
+];
+let notes=[
+  {id:1,type:'staff',refId:0,text:'Sehr zuverlässig, kommt immer pünktlich.',visibility:'intern',date:'2026-06-01'},
+  {id:2,type:'customer',refId:2,text:'Mag keine Unterbrechungen beim Mittagsschlaf (13–14 Uhr).',visibility:'mitarbeiter',date:'2026-06-03'},
+];
+let proofs=[]; 
+let payrolls=[
+  {id:1,staffId:0,month:'Mai 2026',hours:42,gross:'546,00 €',status:'bereit'},
+];
+let nextApptId=3, nextTsId=2, nextNoteId=3, nextProofId=1, nextPayrollId=2;
+
+function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function fmtDate(iso){if(!iso)return '';const p=iso.split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:iso;}
+function diffMinutes(start,end){const a=start.split(':'),b=end.split(':');return (parseInt(b[0])*60+parseInt(b[1]))-(parseInt(a[0])*60+parseInt(a[1]));}
+function minToH(min){if(min<0)min=0;const h=Math.floor(min/60),m=min%60;return h+'h'+(m?' '+m+'min':'');}
 
 function me(){return staff.find(s=>s.id===myId);}
 function staffName(id){const s=staff.find(x=>x.id===id);return s?s.first+' '+s.last[0]+'.':'—';}
@@ -488,10 +534,32 @@ function renderAdmin(view){
     '</div></div>';
   }
 
-  if(view==='hours'){c.innerHTML=head('Stundenzettel','Erfasste Zeiten je Mitarbeiter.')+placeholder('⏱','Stundenzettel-Übersicht','Hier laufen die erfassten Einsatzzeiten zusammen und können geprüft und für die Lohnabrechnung exportiert werden.');}
-  if(view==='payroll'){c.innerHTML=head('Lohnabrechnung','Abrechnungen je Mitarbeiter bereitstellen.')+placeholder('€','Lohnabrechnung','Monatliche Abrechnungen werden hier hinterlegt und den Mitarbeitern bereitgestellt. Export an AS Bremen vorgesehen.');}
-  if(view==='notes'){c.innerHTML=head('Notizen','Bemerkungen zu Mitarbeitern und Kunden – mit Sichtbarkeitsstufe.')+placeholder('✎','Notizen & Bemerkungen','Interne Notizen (nur Büro) und für Mitarbeiter freigegebene Hinweise getrennt verwalten.');}
-  if(view==='calendar'){c.innerHTML=head('Kalender','Alle Einsätze zentral – Anbindung an Google Kalender vorgesehen.')+placeholder('▦','Einsatzkalender','Zusammenführung aller Termine. Über die Google-API später Synchronisation und Routenplanung.');}
+  if(view==='hours'){
+    c.innerHTML=head('Stundenzettel','Alle von Mitarbeitern erfassten Einsatzzeiten – prüfen und für die Lohnabrechnung freigeben.')+
+    '<div class="panel"><div class="panel-body" style="padding-top:16px">'+
+    (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Status</th><th></th></tr></thead><tbody>'+
+      timesheets.map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);return '<tr><td>'+fmtDate(t.date)+'</td><td><b>'+staffName(t.staffId)+'</b></td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+dur+'</td><td>'+(t.status==='freigegeben'?'<span class="tag green">freigegeben</span>':'<span class="tag amber">offen</span>')+'</td><td>'+(t.status==='offen'?'<button class="btn-primary btn-sm" style="width:auto" onclick="approveTimesheet('+t.id+')">Freigeben</button>':'<span style="color:var(--good)">✓</span>')+'</td></tr>';}).join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">⏱</div><b>Noch keine Stundenzettel</b><p style="margin-top:6px">Sobald Mitarbeiter Zeiten erfassen, erscheinen sie hier.</p></div>')+
+    '</div></div>'+
+    '<div style="height:18px"></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Leistungsnachweise</h3></div><div class="panel-body" style="padding-top:8px">'+
+    (proofs.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Leistung</th><th>Dauer</th><th>Bestätigung</th></tr></thead><tbody>'+
+      proofs.map(p=>{const cu=custById(p.customerId);return '<tr><td>'+fmtDate(p.date)+'</td><td>'+staffName(p.staffId)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+p.task+'</td><td>'+minToH(p.minutes)+'</td><td>'+(p.signed?'<span class="tag green">✓ vom Kunden bestätigt</span>':'<button class="btn-ghost btn-sm" onclick="signProof('+p.id+')">Kunde bestätigt</button>')+'</td></tr>';}).join('')+
+      '</tbody></table>':'<div class="empty" style="padding:30px"><div class="big">📋</div><b>Noch keine Leistungsnachweise</b><p style="margin-top:6px">Sie entstehen automatisch, sobald du oben einen Stundenzettel freigibst.</p></div>')+
+    '</div></div>';
+  }
+  if(view==='payroll'){
+    const byStaff={};
+    timesheets.filter(t=>t.status==='freigegeben').forEach(t=>{byStaff[t.staffId]=(byStaff[t.staffId]||0)+tsMinutes(t);});
+    c.innerHTML=head('Lohnabrechnung','Freigegebene Stunden je Mitarbeiter – Basis für die Abrechnung (Export an AS Bremen vorgesehen).')+
+    '<div class="panel"><div class="panel-body" style="padding-top:16px">'+
+    (Object.keys(byStaff).length?'<table><thead><tr><th>Mitarbeiter</th><th>Freigegebene Stunden (Monat)</th><th></th></tr></thead><tbody>'+
+      Object.entries(byStaff).map(([sid,min])=>'<tr><td><b>'+staffName(+sid)+'</b></td><td>'+(min/60).toFixed(1).replace('.',',')+' Std.</td><td><button class="btn-ghost btn-sm" onclick="toast(\'Abrechnung erstellt & bereitgestellt\')">Abrechnung erstellen</button></td></tr>').join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">€</div><b>Noch nichts freigegeben</b><p style="margin-top:6px">Gib zuerst unter „Stundenzettel“ Zeiten frei – sie erscheinen dann hier zur Abrechnung.</p></div>')+
+    '</div></div>';
+  }
+  if(view==='notes'){ c.innerHTML=head('Notizen','Bemerkungen zu Mitarbeitern und Kunden. Intern = nur Büro, Mitarbeiter = für die Person sichtbar.')+notesAdminHTML(); }
+  if(view==='calendar'){ c.innerHTML=head('Kalender','Alle Einsätze zentral. Klick auf einen Termin für Details.')+calendarHTML(null); }
 }
 
 /* ---- Auftrags-Zusammenfassung (Modal) ---- */
@@ -749,9 +817,27 @@ function renderStaff(view){
     c.innerHTML=head('Meine Kunden','Angenommene Aufträge mit vollständigen Kontaktdaten. Vereinbare jetzt selbst einen Termin.')+
     (mine.length?'<div class="cards grid-2">'+mine.map(mineCard).join('')+'</div>':placeholder('✓','Noch keine Kunden angenommen','Geh zur Auftragsbörse und nimm einen Auftrag an – die vollständigen Daten erscheinen dann hier.'));
   }
-  if(view==='calendar'){c.innerHTML=head('Meine Termine','Deine vereinbarten Einsätze.')+placeholder('▦','Mein Kalender','Hier erscheinen die Termine, die du mit deinen Kunden vereinbarst – optional mit Route über Google Maps.');}
-  if(view==='hours'){c.innerHTML=head('Stundenzettel','Erfasse deine Einsatzzeiten.')+placeholder('⏱','Zeiterfassung','Pro Einsatz Start und Ende erfassen. Im echten System per Check-in/Check-out direkt beim Kunden.');}
-  if(view==='payroll'){c.innerHTML=head('Lohnabrechnung','Deine Abrechnungen zum Download.')+placeholder('€','Meine Abrechnungen','Sobald das Büro deine Abrechnung hinterlegt, kannst du sie hier herunterladen.');}
+  if(view==='calendar'){ c.innerHTML=head('Meine Termine','Deine vereinbarten Einsätze. Termine entstehen, wenn du bei „Meine Kunden“ einen Termin vereinbarst.')+calendarHTML(myId); }
+  if(view==='hours'){
+    const mine=timesheets.filter(t=>t.staffId===myId);
+    c.innerHTML=head('Stundenzettel','Erfasse deine Einsatzzeiten. Per Check-in/Check-out oder manuell.')+
+    '<div class="panel"><div class="panel-head"><h3>Meine Zeiten</h3><button class="btn-primary btn-sm" style="width:auto" onclick="addTimesheet()">+ Zeit erfassen</button></div>'+
+    '<div class="panel-body" style="padding-top:8px">'+
+    (mine.length?'<table><thead><tr><th>Datum</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Status</th></tr></thead><tbody>'+
+      mine.map(t=>{const cu=custById(t.customerId);return '<tr><td>'+fmtDate(t.date)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+tsDuration(t)+'</td><td>'+(t.status==='freigegeben'?'<span class="tag green">freigegeben</span>':'<span class="tag amber">offen</span>')+'</td></tr>';}).join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">⏱</div><b>Noch keine Zeiten erfasst</b><p style="margin-top:6px">Tippe auf „Zeit erfassen“, um deinen ersten Einsatz einzutragen.</p></div>')+
+    '</div></div>';
+  }
+  if(view==='payroll'){
+    const mine=timesheets.filter(t=>t.staffId===myId&&t.status==='freigegeben');
+    const totalMin=mine.reduce((n,t)=>n+tsMinutes(t),0);
+    c.innerHTML=head('Lohnabrechnung','Deine freigegebenen Stunden und Abrechnungen.')+
+    '<div class="cards grid-2"><div class="stat"><div class="label">Freigegebene Stunden (Monat)</div><div class="value">'+(totalMin/60).toFixed(1).replace('.',',')+'</div><div class="foot">Basis für die Abrechnung</div></div>'+
+    '<div class="stat"><div class="label">Abrechnungen</div><div class="value">'+(totalMin>0?'1':'0')+'</div><div class="foot">zum Download bereit</div></div></div>'+
+    '<div style="height:16px"></div>'+
+    (totalMin>0?'<div class="panel"><div class="panel-body" style="padding-top:16px"><table><thead><tr><th>Zeitraum</th><th>Stunden</th><th></th></tr></thead><tbody><tr><td>Juni 2026</td><td>'+(totalMin/60).toFixed(1).replace('.',',')+' Std.</td><td><button class="btn-ghost btn-sm" onclick="toast(\'Download startet (Demo)\')">⬇ Herunterladen</button></td></tr></tbody></table></div></div>'
+      :placeholder('€','Noch keine Abrechnung','Sobald das Büro deine erfassten Stunden freigibt, erscheint hier deine Abrechnung.'));
+  }
   if(view==='profile'){
     c.innerHTML=head('Mein Profil','Deine Daten, Verfügbarkeit und Status – pflegst du selbst.')+
     '<div class="cards grid-2">'+
@@ -825,7 +911,7 @@ function mineCard(j){
       '<div class="reveal-row"><span class="k">Kontakt</span><span class="v">'+cu.contact+'</span></div>'+
       '<div class="reveal-row"><span class="k">Hinweise</span><span class="v" style="max-width:60%">'+cu.notes+'</span></div>'+
     '</div>'+
-    '<div class="job-actions"><button class="btn-accept" onclick="toast(\'Termin-Dialog folgt im echten System\')">Termin vereinbaren</button>'+
+    '<div class="job-actions"><button class="btn-accept" onclick="addAppointment('+cu.id+')">Termin vereinbaren</button>'+
     '<button class="btn-danger-ghost" onclick="releaseJob('+j.id+')">Zurückgeben</button></div></div>';
 }
 function emptyBoard(){return '<div class="empty"><div class="big">🎉</div><b>Aktuell keine offenen Aufträge</b><p style="margin-top:6px">Sobald das Büro einen neuen Kunden freigibt, erscheint er hier. Abgelehnte Aufträge werden dir nicht erneut angezeigt.</p></div>';}
@@ -1028,6 +1114,137 @@ function wizDone(){
   '<p class="lead" style="max-width:38ch;margin:0 auto 20px">Ein Spezialist schaut sich dein Profil an und wird dich zeitnah freischalten. Du erhältst dann deine Zugangsdaten per E-Mail.</p>'+
   '<button class="btn-primary" style="width:auto;padding:12px 28px" onclick="exitWizard()">Fertig</button></div>';
 }
+
+/* ============ KALENDER ============ */
+function calendarHTML(staffFilter){
+  let list=appointments.slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  if(staffFilter!==null) list=list.filter(a=>a.staffId===staffFilter);
+  // gruppiert nach Datum
+  const byDate={};list.forEach(a=>{(byDate[a.date]=byDate[a.date]||[]).push(a);});
+  const dates=Object.keys(byDate);
+  if(!dates.length) return placeholder('▦','Noch keine Termine',staffFilter!==null?'Vereinbare bei „Meine Kunden“ einen Termin – er erscheint dann hier.':'Sobald Mitarbeiter Termine vereinbaren, erscheinen sie hier.');
+  return '<div class="cards">'+dates.map(d=>
+    '<div class="panel"><div class="panel-head"><h3>'+fmtDateLong(d)+'</h3></div><div class="panel-body" style="padding-top:8px"><table><tbody>'+
+    byDate[d].map(a=>{const cu=custById(a.customerId);return '<tr class="clickable" onclick="showAppt('+a.id+')"><td style="width:70px"><b>'+a.time+'</b></td><td><b>'+(cu?fullName(cu):'—')+'</b><div style="color:var(--muted);font-size:12.5px">'+(a.note||'')+'</div></td><td style="text-align:right;color:var(--muted)">'+a.duration+' Min.'+(staffFilter===null?'<br><span style="font-size:12px">'+staffName(a.staffId)+'</span>':'')+'</td></tr>';}).join('')+
+    '</tbody></table></div></div>').join('')+'</div>';
+}
+function addAppointment(customerId){
+  const cu=custById(customerId);
+  document.getElementById('modalTitle').textContent='Termin vereinbaren';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="content-form"><p style="color:var(--muted);font-size:14px;margin-bottom:14px">Mit <b>'+fullName(cu)+'</b> · '+cu.area+'</p>'+
+    '<div class="form-row"><div><label>Datum</label><input id="ap_date" type="date" value="2026-06-13"></div>'+
+    '<div><label>Uhrzeit</label><input id="ap_time" type="time" value="09:00"></div></div>'+
+    '<label>Dauer (Minuten)</label><input id="ap_dur" type="number" value="90">'+
+    '<label>Notiz (optional)</label><input id="ap_note" placeholder="z. B. Einkauf + Reinigung">'+
+    '</div>';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Abbrechen</button><button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveAppointment('+customerId+')">Termin speichern</button>';
+  openModal();
+}
+function saveAppointment(customerId){
+  const date=val('ap_date'),time=val('ap_time');
+  if(!date||!time){toast('Bitte Datum und Uhrzeit angeben',true);return;}
+  appointments.push({id:nextApptId++,staffId:myId,customerId,date,time,duration:parseInt(val('ap_dur'))||60,note:val('ap_note')});
+  closeModal();toast('Termin gespeichert – unter „Meine Termine“ sichtbar');
+  renderStaff('calendar');
+}
+function showAppt(id){
+  const a=appointments.find(x=>x.id===id);const cu=custById(a.customerId);
+  document.getElementById('modalTitle').textContent='Termin-Details';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="reveal-row"><span class="k">Kunde</span><span class="v">'+(cu?fullName(cu):'—')+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+(cu?cu.address:'—')+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Datum</span><span class="v">'+fmtDateLong(a.date)+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Uhrzeit</span><span class="v">'+a.time+' ('+a.duration+' Min.)</span></div>'+
+    '<div class="reveal-row"><span class="k">Mitarbeiter</span><span class="v">'+staffName(a.staffId)+'</span></div>'+
+    (a.note?'<div style="margin-top:10px;font-size:14px"><b>Notiz:</b> '+a.note+'</div>':'');
+  let foot='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  if(currentRole==='staff'&&a.staffId===myId) foot+='<button class="btn-danger-ghost" onclick="deleteAppt('+id+')">Absagen</button>';
+  document.getElementById('modalFoot').innerHTML=foot;
+  openModal();
+}
+function deleteAppt(id){
+  appointments=appointments.filter(a=>a.id!==id);
+  closeModal();toast('Termin abgesagt',true);renderStaff('calendar');
+}
+
+/* ============ STUNDENZETTEL (Mitarbeiter erfasst) ============ */
+function addTimesheet(){
+  const m=me();
+  const myCust=jobs.filter(j=>j.status==='assigned'&&j.assignedTo===myId).map(j=>j.customerId);
+  const opts=myCust.length?myCust.map(cid=>{const cu=custById(cid);return '<option value="'+cid+'">'+fullName(cu)+'</option>';}).join(''):'<option value="">— erst Kunde annehmen —</option>';
+  document.getElementById('modalTitle').textContent='Zeit erfassen';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="content-form">'+
+    '<label>Kunde</label><select id="ts_cust">'+opts+'</select>'+
+    '<label>Datum</label><input id="ts_date" type="date" value="2026-06-10">'+
+    '<div class="form-row"><div><label>Beginn</label><input id="ts_start" type="time" value="09:00"></div>'+
+    '<div><label>Ende</label><input id="ts_end" type="time" value="11:00"></div></div>'+
+    '<label>Tätigkeit</label><input id="ts_task" placeholder="z. B. Haushaltshilfe & Einkauf">'+
+    '</div>';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Abbrechen</button><button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveTimesheet()">Speichern</button>';
+  openModal();
+}
+function saveTimesheet(){
+  const cid=document.getElementById('ts_cust').value;
+  const start=val('ts_start'),end=val('ts_end');
+  if(cid==='' ){toast('Bitte zuerst einen Kunden annehmen',true);return;}
+  if(!start||!end||end<=start){toast('Bitte gültige Start-/Endzeit angeben',true);return;}
+  timesheets.push({id:nextTsId++,staffId:myId,customerId:+cid,date:val('ts_date'),start,end,task:val('ts_task')||'Einsatz',status:'offen',proof:false});
+  closeModal();toast('Zeit erfasst – wartet auf Freigabe durch das Büro');
+  renderStaff('hours');
+}
+function approveTimesheet(id){
+  const t=timesheets.find(x=>x.id===id);t.status='freigegeben';t.proof=true;
+  // echten Leistungsnachweis erzeugen
+  proofs.push({id:nextProofId++,timesheetId:t.id,staffId:t.staffId,customerId:t.customerId,date:t.date,task:t.task,minutes:tsMinutes(t),signed:false});
+  toast('Stundenzettel freigegeben – Leistungsnachweis erstellt');renderAdmin('hours');
+}
+function signProof(id){
+  const p=proofs.find(x=>x.id===id);if(!p)return;
+  p.signed=true;toast('Leistungsnachweis vom Kunden bestätigt');renderAdmin('hours');
+}
+function tsMinutes(t){const[a,b]=t.start.split(':').map(Number);const[c,d]=t.end.split(':').map(Number);return (c*60+d)-(a*60+b);}
+function tsDuration(t){const m=tsMinutes(t);return Math.floor(m/60)+' Std '+(m%60)+' Min';}
+
+/* ============ NOTIZEN ============ */
+function notesAdminHTML(){
+  const staffNotes=notes.filter(n=>n.type==='staff');
+  const custNotes=notes.filter(n=>n.type==='customer');
+  const block=(title,list,type)=>'<div class="panel" style="margin-bottom:16px"><div class="panel-head"><h3>'+title+'</h3><button class="btn-primary btn-sm" style="width:auto" onclick="addNote(\''+type+'\')">+ Notiz</button></div><div class="panel-body" style="padding-top:8px">'+
+    (list.length?list.map(n=>{
+      const ref=type==='staff'?staff.find(s=>s.id===n.refId):custById(n.refId);
+      const refName=ref?fullName(ref):'—';
+      return '<div style="padding:11px 0;border-bottom:1px solid #eef3f3"><div style="display:flex;justify-content:space-between;gap:10px"><b>'+refName+'</b><span class="tag '+(n.visibility==='intern'?'grey':'blue')+'">'+(n.visibility==='intern'?'intern':'für Mitarbeiter')+'</span></div><div style="font-size:14px;margin-top:3px">'+n.text+'</div><div style="font-size:12px;color:var(--muted);margin-top:3px">'+fmtDate(n.date)+'</div></div>';
+    }).join(''):'<p style="color:var(--muted);padding:8px 0">Keine Notizen.</p>')+
+    '</div></div>';
+  return block('Notizen zu Mitarbeitern',staffNotes,'staff')+block('Notizen zu Kunden',custNotes,'customer');
+}
+function addNote(type){
+  const list=type==='staff'?staff:customers;
+  document.getElementById('modalTitle').textContent='Notiz hinzufügen';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="content-form">'+
+    '<label>'+(type==='staff'?'Mitarbeiter':'Kunde')+'</label><select id="nt_ref">'+list.map(o=>'<option value="'+o.id+'">'+fullName(o)+'</option>').join('')+'</select>'+
+    '<label>Notiz</label><textarea id="nt_text" rows="3" placeholder="Bemerkung eingeben"></textarea>'+
+    '<label>Sichtbarkeit</label>'+
+    '<div class="seg" id="nt_vis"><button data-v="intern" class="on" onclick="segPick(this,\'nt_vis\')">Intern (nur Büro)</button><button data-v="mitarbeiter" onclick="segPick(this,\'nt_vis\')">Für Mitarbeiter sichtbar</button></div>'+
+    '</div>';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Abbrechen</button><button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveNote(\''+type+'\')">Speichern</button>';
+  openModal();
+}
+function saveNote(type){
+  const refId=+document.getElementById('nt_ref').value;
+  const text=val('nt_text');
+  if(!text){toast('Bitte Notiztext eingeben',true);return;}
+  const vis=document.querySelector('#nt_vis button.on').dataset.v;
+  notes.push({id:nextNoteId++,type,refId,text,visibility:vis,date:'2026-06-10'});
+  closeModal();toast('Notiz gespeichert');renderAdmin('notes');
+}
+
+/* ============ DATUM-HELPERS ============ */
+function fmtDate(iso){if(!iso)return '';const[y,m,d]=iso.split('-');return d+'.'+m+'.'+y;}
+function fmtDateLong(iso){if(!iso)return '';const[y,m,d]=iso.split('-');const days=['So','Mo','Di','Mi','Do','Fr','Sa'];const months=['Jan','Feb','März','Apr','Mai','Juni','Juli','Aug','Sep','Okt','Nov','Dez'];const dt=new Date(+y,+m-1,+d);return days[dt.getDay()]+', '+(+d)+'. '+months[+m-1]+' '+y;}
 
 /* ============ MODAL / HELPERS ============ */
 function openModal(){document.getElementById('modalBg').classList.add('show');}
