@@ -9,14 +9,15 @@
     --petrol:#0f5b63;--petrol-dark:#0a444a;--petrol-soft:#e7f1f1;
     --amber:#e08a2b;--amber-soft:#fbeede;--ink:#1c2a2b;--muted:#5d7173;
     --line:#dde7e7;--bg:#f4f7f6;--card:#ffffff;--good:#2f8f5b;--good-soft:#e3f3ea;
-    --danger:#b5402f;--danger-soft:#f8e6e2;--radius:14px;
-    --shadow:0 1px 2px rgba(15,91,99,.06),0 8px 24px rgba(15,91,99,.06);
+    --danger:#b5402f;--danger-soft:#f8e6e2;--blue:#2c6e9b;--blue-soft:#e3eef6;
+    --radius:14px;--shadow:0 1px 2px rgba(15,91,99,.06),0 8px 24px rgba(15,91,99,.06);
     --font:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased}
   button{font-family:inherit;cursor:pointer;border:none;background:none}
   input,select,textarea{font-family:inherit;font-size:15px}
+  a{color:var(--petrol)}
   .login-wrap{min-height:100vh;display:grid;grid-template-columns:1.1fr .9fr}
   .login-art{background:linear-gradient(150deg,var(--petrol),var(--petrol-dark));color:#fff;padding:56px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
   .login-art::after{content:"";position:absolute;right:-120px;bottom:-120px;width:420px;height:420px;border-radius:50%;background:rgba(255,255,255,.05)}
@@ -45,6 +46,8 @@
   .btn-primary:hover{background:var(--petrol-dark)}
   .demo-note{margin-top:18px;font-size:12.5px;color:var(--muted);background:var(--amber-soft);border:1px solid #f0dcc2;padding:11px 13px;border-radius:10px}
   .demo-note b{color:var(--amber)}
+  .apply-link{margin-top:14px;text-align:center;font-size:13.5px}
+  .apply-link button{color:var(--petrol);font-weight:600;text-decoration:underline}
   .app{display:none;min-height:100vh}.app.active{display:block}
   .topbar{background:var(--card);border-bottom:1px solid var(--line);padding:0 24px;height:62px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
   .topbar .brand{color:var(--petrol);font-size:17px}.topbar .brand .mark{background:var(--petrol);color:#fff}
@@ -63,16 +66,18 @@
   .nav-item.active{background:var(--petrol-soft);color:var(--petrol-dark);font-weight:600}
   .nav-item .ic{width:18px;text-align:center;font-size:15px;opacity:.85}
   .nav-item .badge{margin-left:auto;background:var(--amber);color:#fff;font-size:11px;font-weight:700;min-width:19px;height:19px;border-radius:10px;display:grid;place-items:center;padding:0 5px}
+  .nav-item .badge.blue{background:var(--blue)}
   .content{padding:28px 32px;max-width:1100px}
   .page-head{margin-bottom:22px}
   .page-head h1{font-size:24px;margin-bottom:4px}.page-head p{color:var(--muted);font-size:14.5px}
-  .cards{display:grid;gap:16px}.grid-3{grid-template-columns:repeat(3,1fr)}.grid-2{grid-template-columns:repeat(2,1fr)}
+  .cards{display:grid;gap:16px}.grid-3{grid-template-columns:repeat(3,1fr)}.grid-2{grid-template-columns:repeat(2,1fr)}.grid-4{grid-template-columns:repeat(4,1fr)}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
   .stat .label{font-size:13px;color:var(--muted);font-weight:600}
   .stat .value{font-size:30px;font-weight:700;margin-top:6px;color:var(--petrol-dark)}
   .stat .foot{font-size:12.5px;color:var(--muted);margin-top:4px}
+  .stat.click{cursor:pointer;transition:.12s}.stat.click:hover{border-color:var(--petrol);box-shadow:0 4px 14px rgba(15,91,99,.12)}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
-  .panel-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+  .panel-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
   .panel-head h3{font-size:16px}.panel-body{padding:8px 20px 18px}
   table{width:100%;border-collapse:collapse}
   th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:12px 8px;border-bottom:1px solid var(--line)}
@@ -82,12 +87,15 @@
   .tag{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:20px}
   .tag.green{background:var(--good-soft);color:var(--good)}.tag.amber{background:var(--amber-soft);color:var(--amber)}
   .tag.grey{background:#eef2f2;color:var(--muted)}.tag.red{background:var(--danger-soft);color:var(--danger)}
+  .tag.blue{background:var(--blue-soft);color:var(--blue)}
   .reject-chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--danger);background:var(--danger-soft);padding:3px 9px;border-radius:20px;margin:2px 3px 2px 0}
   .job{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px;transition:.18s}
   .job.fade{opacity:0;transform:translateY(-6px)}
   .job-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
   .job-top h3{font-size:17px;margin-bottom:3px}.job-loc{font-size:13.5px;color:var(--muted)}
   .job-tags{display:flex;flex-wrap:wrap;gap:7px}
+  .summary{background:var(--blue-soft);border:1px solid #c5dcec;border-radius:10px;padding:12px 14px;font-size:13.5px}
+  .summary .sh{font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
   .job-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13.5px;border-top:1px dashed var(--line);padding-top:13px}
   .job-meta .k{color:var(--muted);font-size:12px}.job-meta .v{font-weight:600}
   .locked{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);background:var(--bg);padding:9px 12px;border-radius:9px}
@@ -98,30 +106,35 @@
   .btn-ghost:hover{border-color:var(--muted)}
   .btn-danger-ghost{padding:11px 16px;background:#fff;border:1.5px solid #eccfc8;border-radius:9px;font-weight:600;color:var(--danger);font-size:14.5px}
   .btn-danger-ghost:hover{background:var(--danger-soft)}
+  .btn-sm{padding:7px 13px;font-size:13px;border-radius:8px}
   .reveal{background:var(--good-soft);border:1px solid #c4e6d2;border-radius:10px;padding:14px 16px}
   .reveal .rh{font-size:12px;font-weight:700;color:var(--good);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
   .reveal-row{display:flex;justify-content:space-between;padding:4px 0;font-size:14px;gap:14px}
   .reveal-row .k{color:var(--muted);white-space:nowrap}.reveal-row .v{font-weight:600;text-align:right}
   .empty{text-align:center;padding:50px 20px;color:var(--muted)}.empty .big{font-size:34px;margin-bottom:10px}
-  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:13px 22px;border-radius:11px;font-size:14.5px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;transition:.28s;z-index:200;display:flex;align-items:center;gap:10px}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:13px 22px;border-radius:11px;font-size:14.5px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;transition:.28s;z-index:300;display:flex;align-items:center;gap:10px;max-width:90vw}
   .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
-  .toast .dot{width:9px;height:9px;border-radius:50%;background:var(--good)}.toast.warn .dot{background:var(--amber)}
+  .toast .dot{width:9px;height:9px;border-radius:50%;background:var(--good);flex:none}.toast.warn .dot{background:var(--amber)}
   .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
   .content-form label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px}
   .content-form input,.content-form select,.content-form textarea{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:9px;margin-bottom:15px;background:#fff}
   .content-form input:focus,.content-form select:focus,.content-form textarea:focus{outline:none;border-color:var(--petrol);box-shadow:0 0 0 3px var(--petrol-soft)}
+  .input-with-select{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .checks{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:18px}
   .check{padding:8px 13px;border:1.5px solid var(--line);border-radius:20px;font-size:13.5px;font-weight:500;color:var(--muted);user-select:none;cursor:pointer}
   .check.on{background:var(--petrol-soft);border-color:var(--petrol);color:var(--petrol-dark)}
+  .section-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--petrol);margin:20px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
   .modal-bg{position:fixed;inset:0;background:rgba(20,35,36,.45);display:none;align-items:center;justify-content:center;z-index:150;padding:20px}
   .modal-bg.show{display:flex}
-  .modal{background:var(--card);border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-  .modal-head{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .modal{background:var(--card);border-radius:16px;width:100%;max-width:560px;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal.wide{max-width:760px}
+  .modal-head{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--card);z-index:2}
   .modal-head h3{font-size:18px}
   .modal-head .x{font-size:22px;color:var(--muted);width:32px;height:32px;border-radius:8px;display:grid;place-items:center}
   .modal-head .x:hover{background:var(--bg)}
   .modal-body{padding:22px 24px}
-  .modal-foot{padding:16px 24px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+  .modal-foot{padding:16px 24px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--card);flex-wrap:wrap}
   .seg{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
   .seg button{padding:9px 15px;border:1.5px solid var(--line);border-radius:9px;font-weight:600;font-size:14px;color:var(--muted)}
   .seg button.on{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol-dark)}
@@ -130,19 +143,73 @@
   .day-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-bottom:6px}
   .day{padding:10px 4px;text-align:center;border:1.5px solid var(--line);border-radius:9px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
   .day.on{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol-dark)}
+  /* ---------- WIZARD (Bewerbung) ---------- */
+  .wizard{display:none;min-height:100vh;background:var(--bg)}
+  .wizard.active{display:block}
+  .wiz-top{background:var(--card);border-bottom:1px solid var(--line);height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;position:sticky;top:0;z-index:10}
+  .wiz-progress{height:5px;background:var(--petrol-soft)}
+  .wiz-progress .bar{height:100%;background:var(--petrol);transition:width .3s;border-radius:0 3px 3px 0}
+  .wiz-wrap{max-width:620px;margin:0 auto;padding:30px 20px 60px}
+  .wiz-step{display:none}.wiz-step.active{display:block;animation:fade .3s}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .wiz-num{font-size:13px;font-weight:700;color:var(--petrol);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+  .wiz-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:28px;box-shadow:var(--shadow)}
+  .wiz-card h2{font-size:23px;margin-bottom:10px}
+  .wiz-card p.lead{color:var(--muted);margin-bottom:20px}
+  .team-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}
+  .team-member{text-align:center}
+  .team-photo{width:100%;aspect-ratio:1;border-radius:12px;background:linear-gradient(135deg,var(--petrol-soft),var(--blue-soft));display:grid;place-items:center;font-size:30px;color:var(--petrol);margin-bottom:7px}
+  .team-member b{font-size:13.5px;display:block}.team-member span{font-size:12px;color:var(--muted)}
+  .task-list{list-style:none;display:flex;flex-direction:column;gap:11px;margin:6px 0 4px}
+  .task-list li{display:flex;gap:11px;align-items:flex-start;font-size:14.5px}
+  .task-list .ic{flex:none;width:26px;height:26px;border-radius:7px;background:var(--petrol-soft);color:var(--petrol);display:grid;place-items:center;font-size:14px}
+  .confirm-box{display:flex;gap:11px;align-items:flex-start;background:var(--amber-soft);border:1px solid #f0dcc2;border-radius:10px;padding:14px;margin-top:18px;cursor:pointer}
+  .confirm-box input{margin-top:3px;width:18px;height:18px;flex:none;accent-color:var(--petrol)}
+  .confirm-box label{font-size:13.5px;cursor:pointer}
+  .wiz-form label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px}
+  .wiz-form input,.wiz-form select,.wiz-form textarea{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:9px;margin-bottom:14px;background:#fff}
+  .wiz-form input:focus,.wiz-form select:focus,.wiz-form textarea:focus{outline:none;border-color:var(--petrol);box-shadow:0 0 0 3px var(--petrol-soft)}
+  .doc-item{border:1.5px solid var(--line);border-radius:10px;margin-bottom:11px;overflow:hidden}
+  .doc-head{padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer}
+  .doc-head:hover{background:var(--bg)}
+  .doc-head .dt{font-weight:600;font-size:14.5px;display:flex;align-items:center;gap:9px}
+  .doc-state{font-size:12px;font-weight:600;color:var(--muted)}
+  .doc-state.signed{color:var(--good)}
+  .doc-body{display:none;padding:0 16px 16px;border-top:1px solid var(--line)}
+  .doc-body.open{display:block}
+  .doc-text{font-size:12.5px;color:var(--muted);background:var(--bg);border-radius:8px;padding:12px;max-height:120px;overflow:auto;margin:12px 0}
+  .sign-pad{border:1.5px dashed var(--petrol);border-radius:9px;background:#fcfdfd;height:120px;position:relative;cursor:crosshair;touch-action:none}
+  .sign-pad canvas{width:100%;height:100%;display:block}
+  .sign-hint{position:absolute;inset:0;display:grid;place-items:center;color:#aab8b8;font-size:13px;pointer-events:none}
+  .sign-actions{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+  .upload-box{border:2px dashed var(--line);border-radius:11px;padding:22px;text-align:center;cursor:pointer;transition:.15s;margin-bottom:8px}
+  .upload-box:hover{border-color:var(--petrol);background:var(--petrol-soft)}
+  .upload-box.done{border-color:var(--good);background:var(--good-soft)}
+  .upload-box .ub-ic{font-size:26px;margin-bottom:6px}
+  .upload-box .ub-t{font-weight:600;font-size:14px}
+  .upload-box .ub-s{font-size:12px;color:var(--muted);margin-top:3px}
+  .example-id{display:flex;gap:12px;align-items:center;background:var(--blue-soft);border:1px solid #c5dcec;border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px}
+  .example-id .mini-id{width:74px;height:48px;border-radius:6px;background:linear-gradient(135deg,#dfeaf2,#c5d8e6);flex:none;position:relative;overflow:hidden}
+  .example-id .mini-id::before{content:"";position:absolute;top:7px;left:7px;width:20px;height:26px;border-radius:3px;background:rgba(44,110,155,.3)}
+  .example-id .mini-id::after{content:"";position:absolute;top:10px;left:33px;right:7px;height:4px;background:rgba(44,110,155,.3);box-shadow:0 8px 0 rgba(44,110,155,.25),0 16px 0 rgba(44,110,155,.2)}
+  .wiz-nav{display:flex;gap:10px;justify-content:space-between;margin-top:22px}
+  .wiz-nav .btn-primary{width:auto;padding:12px 26px}
+  .wiz-done{text-align:center;padding:20px}
+  .wiz-done .big-ic{width:84px;height:84px;border-radius:50%;background:var(--good-soft);color:var(--good);display:grid;place-items:center;font-size:42px;margin:0 auto 20px}
   @media(max-width:900px){
     .login-wrap{grid-template-columns:1fr}.login-art{display:none}
     .layout{grid-template-columns:1fr}
     .sidebar{position:fixed;left:0;top:62px;bottom:0;width:230px;transform:translateX(-100%);transition:.2s;z-index:60}
     .sidebar.open{transform:none}.menu-toggle{display:grid!important}
-    .grid-3{grid-template-columns:1fr}.grid-2{grid-template-columns:1fr}
-    .content{padding:20px 16px}.form-row{grid-template-columns:1fr}
+    .grid-3,.grid-2,.grid-4{grid-template-columns:1fr}
+    .content{padding:20px 16px}.form-row,.form-row-3,.input-with-select{grid-template-columns:1fr}
   }
   .menu-toggle{display:none;width:38px;height:38px;border-radius:9px;place-items:center;font-size:20px;color:var(--petrol)}
 </style>
 </head>
 <body>
 
+<!-- ============ LOGIN ============ -->
 <div class="login-wrap" id="loginScreen">
   <div class="login-art">
     <div class="brand"><span class="mark">E</span> Einsatzportal</div>
@@ -170,10 +237,12 @@
         <input id="pass" type="password" placeholder="••••••••" /></div>
       <button class="btn-primary" onclick="doLogin()">Anmelden</button>
       <div class="demo-note"><b>Demo-Modus:</b> Die Anmeldung akzeptiert jede Eingabe. Der Bereich richtet sich nach der Auswahl oben.</div>
+      <div class="apply-link">Neu hier? <button onclick="startWizard()">Als Mitarbeiter bewerben →</button></div>
     </div>
   </div>
 </div>
 
+<!-- ============ APP ============ -->
 <div class="app" id="appScreen">
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:14px">
@@ -193,8 +262,19 @@
   </div>
 </div>
 
+<!-- ============ BEWERBUNGS-WIZARD ============ -->
+<div class="wizard" id="wizard">
+  <div class="wiz-top">
+    <div class="brand" style="color:var(--petrol)"><span class="mark" style="background:var(--petrol);color:#fff">A</span> Alltagshilfe Hannover</div>
+    <button class="logout" onclick="exitWizard()">Abbrechen</button>
+  </div>
+  <div class="wiz-progress"><div class="bar" id="wizBar" style="width:12.5%"></div></div>
+  <div class="wiz-wrap" id="wizWrap"></div>
+</div>
+
+<!-- ============ MODAL ============ -->
 <div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
-  <div class="modal">
+  <div class="modal" id="modalBox">
     <div class="modal-head"><h3 id="modalTitle">Titel</h3><button class="x" onclick="closeModal()">×</button></div>
     <div class="modal-body" id="modalBody"></div>
     <div class="modal-foot" id="modalFoot"></div>
@@ -204,37 +284,59 @@
 <div class="toast" id="toast"><span class="dot"></span><span id="toastMsg"></span></div>
 
 <script>
+/* ============ DEMO-DATEN ============ */
 let currentRole='admin';
 const SKILLS=['Haushaltshilfe','Begleitung','Betreuung','Haustier ok'];
 const WEEKDAYS=['Mo','Di','Mi','Do','Fr','Sa','So'];
+const FREQ_UNITS=['pro Woche','alle 2 Wochen','pro Monat','nach Bedarf'];
 let myId=0;
 
+/* Mitarbeiter: jetzt mit internen Verwaltungsfeldern + Zugangsdaten */
 let staff=[
-  {id:0,first:'Ivonne',last:'Bengsch',role:'Haushaltshilfe',status:'aktiv',skills:['Haushaltshilfe','Begleitung'],area:'Hannover',phone:'0171 1112233',email:'ivonne@alltagshilfe.de',maxHours:30,days:['Mo','Di','Mi','Do','Fr'],window:'Vormittags'},
-  {id:1,first:'Natalie',last:'Nagel',role:'Betreuungskraft',status:'aktiv',skills:['Betreuung','Begleitung'],area:'Garbsen',phone:'0171 4445566',email:'natalie@alltagshilfe.de',maxHours:25,days:['Mo','Mi','Fr'],window:'Nachmittags'},
-  {id:2,first:'Silvana',last:'Flasbart',role:'Haushaltshilfe',status:'Urlaub',skills:['Haushaltshilfe'],area:'Wunstorf',phone:'0171 7778899',email:'silvana@alltagshilfe.de',maxHours:20,days:['Di','Do'],window:'Flexibel'},
+  {id:0,first:'Ivonne',last:'Bengsch',role:'Haushaltshilfe',status:'aktiv',skills:['Haushaltshilfe','Begleitung'],area:'Hannover',phone:'0171 1112233',email:'ivonne@alltagshilfe.de',maxHours:30,days:['Mo','Di','Mi','Do','Fr'],window:'Vormittags',
+    login:'ivonne@alltagshilfe.de',hasLogin:true,
+    intern:{birth:'14.03.1985',address:'Lindener Marktplatz 2, 30449 Hannover',taxId:'12 345 678 901',taxClass:'I',kvNr:'A123456789',kasse:'AOK Niedersachsen',employment:'Midijob',citizenship:'Deutsch',iban:'DE12 3456 7890 1234 5678 90'}},
+  {id:1,first:'Natalie',last:'Nagel',role:'Betreuungskraft',status:'aktiv',skills:['Betreuung','Begleitung'],area:'Garbsen',phone:'0171 4445566',email:'natalie@alltagshilfe.de',maxHours:25,days:['Mo','Mi','Fr'],window:'Nachmittags',
+    login:'natalie@alltagshilfe.de',hasLogin:true,
+    intern:{birth:'22.07.1990',address:'Planetenring 12, 30823 Garbsen',taxId:'98 765 432 109',taxClass:'IV',kvNr:'B987654321',kasse:'TK',employment:'Minijob',citizenship:'Deutsch',iban:'DE98 7654 3210 9876 5432 10'}},
+  {id:2,first:'Silvana',last:'Flasbart',role:'Haushaltshilfe',status:'Urlaub',skills:['Haushaltshilfe'],area:'Wunstorf',phone:'0171 7778899',email:'silvana@alltagshilfe.de',maxHours:20,days:['Di','Do'],window:'Flexibel',
+    login:'silvana@alltagshilfe.de',hasLogin:true,
+    intern:{birth:'03.11.1978',address:'Bahnhofstraße 5, 31515 Wunstorf',taxId:'45 678 901 234',taxClass:'III',kvNr:'C456789012',kasse:'Barmer',employment:'Teilzeit',citizenship:'Deutsch',iban:'DE45 6789 0123 4567 8901 23'}},
 ];
 
-let jobs=[
-  {id:1,title:'Haushaltshilfe & Einkauf',area:'Hannover-Linden',skills:['Haushaltshilfe','Begleitung'],freq:'2× pro Woche',window:'Vormittags',pet:'Hund (klein)',pgrad:'Pflegegrad 2',status:'available',assignedTo:null,rejectedBy:[],customer:{name:'Margarete Hoffmann',address:'Falkenstraße 14, 30449 Hannover',phone:'0511 / 22 33 44',contact:'Tochter: Sabine H., 0171 2345678',notes:'Schlüssel beim Nachbarn (Whg. 3). Hund „Bruno“ ist freundlich.'}},
-  {id:2,title:'Begleitung zu Arztterminen',area:'Hannover-List',skills:['Begleitung'],freq:'Nach Bedarf',window:'Termingebunden',pet:'Kein Haustier',pgrad:'Pflegegrad 1',status:'available',assignedTo:null,rejectedBy:[],customer:{name:'Heinrich Vogt',address:'Bödekerstraße 90, 30161 Hannover',phone:'0511 / 88 77 66',contact:'Sohn: Markus V., 0160 9988776',notes:'Rollator. Bitte 15 Min. vor Termin da sein.'}},
-  {id:3,title:'Betreuung & Gesellschaft',area:'Garbsen',skills:['Betreuung','Haustier ok'],freq:'3× pro Woche',window:'Nachmittags',pet:'Katze',pgrad:'Pflegegrad 3',status:'available',assignedTo:null,rejectedBy:[],customer:{name:'Elfriede Kranz',address:'Planetenring 7, 30823 Garbsen',phone:'05131 / 44 55 66',contact:'Betreuerin: Frau Adam, 0511 333222',notes:'Mag Gesellschaftsspiele und Spaziergänge.'}},
-  {id:4,title:'Haushaltshilfe (Wäsche & Reinigung)',area:'Wunstorf',skills:['Haushaltshilfe'],freq:'1× pro Woche',window:'Flexibel',pet:'Kein Haustier',pgrad:'Pflegegrad 2',status:'available',assignedTo:null,rejectedBy:[],customer:{name:'Karl-Otto Reimann',address:'Bahnhofstraße 12, 31515 Wunstorf',phone:'05031 / 77 88 99',contact:'—',notes:'Wohnung 2. OG ohne Aufzug.'}},
-];
-
+/* Kunden: jetzt mit Häufigkeit (Zahl + Einheit) und internen Feldern */
 let customers=[
-  {name:'Margarete Hoffmann',area:'Hannover-Linden',need:'Haushaltshilfe',status:'aktiv',pgrad:'2'},
-  {name:'Heinrich Vogt',area:'Hannover-List',need:'Begleitung',status:'aktiv',pgrad:'1'},
-  {name:'Elfriede Kranz',area:'Garbsen',need:'Betreuung',status:'aktiv',pgrad:'3'},
-  {name:'Karl-Otto Reimann',area:'Wunstorf',need:'Haushaltshilfe',status:'Interessent',pgrad:'2'},
+  {id:0,first:'Margarete',last:'Hoffmann',area:'Hannover-Linden',address:'Falkenstraße 14, 30449 Hannover',phone:'0511 / 22 33 44',need:['Haushaltshilfe'],freqNum:2,freqUnit:'pro Woche',window:'Vormittags',pet:'Hund (klein)',pgrad:'2',status:'aktiv',contact:'Tochter: Sabine H., 0171 2345678',notes:'Schlüssel beim Nachbarn (Whg. 3). Hund „Bruno“ ist freundlich.',intern:{kvNr:'K-1001',kasse:'AOK',budget:'§45a – 131 €/Monat',budgetUsed:'40 €'}},
+  {id:1,first:'Heinrich',last:'Vogt',area:'Hannover-List',address:'Bödekerstraße 90, 30161 Hannover',phone:'0511 / 88 77 66',need:['Begleitung'],freqNum:1,freqUnit:'nach Bedarf',window:'Termingebunden',pet:'Kein Haustier',pgrad:'1',status:'aktiv',contact:'Sohn: Markus V., 0160 9988776',notes:'Rollator. Bitte 15 Min. vor Termin da sein.',intern:{kvNr:'K-1002',kasse:'TK',budget:'§45a – 131 €/Monat',budgetUsed:'0 €'}},
+  {id:2,first:'Elfriede',last:'Kranz',area:'Garbsen',address:'Planetenring 7, 30823 Garbsen',phone:'05131 / 44 55 66',need:['Betreuung','Haustier ok'],freqNum:3,freqUnit:'pro Woche',window:'Nachmittags',pet:'Katze',pgrad:'3',status:'aktiv',contact:'Betreuerin: Frau Adam, 0511 333222',notes:'Mag Gesellschaftsspiele und Spaziergänge.',intern:{kvNr:'K-1003',kasse:'DAK',budget:'§45a – 131 €/Monat',budgetUsed:'90 €'}},
+  {id:3,first:'Karl-Otto',last:'Reimann',area:'Wunstorf',address:'Bahnhofstraße 12, 31515 Wunstorf',phone:'05031 / 77 88 99',need:['Haushaltshilfe'],freqNum:1,freqUnit:'pro Woche',window:'Flexibel',pet:'Kein Haustier',pgrad:'2',status:'Interessent',contact:'—',notes:'Wohnung 2. OG ohne Aufzug.',intern:{kvNr:'K-1004',kasse:'Barmer',budget:'§45a – 131 €/Monat',budgetUsed:'0 €'}},
 ];
+
+/* Aufträge: verweisen per customerId auf einen Kunden */
+let jobs=[
+  {id:1,customerId:0,title:'Haushaltshilfe & Einkauf',skills:['Haushaltshilfe','Begleitung'],status:'available',assignedTo:null,rejectedBy:[]},
+  {id:2,customerId:1,title:'Begleitung zu Arztterminen',skills:['Begleitung'],status:'available',assignedTo:null,rejectedBy:[]},
+  {id:3,customerId:2,title:'Betreuung & Gesellschaft',skills:['Betreuung','Haustier ok'],status:'available',assignedTo:null,rejectedBy:[]},
+  {id:4,customerId:3,title:'Haushaltshilfe (Wäsche & Reinigung)',skills:['Haushaltshilfe'],status:'available',assignedTo:null,rejectedBy:[]},
+];
+
+/* Bewerbungen: Status-Workflow neu→geprüft→wartet-auf-zugang→verschickt(aktiv) */
+let applications=[
+  {id:1,first:'Thomas',last:'Berger',email:'t.berger@email.de',phone:'0151 22233344',area:'Hannover',citizenship:'Deutsch',skills:['Haushaltshilfe','Begleitung'],motivation:'Möchte gerne im sozialen Bereich arbeiten und habe Erfahrung in der Altenpflege.',status:'neu',
+    docs:{Arbeitsvertrag:true,Datenschutzvertrag:true,NDA:true,Haftungserklärung:true},idFront:true,idBack:true,selfie:true,agb:true},
+];
+
+let nextStaffId=3, nextCustomerId=4, nextJobId=5, nextAppId=2;
 
 function me(){return staff.find(s=>s.id===myId);}
 function staffName(id){const s=staff.find(x=>x.id===id);return s?s.first+' '+s.last[0]+'.':'—';}
-function fullName(s){return s.first+' '+s.last;}
-function initials(s){return (s.first[0]||'')+(s.last[0]||'');}
+function fullName(o){return o.first+' '+o.last;}
+function initials(o){return (o.first[0]||'')+(o.last[0]||'');}
+function custById(id){return customers.find(c=>c.id===id);}
 function availableForMe(){return jobs.filter(j=>j.status==='available'&&!j.rejectedBy.includes(myId));}
+function freqText(c){return c.freqUnit==='nach Bedarf'?'nach Bedarf':(c.freqNum+'× '+c.freqUnit);}
 
+/* ============ LOGIN ============ */
 function setRole(r){currentRole=r;
   document.getElementById('roleAdmin').classList.toggle('active',r==='admin');
   document.getElementById('roleStaff').classList.toggle('active',r==='staff');
@@ -265,24 +367,29 @@ function logout(){
   closeModal();setRole('admin');
 }
 
-function navItem(id,icon,label,active,badge){
-  return '<button class="nav-item '+(active?'active':'')+'" onclick="'+(currentRole==='admin'?'renderAdmin':'renderStaff')+'(\''+id+'\')"><span class="ic">'+icon+'</span>'+label+(badge?'<span class="badge">'+badge+'</span>':'')+'</button>';
+/* ============ NAVIGATION ============ */
+function navItem(id,icon,label,active,badge,blue){
+  return '<button class="nav-item '+(active?'active':'')+'" onclick="'+(currentRole==='admin'?'renderAdmin':'renderStaff')+'(\''+id+'\')"><span class="ic">'+icon+'</span>'+label+(badge?'<span class="badge'+(blue?' blue':'')+'">'+badge+'</span>':'')+'</button>';
 }
 function buildAdminNav(active){
   const open=jobs.filter(j=>j.status==='available').length;
+  const newApps=applications.filter(a=>a.status!=='aktiv').length;
   document.getElementById('sidebar').innerHTML=
     '<div class="nav-group">Übersicht</div>'+
     navItem('dashboard','◧','Dashboard',active==='dashboard')+
     navItem('jobs','◎','Aufträge',active==='jobs',open)+
     '<div class="nav-group">Verwaltung</div>'+
     navItem('staff','♟','Mitarbeiter',active==='staff')+
+    navItem('applications','📥','Bewerbungen',active==='applications',newApps||'',true)+
     navItem('customers','◍','Kunden',active==='customers')+
     navItem('newcustomer','＋','Kunde anlegen',active==='newcustomer')+
     '<div class="nav-group">Abwicklung</div>'+
     navItem('hours','⏱','Stundenzettel',active==='hours')+
     navItem('payroll','€','Lohnabrechnung',active==='payroll')+
     navItem('notes','✎','Notizen',active==='notes')+
-    navItem('calendar','▦','Kalender',active==='calendar');
+    navItem('calendar','▦','Kalender',active==='calendar')+
+    '<div class="nav-group">Konto</div>'+
+    navItem('mylogin','🔑','Meine Zugangsdaten',active==='mylogin');
 }
 function buildStaffNav(active){
   const m=me();
@@ -301,106 +408,312 @@ function buildStaffNav(active){
     navItem('profile','☺','Mein Profil',active==='profile')+
     navItem('emergency','✆','Notfallnummer',active==='emergency');
 }
-
+/* ============ ADMIN VIEWS ============ */
 function renderAdmin(view){
   buildAdminNav(view);
   document.getElementById('sidebar').classList.remove('open');
   const c=document.getElementById('content');
   const open=jobs.filter(j=>j.status==='available').length;
+  const newApps=applications.filter(a=>a.status!=='aktiv').length;
+
   if(view==='dashboard'){
     const rejTotal=jobs.reduce((n,j)=>n+j.rejectedBy.length,0);
     c.innerHTML=head('Dashboard','Überblick über Aufträge, Team und offene Punkte.')+
-    '<div class="cards grid-3">'+
-      stat('Offene Aufträge',open,'warten auf Annahme')+
+    '<div class="cards grid-4">'+
+      statClick('Offene Aufträge',open,'warten auf Annahme',"renderAdmin('jobs')")+
+      statClick('Neue Bewerbungen',newApps,'in Bearbeitung',"renderAdmin('applications')")+
       stat('Aktive Mitarbeiter',staff.filter(s=>s.status==='aktiv').length,'von '+staff.length+' im Team')+
       stat('Ablehnungen gesamt',rejTotal,'über alle Aufträge')+
     '</div><div style="height:18px"></div>'+
     '<div class="panel"><div class="panel-head"><h3>Zuletzt freigegebene Aufträge</h3>'+
-      '<button class="btn-ghost" onclick="renderAdmin(\'jobs\')">Alle ansehen</button></div>'+
-      '<div class="panel-body"><table><thead><tr><th>Auftrag</th><th>Gebiet</th><th>Status</th></tr></thead><tbody>'+
-      jobs.map(j=>'<tr><td><b>'+j.title+'</b></td><td>'+j.area+'</td><td>'+jobStatusTag(j)+'</td></tr>').join('')+
+      '<button class="btn-ghost btn-sm" onclick="renderAdmin(\'jobs\')">Alle ansehen</button></div>'+
+      '<div class="panel-body"><table><thead><tr><th>Auftrag</th><th>Kunde</th><th>Gebiet</th><th>Status</th></tr></thead><tbody>'+
+      jobs.map(j=>{const cu=custById(j.customerId);return '<tr><td><b>'+j.title+'</b></td><td>'+(j.status==='available'?'<span style="color:var(--muted)">verdeckt</span>':fullName(cu))+'</td><td>'+cu.area+'</td><td>'+jobStatusTag(j)+'</td></tr>';}).join('')+
       '</tbody></table></div></div>';
   }
+
   if(view==='jobs'){
-    c.innerHTML=head('Aufträge','Freigegebene Aufträge, wer angenommen hat und wer abgelehnt hat.')+
+    c.innerHTML=head('Aufträge','Freigegebene Aufträge, wer angenommen hat und wer abgelehnt hat. Klick auf eine Zeile für die Kunden-Zusammenfassung.')+
     '<div class="panel"><div class="panel-body" style="padding-top:16px"><table>'+
       '<thead><tr><th>Auftrag</th><th>Gebiet</th><th>Status</th><th>Angenommen von</th><th>Abgelehnt von</th></tr></thead><tbody>'+
-      jobs.map(j=>'<tr><td><b>'+j.title+'</b><div style="color:var(--muted);font-size:12.5px">'+j.freq+'</div></td>'+
-        '<td>'+j.area+'</td><td>'+jobStatusTag(j)+'</td>'+
+      jobs.map(j=>{const cu=custById(j.customerId);return '<tr class="clickable" onclick="showJobSummary('+j.id+')"><td><b>'+j.title+'</b><div style="color:var(--muted);font-size:12.5px">'+freqText(cu)+'</div></td>'+
+        '<td>'+cu.area+'</td><td>'+jobStatusTag(j)+'</td>'+
         '<td>'+(j.status==='assigned'?'<b>'+staffName(j.assignedTo)+'</b>':'<span style="color:var(--muted)">noch frei</span>')+'</td>'+
-        '<td>'+(j.rejectedBy.length?j.rejectedBy.map(id=>'<span class="reject-chip">✕ '+staffName(id)+'</span>').join(''):'<span style="color:var(--muted)">—</span>')+'</td></tr>').join('')+
-      '</tbody></table></div></div>'+
-      '<p style="margin-top:14px;color:var(--muted);font-size:13.5px">Melde dich als <b>Mitarbeiter</b> an und nimm an oder lehne ab – die Spalten hier aktualisieren sich entsprechend.</p>';
+        '<td>'+(j.rejectedBy.length?j.rejectedBy.map(id=>'<span class="reject-chip">✕ '+staffName(id)+'</span>').join(''):'<span style="color:var(--muted)">—</span>')+'</td></tr>';}).join('')+
+      '</tbody></table></div></div>';
   }
+
   if(view==='staff'){
-    c.innerHTML=head('Mitarbeiter','Auf einen Mitarbeiter klicken, um Daten anzusehen und zu bearbeiten.')+
-    '<div class="panel"><div class="panel-body" style="padding-top:16px"><table>'+
-      '<thead><tr><th>Name</th><th>Funktion</th><th>Gebiet</th><th>Fähigkeiten</th><th>Status</th></tr></thead><tbody>'+
-      staff.map(s=>'<tr class="clickable" onclick="editStaff('+s.id+')"><td><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+s.skills.join(', ')+'</td><td>'+statusTag(s.status)+'</td></tr>').join('')+
+    c.innerHTML=head('Mitarbeiter','Auf einen Mitarbeiter klicken, um alle Daten anzusehen und zu bearbeiten.')+
+    '<div class="panel"><div class="panel-head"><h3>Team ('+staff.length+')</h3><button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button></div>'+
+    '<div class="panel-body" style="padding-top:8px"><table>'+
+      '<thead><tr><th>Name</th><th>Funktion</th><th>Gebiet</th><th>Login</th><th>Status</th></tr></thead><tbody>'+
+      staff.map(s=>'<tr class="clickable" onclick="editStaff('+s.id+')"><td><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td><td>'+statusTag(s.status)+'</td></tr>').join('')+
       '</tbody></table></div></div>';
   }
+
+  if(view==='applications'){
+    const cols=[['neu','Neue Anfragen','amber'],['geprüft','Genehmigt – wartet auf Zugangsdaten','blue'],['versendet','Zugangsdaten versendet','green']];
+    c.innerHTML=head('Bewerbungen','Eingegangene Mitarbeiter-Bewerbungen im Genehmigungs-Ablauf. Klick auf eine Bewerbung für alle Details, Verträge und Dokumente.')+
+    cols.map(([st,label,color])=>{
+      const list=applications.filter(a=>a.status===st);
+      return '<div class="panel" style="margin-bottom:16px"><div class="panel-head"><h3>'+label+' <span class="tag '+color+'" style="margin-left:6px">'+list.length+'</span></h3></div>'+
+        '<div class="panel-body" style="padding-top:8px">'+
+        (list.length?'<table><thead><tr><th>Name</th><th>Gebiet</th><th>Fähigkeiten</th><th>Aktion</th></tr></thead><tbody>'+
+          list.map(a=>'<tr class="clickable" onclick="showApplication('+a.id+')"><td><b>'+fullName(a)+'</b><div style="color:var(--muted);font-size:12.5px">'+a.email+'</div></td><td>'+a.area+'</td><td>'+a.skills.join(', ')+'</td><td><span class="tag '+color+'">ansehen</span></td></tr>').join('')+
+          '</tbody></table>':'<p style="color:var(--muted);padding:8px 0">Keine Einträge.</p>')+
+        '</div></div>';
+    }).join('');
+  }
+
   if(view==='customers'){
-    c.innerHTML=head('Kunden','Alle hinterlegten Kunden und ihr Betreuungsstatus.')+
-    '<div class="panel"><div class="panel-body" style="padding-top:16px"><table>'+
-      '<thead><tr><th>Name</th><th>Gebiet</th><th>Bedarf</th><th>Pflegegrad</th><th>Status</th></tr></thead><tbody>'+
-      customers.map(c=>'<tr><td><b>'+c.name+'</b></td><td>'+c.area+'</td><td>'+c.need+'</td><td>'+c.pgrad+'</td><td>'+(c.status==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag grey">'+c.status+'</span>')+'</td></tr>').join('')+
+    c.innerHTML=head('Kunden','Auf einen Kunden klicken, um Daten anzusehen und zu bearbeiten.')+
+    '<div class="panel"><div class="panel-head"><h3>Kunden ('+customers.length+')</h3><button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button></div>'+
+    '<div class="panel-body" style="padding-top:8px"><table>'+
+      '<thead><tr><th>Name</th><th>Gebiet</th><th>Bedarf</th><th>Häufigkeit</th><th>Status</th></tr></thead><tbody>'+
+      customers.map(c=>'<tr class="clickable" onclick="editCustomer('+c.id+')"><td><b>'+fullName(c)+'</b></td><td>'+c.area+'</td><td>'+c.need.join(', ')+'</td><td>'+freqText(c)+'</td><td>'+(c.status==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag grey">'+c.status+'</span>')+'</td></tr>').join('')+
       '</tbody></table></div></div>';
   }
-  if(view==='newcustomer'){
-    c.innerHTML=head('Kunde anlegen','Neuen Kunden erfassen und als Auftrag freigeben. Er erscheint dann in der Auftragsbörse der Mitarbeiter.')+
-    '<div class="panel"><div class="panel-body content-form" style="padding-top:18px">'+
-      '<div class="form-row"><div><label>Vorname</label><input id="nc_first" placeholder="Vorname"></div>'+
-      '<div><label>Nachname</label><input id="nc_last" placeholder="Nachname"></div></div>'+
-      '<div class="form-row"><div><label>Gebiet / Stadtteil</label><input id="nc_area" placeholder="z. B. Hannover-Linden"></div>'+
-      '<div><label>Adresse</label><input id="nc_addr" placeholder="Straße, PLZ Ort"></div></div>'+
-      '<div class="form-row"><div><label>Telefon</label><input id="nc_phone" placeholder="Telefonnummer"></div>'+
-      '<div><label>Pflegegrad</label><select id="nc_pgrad"><option>Pflegegrad 1</option><option>Pflegegrad 2</option><option>Pflegegrad 3</option><option>Pflegegrad 4</option><option>Pflegegrad 5</option></select></div></div>'+
-      '<label>Benötigte Leistungen</label>'+
-      '<div class="checks" id="nc_skills">'+SKILLS.map(s=>'<span class="check" onclick="this.classList.toggle(\'on\')">'+s+'</span>').join('')+'</div>'+
-      '<div class="form-row"><div><label>Häufigkeit</label><input id="nc_freq" placeholder="z. B. 2× pro Woche"></div>'+
-      '<div><label>Zeitfenster</label><input id="nc_window" placeholder="z. B. Vormittags"></div></div>'+
-      '<label>Hinweise (Schlüssel, Haustier, Besonderes)</label>'+
-      '<textarea id="nc_notes" rows="2" placeholder="Interne Hinweise für den Einsatz"></textarea>'+
-      '<button class="btn-primary" style="width:auto;padding:12px 24px" onclick="createCustomer()">Anlegen & als Auftrag freigeben</button>'+
+
+  if(view==='newcustomer'){ c.innerHTML=head('Kunde anlegen','Neuen Kunden erfassen und als Auftrag freigeben.')+customerFormHTML(null); }
+
+  if(view==='mylogin'){
+    c.innerHTML=head('Meine Zugangsdaten','Deine eigenen Anmeldedaten verwalten.')+
+    '<div class="panel" style="max-width:520px"><div class="panel-body content-form" style="padding-top:18px">'+
+      '<label>Anzeigename</label><input id="ml_name" value="Daniel Dmytrov">'+
+      '<label>E-Mail / Benutzername</label><input id="ml_email" value="daniel@alltagshilfe.de">'+
+      '<label>Neues Passwort</label><input id="ml_pass" type="password" placeholder="Neues Passwort setzen">'+
+      '<label>Passwort wiederholen</label><input id="ml_pass2" type="password" placeholder="Wiederholen">'+
+      '<button class="btn-primary" style="width:auto;padding:11px 22px" onclick="toast(\'Zugangsdaten gespeichert\')">Speichern</button>'+
     '</div></div>';
   }
+
   if(view==='hours'){c.innerHTML=head('Stundenzettel','Erfasste Zeiten je Mitarbeiter.')+placeholder('⏱','Stundenzettel-Übersicht','Hier laufen die erfassten Einsatzzeiten zusammen und können geprüft und für die Lohnabrechnung exportiert werden.');}
   if(view==='payroll'){c.innerHTML=head('Lohnabrechnung','Abrechnungen je Mitarbeiter bereitstellen.')+placeholder('€','Lohnabrechnung','Monatliche Abrechnungen werden hier hinterlegt und den Mitarbeitern bereitgestellt. Export an AS Bremen vorgesehen.');}
   if(view==='notes'){c.innerHTML=head('Notizen','Bemerkungen zu Mitarbeitern und Kunden – mit Sichtbarkeitsstufe.')+placeholder('✎','Notizen & Bemerkungen','Interne Notizen (nur Büro) und für Mitarbeiter freigegebene Hinweise getrennt verwalten.');}
   if(view==='calendar'){c.innerHTML=head('Kalender','Alle Einsätze zentral – Anbindung an Google Kalender vorgesehen.')+placeholder('▦','Einsatzkalender','Zusammenführung aller Termine. Über die Google-API später Synchronisation und Routenplanung.');}
 }
 
+/* ---- Auftrags-Zusammenfassung (Modal) ---- */
+function showJobSummary(jobId){
+  const j=jobs.find(x=>x.id===jobId);const cu=custById(j.customerId);
+  document.getElementById('modalTitle').textContent=j.title;
+  document.getElementById('modalBody').innerHTML=
+    '<div class="summary" style="margin-bottom:16px"><div class="sh">Kurz-Zusammenfassung</div>'+
+      '<b>'+fullName(cu)+'</b> · '+cu.area+'<br>'+
+      'Bedarf: '+cu.need.join(', ')+' · '+freqText(cu)+' · '+cu.window+'<br>'+
+      'Pflegegrad '+cu.pgrad+' · Haustier: '+cu.pet+
+    '</div>'+
+    '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+cu.address+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Telefon</span><span class="v">'+cu.phone+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Kontakt</span><span class="v">'+cu.contact+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Status</span><span class="v">'+jobStatusTag(j)+(j.status==='assigned'?' '+staffName(j.assignedTo):'')+'</span></div>'+
+    '<div style="margin-top:12px"><div class="section-label" style="margin-top:8px">Wichtige Hinweise</div><p style="font-size:14px">'+cu.notes+'</p></div>';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button><button class="btn-primary" style="width:auto;padding:11px 20px" onclick="closeModal();editCustomer('+cu.id+')">Kunde bearbeiten</button>';
+  openModal();
+}
+/* ============ MITARBEITER: HINZUFÜGEN / BEARBEITEN ============ */
 let editingStaffId=null;
-function editStaff(id){
-  editingStaffId=id;const s=staff.find(x=>x.id===id);
-  document.getElementById('modalTitle').textContent='Mitarbeiter bearbeiten';
+function addStaff(){ openStaffModal(null); }
+function editStaff(id){ openStaffModal(id); }
+function openStaffModal(id){
+  editingStaffId=id;
+  const s=id!==null?staff.find(x=>x.id===id):{first:'',last:'',role:'Haushaltshilfe',status:'aktiv',skills:[],area:'',phone:'',email:'',maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',intern:{birth:'',address:'',taxId:'',taxClass:'I',kvNr:'',kasse:'',employment:'Minijob',citizenship:'Deutsch',iban:''}};
+  const it=s.intern||{};
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent=id!==null?'Mitarbeiter bearbeiten':'Mitarbeiter hinzufügen';
   document.getElementById('modalBody').innerHTML=
     '<div class="content-form">'+
+      '<div class="section-label" style="margin-top:0">Stammdaten</div>'+
       '<div class="form-row"><div><label>Vorname</label><input id="es_first" value="'+s.first+'"></div>'+
       '<div><label>Nachname</label><input id="es_last" value="'+s.last+'"></div></div>'+
-      '<label>Funktion</label><input id="es_role" value="'+s.role+'">'+
+      '<div class="form-row"><div><label>Funktion</label><input id="es_role" value="'+s.role+'"></div>'+
+      '<div><label>Geburtsdatum</label><input id="es_birth" value="'+(it.birth||'')+'" placeholder="TT.MM.JJJJ"></div></div>'+
+      '<label>Adresse</label><input id="es_address" value="'+(it.address||'')+'">'+
       '<div class="form-row"><div><label>Telefon</label><input id="es_phone" value="'+s.phone+'"></div>'+
-      '<div><label>Gebiet</label><input id="es_area" value="'+s.area+'"></div></div>'+
-      '<label>E-Mail</label><input id="es_email" value="'+s.email+'">'+
+      '<div><label>E-Mail</label><input id="es_email" value="'+s.email+'"></div></div>'+
       '<label>Fähigkeiten</label>'+
       '<div class="checks" id="es_skills">'+SKILLS.map(sk=>'<span class="check '+(s.skills.includes(sk)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+sk+'</span>').join('')+'</div>'+
       '<label>Status</label>'+
       '<div class="seg status" id="es_status">'+['aktiv','Urlaub','krank'].map(v=>'<button data-v="'+v+'" class="'+(s.status===v?'on':'')+'" onclick="segPick(this,\'es_status\')">'+v+'</button>').join('')+'</div>'+
+
+      '<div class="section-label">Interne Daten (nur Büro)</div>'+
+      '<div class="form-row-3"><div><label>Steuer-ID</label><input id="es_taxId" value="'+(it.taxId||'')+'"></div>'+
+      '<div><label>Steuerklasse</label><select id="es_taxClass">'+['I','II','III','IV','V','VI'].map(t=>'<option '+(it.taxClass===t?'selected':'')+'>'+t+'</option>').join('')+'</select></div>'+
+      '<div><label>Anstellungsart</label><select id="es_employment">'+['Minijob','Midijob','Teilzeit','Vollzeit','Rentner'].map(e=>'<option '+(it.employment===e?'selected':'')+'>'+e+'</option>').join('')+'</select></div></div>'+
+      '<div class="form-row"><div><label>KV-Nummer</label><input id="es_kvNr" value="'+(it.kvNr||'')+'"></div>'+
+      '<div><label>Krankenkasse</label><input id="es_kasse" value="'+(it.kasse||'')+'"></div></div>'+
+      '<div class="form-row"><div><label>Staatsbürgerschaft / Arbeitserlaubnis</label><input id="es_citizenship" value="'+(it.citizenship||'')+'"></div>'+
+      '<div><label>IBAN</label><input id="es_iban" value="'+(it.iban||'')+'"></div></div>'+
+
+      '<div class="section-label">Zugangsdaten</div>'+
+      (s.hasLogin
+        ? '<p style="font-size:13.5px;color:var(--good);margin-bottom:12px">✓ Login aktiv: <b>'+(s.login||s.email)+'</b></p><label>Passwort zurücksetzen</label><input id="es_pass" type="password" placeholder="Neues Passwort (optional)">'
+        : '<p style="font-size:13.5px;color:var(--muted);margin-bottom:12px">Noch kein Login. Hier erstellen und an den Mitarbeiter senden.</p><div class="form-row"><div><label>Login (E-Mail)</label><input id="es_login" value="'+s.email+'"></div><div><label>Startpasswort</label><input id="es_pass" type="text" placeholder="z. B. Start2026!"></div></div>')+
     '</div>';
-  document.getElementById('modalFoot').innerHTML=
-    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
-    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveStaff()">Änderungen speichern</button>';
+  let foot='<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>';
+  if(id!==null && !s.hasLogin) foot+='<button class="btn-primary" style="width:auto;padding:11px 18px;background:var(--blue)" onclick="createLogin('+id+')">🔑 Login erstellen & senden</button>';
+  foot+='<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveStaff()">Speichern</button>';
+  document.getElementById('modalFoot').innerHTML=foot;
   openModal();
 }
-function saveStaff(){
-  const s=staff.find(x=>x.id===editingStaffId);
+function gatherStaff(s){
   s.first=val('es_first')||s.first;s.last=val('es_last')||s.last;s.role=val('es_role')||s.role;
-  s.phone=val('es_phone');s.area=val('es_area');s.email=val('es_email');
+  s.phone=val('es_phone');s.email=val('es_email');
   s.skills=[...document.querySelectorAll('#es_skills .check.on')].map(e=>e.textContent);
   const st=document.querySelector('#es_status button.on');if(st)s.status=st.dataset.v;
-  closeModal();toast('Mitarbeiterdaten gespeichert');renderAdmin('staff');
+  s.intern=s.intern||{};
+  s.intern.birth=val('es_birth');s.intern.address=val('es_address');s.intern.taxId=val('es_taxId');
+  s.intern.taxClass=document.getElementById('es_taxClass').value;
+  s.intern.employment=document.getElementById('es_employment').value;
+  s.intern.kvNr=val('es_kvNr');s.intern.kasse=val('es_kasse');
+  s.intern.citizenship=val('es_citizenship');s.intern.iban=val('es_iban');
+}
+function saveStaff(){
+  if(editingStaffId!==null){
+    const s=staff.find(x=>x.id===editingStaffId);gatherStaff(s);
+    closeModal();toast('Mitarbeiterdaten gespeichert');
+  }else{
+    const s={id:nextStaffId++,maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',skills:[],intern:{}};
+    gatherStaff(s);
+    if(!s.first&&!s.last){toast('Bitte Namen eingeben',true);return;}
+    const login=val('es_login');const pass=val('es_pass');
+    if(login&&pass){s.hasLogin=true;s.login=login;}
+    staff.push(s);closeModal();toast('Mitarbeiter hinzugefügt');
+  }
+  document.getElementById('modalBox').classList.remove('wide');
+  renderAdmin('staff');
+}
+function createLogin(id){
+  const s=staff.find(x=>x.id===id);
+  const login=val('es_login')||s.email;const pass=val('es_pass');
+  if(!pass){toast('Bitte ein Startpasswort vergeben',true);return;}
+  s.hasLogin=true;s.login=login;
+  closeModal();document.getElementById('modalBox').classList.remove('wide');
+  toast('Login erstellt & an '+s.first+' versendet');
+  renderAdmin('staff');
 }
 
+/* ============ KUNDEN: FORM + BEARBEITEN ============ */
+function customerFormHTML(c){
+  const isNew=!c;
+  c=c||{first:'',last:'',area:'',address:'',phone:'',need:[],freqNum:1,freqUnit:'pro Woche',window:'',pet:'',pgrad:'1',contact:'',notes:'',intern:{kvNr:'',kasse:'',budget:'',budgetUsed:''}};
+  const it=c.intern||{};
+  return '<div class="panel"><div class="panel-body content-form" style="padding-top:18px">'+
+    '<div class="section-label" style="margin-top:0">Stammdaten</div>'+
+    '<div class="form-row"><div><label>Vorname</label><input id="nc_first" value="'+c.first+'"></div>'+
+    '<div><label>Nachname</label><input id="nc_last" value="'+c.last+'"></div></div>'+
+    '<div class="form-row"><div><label>Gebiet / Stadtteil</label><input id="nc_area" value="'+c.area+'" placeholder="z. B. Hannover-Linden"></div>'+
+    '<div><label>Adresse</label><input id="nc_addr" value="'+c.address+'" placeholder="Straße, PLZ Ort"></div></div>'+
+    '<div class="form-row"><div><label>Telefon</label><input id="nc_phone" value="'+c.phone+'"></div>'+
+    '<div><label>Pflegegrad</label><select id="nc_pgrad">'+['1','2','3','4','5'].map(p=>'<option '+(c.pgrad===p?'selected':'')+'>'+p+'</option>').join('')+'</select></div></div>'+
+    '<label>Benötigte Leistungen</label>'+
+    '<div class="checks" id="nc_skills">'+SKILLS.map(s=>'<span class="check '+(c.need.includes(s)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+s+'</span>').join('')+'</div>'+
+    '<label>Häufigkeit</label>'+
+    '<div class="input-with-select"><input id="nc_freqNum" type="number" min="1" value="'+c.freqNum+'" placeholder="Anzahl">'+
+      '<select id="nc_freqUnit">'+FREQ_UNITS.map(u=>'<option '+(c.freqUnit===u?'selected':'')+'>'+u+'</option>').join('')+'</select></div>'+
+    '<div style="height:14px"></div>'+
+    '<div class="form-row"><div><label>Zeitfenster</label><input id="nc_window" value="'+c.window+'" placeholder="z. B. Vormittags"></div>'+
+    '<div><label>Haustier</label><input id="nc_pet" value="'+c.pet+'" placeholder="z. B. Hund / keins"></div></div>'+
+    '<label>Kontakt (Angehörige)</label><input id="nc_contact" value="'+c.contact+'" placeholder="z. B. Tochter: ...">'+
+    '<label>Hinweise (Schlüssel, Besonderes)</label><textarea id="nc_notes" rows="2">'+c.notes+'</textarea>'+
+
+    '<div class="section-label">Interne Daten (nur Büro)</div>'+
+    '<div class="form-row"><div><label>KV-Nummer</label><input id="nc_kvNr" value="'+(it.kvNr||'')+'"></div>'+
+    '<div><label>Krankenkasse</label><input id="nc_kasse" value="'+(it.kasse||'')+'"></div></div>'+
+    '<div class="form-row"><div><label>Budget (§45a)</label><input id="nc_budget" value="'+(it.budget||'')+'" placeholder="z. B. §45a – 131 €/Monat"></div>'+
+    '<div><label>Davon genutzt</label><input id="nc_budgetUsed" value="'+(it.budgetUsed||'')+'" placeholder="z. B. 40 €"></div></div>'+
+
+    (isNew
+      ? '<button class="btn-primary" style="width:auto;padding:12px 24px" onclick="createCustomer()">Anlegen & als Auftrag freigeben</button>'
+      : '<button class="btn-primary" style="width:auto;padding:12px 24px" onclick="updateCustomer('+c.id+')">Änderungen speichern</button>')+
+  '</div></div>';
+}
+function gatherCustomer(c){
+  c.first=val('nc_first');c.last=val('nc_last');c.area=val('nc_area')||'—';c.address=val('nc_addr')||'—';
+  c.phone=val('nc_phone')||'—';c.pgrad=document.getElementById('nc_pgrad').value;
+  c.need=[...document.querySelectorAll('#nc_skills .check.on')].map(e=>e.textContent);
+  if(!c.need.length)c.need=['Haushaltshilfe'];
+  c.freqNum=parseInt(document.getElementById('nc_freqNum').value)||1;
+  c.freqUnit=document.getElementById('nc_freqUnit').value;
+  c.window=val('nc_window')||'flexibel';c.pet=val('nc_pet')||'—';
+  c.contact=val('nc_contact')||'—';c.notes=val('nc_notes')||'—';
+  c.intern=c.intern||{};
+  c.intern.kvNr=val('nc_kvNr');c.intern.kasse=val('nc_kasse');
+  c.intern.budget=val('nc_budget');c.intern.budgetUsed=val('nc_budgetUsed');
+}
+function createCustomer(){
+  const c={id:nextCustomerId++,status:'Interessent',intern:{}};
+  gatherCustomer(c);
+  if(!c.first&&!c.last){toast('Bitte mindestens einen Namen eingeben',true);return;}
+  customers.unshift(c);
+  jobs.unshift({id:nextJobId++,customerId:c.id,title:(c.need[0]||'Neuer Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]});
+  toast('Kunde angelegt & als Auftrag freigegeben');renderAdmin('jobs');
+}
+function editCustomer(id){
+  const c=custById(id);
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Kunde bearbeiten';
+  document.getElementById('modalBody').innerHTML=customerFormHTML(c).replace('<div class="panel"><div class="panel-body content-form" style="padding-top:18px">','<div class="content-form">').replace(/<\/div><\/div>$/,'</div>');
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  openModal();
+}
+function updateCustomer(id){
+  const c=custById(id);gatherCustomer(c);
+  closeModal();document.getElementById('modalBox').classList.remove('wide');
+  toast('Kundendaten gespeichert');renderAdmin('customers');
+}
+/* ============ BEWERBUNGS-GENEHMIGUNG (ADMIN) ============ */
+function showApplication(id){
+  const a=applications.find(x=>x.id===id);
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Bewerbung: '+fullName(a);
+  const docRow=(name)=>'<div class="reveal-row"><span class="k">'+name+'</span><span class="v">'+(a.docs[name]?'<span class="tag green">✓ signiert</span>':'<span class="tag red">offen</span>')+'</span></div>';
+  const fileRow=(label,ok)=>'<div class="reveal-row"><span class="k">'+label+'</span><span class="v">'+(ok?'<span class="tag green">✓ hochgeladen</span>':'<span class="tag red">fehlt</span>')+'</span></div>';
+  document.getElementById('modalBody').innerHTML=
+    statusStepper(a.status)+
+    '<div class="section-label" style="margin-top:18px">Persönliche Daten</div>'+
+    '<div class="reveal-row"><span class="k">Name</span><span class="v">'+fullName(a)+'</span></div>'+
+    '<div class="reveal-row"><span class="k">E-Mail</span><span class="v">'+a.email+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Telefon</span><span class="v">'+a.phone+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Gebiet</span><span class="v">'+a.area+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Staatsbürgerschaft</span><span class="v">'+a.citizenship+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Fähigkeiten</span><span class="v">'+a.skills.join(', ')+'</span></div>'+
+    '<div style="margin-top:10px;font-size:14px"><b>Motivation:</b> '+a.motivation+'</div>'+
+    '<div class="section-label">Signierte Verträge</div>'+docRow('Arbeitsvertrag')+docRow('Datenschutzvertrag')+docRow('NDA')+docRow('Haftungserklärung')+
+    '<div class="section-label">Identität & Bestätigungen</div>'+
+    fileRow('Personalausweis Vorderseite',a.idFront)+fileRow('Personalausweis Rückseite',a.idBack)+fileRow('Selfie',a.selfie)+
+    '<div class="reveal-row"><span class="k">AGB & Datenschutz gelesen</span><span class="v">'+(a.agb?'<span class="tag green">✓ bestätigt</span>':'<span class="tag red">offen</span>')+'</span></div>';
+  let foot='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  if(a.status==='neu') foot+='<button class="btn-primary" style="width:auto;padding:11px 18px" onclick="approveApp('+id+')">✓ Genehmigen</button>';
+  if(a.status==='geprüft') foot+='<button class="btn-primary" style="width:auto;padding:11px 18px;background:var(--blue)" onclick="sendAppLogin('+id+')">🔑 Zugangsdaten erstellen & senden</button>';
+  if(a.status==='versendet') foot+='<span style="font-size:13.5px;color:var(--good);align-self:center">✓ Mitarbeiter ist aktiv – kann sich anmelden</span>';
+  document.getElementById('modalFoot').innerHTML=foot;
+  openModal();
+}
+function statusStepper(status){
+  const steps=[['neu','Eingegangen'],['geprüft','Genehmigt'],['versendet','Zugang gesendet']];
+  const order=['neu','geprüft','versendet'];const cur=order.indexOf(status);
+  return '<div style="display:flex;gap:8px;align-items:center;background:var(--bg);border-radius:10px;padding:12px 14px">'+
+    steps.map(([k,label],i)=>{
+      const done=i<=cur;
+      return '<div style="flex:1;text-align:center"><div style="width:26px;height:26px;border-radius:50%;margin:0 auto 5px;display:grid;place-items:center;font-size:13px;font-weight:700;background:'+(done?'var(--good)':'#dde7e7')+';color:'+(done?'#fff':'var(--muted)')+'">'+(done?'✓':(i+1))+'</div><div style="font-size:11.5px;font-weight:600;color:'+(done?'var(--good)':'var(--muted)')+'">'+label+'</div></div>'+(i<2?'<div style="flex:0 0 22px;height:2px;background:'+(i<cur?'var(--good)':'#dde7e7')+'"></div>':'');
+    }).join('')+'</div>';
+}
+function approveApp(id){
+  const a=applications.find(x=>x.id===id);a.status='geprüft';
+  closeModal();document.getElementById('modalBox').classList.remove('wide');
+  toast('Bewerbung genehmigt – wartet auf Zugangsdaten');renderAdmin('applications');
+}
+function sendAppLogin(id){
+  const a=applications.find(x=>x.id===id);
+  a.status='versendet';
+  // Bewerber wird zum aktiven Mitarbeiter
+  staff.push({id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,intern:{birth:'',address:'',taxId:'',taxClass:'I',kvNr:'',kasse:'',employment:'Minijob',citizenship:a.citizenship,iban:''}});
+  closeModal();document.getElementById('modalBox').classList.remove('wide');
+  toast('Zugangsdaten an '+a.first+' gesendet – jetzt aktiver Mitarbeiter');renderAdmin('applications');
+}
+/* ============ MITARBEITER VIEWS ============ */
 function renderStaff(view){
   buildStaffNav(view);
   document.getElementById('sidebar').classList.remove('open');
@@ -416,9 +729,9 @@ function renderStaff(view){
       stat('Stunden (Monat)','38','von ~'+m.maxHours*4+' geplant')+
     '</div><div style="height:18px"></div>'+
     '<div class="panel"><div class="panel-head"><h3>Neue Aufträge für dich</h3>'+
-      '<button class="btn-ghost" onclick="renderStaff(\'board\')">Zur Börse</button></div>'+
+      '<button class="btn-ghost btn-sm" onclick="renderStaff(\'board\')">Zur Börse</button></div>'+
       '<div class="panel-body" style="padding-top:6px">'+
-      (open?availableForMe().slice(0,2).map(j=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #eef3f3"><div><b>'+j.title+'</b><div class="job-loc">'+j.area+' · '+j.freq+'</div></div><button class="btn-ghost" onclick="renderStaff(\'board\')">Ansehen</button></div>').join(''):'<p style="color:var(--muted);padding:10px 0">Aktuell keine neuen Aufträge.</p>')+
+      (open?availableForMe().slice(0,2).map(j=>{const cu=custById(j.customerId);return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #eef3f3"><div><b>'+j.title+'</b><div class="job-loc">'+cu.area+' · '+freqText(cu)+'</div></div><button class="btn-ghost btn-sm" onclick="renderStaff(\'board\')">Ansehen</button></div>';}).join(''):'<p style="color:var(--muted);padding:10px 0">Aktuell keine neuen Aufträge.</p>')+
       '</div></div>';
   }
   if(view==='board'){
@@ -428,7 +741,7 @@ function renderStaff(view){
       return;
     }
     const avail=availableForMe();
-    c.innerHTML=head('Auftragsbörse','Neue Kunden in deinem Gebiet. Vor der Annahme siehst du nur die Eckdaten – wer zuerst annimmt, bekommt den Auftrag.')+
+    c.innerHTML=head('Auftragsbörse','Neue Kunden in deinem Gebiet. Vor der Annahme siehst du eine Zusammenfassung – aber keinen Namen oder Adresse. Wer zuerst annimmt, bekommt den Auftrag.')+
     (avail.length?'<div class="cards grid-2" id="board">'+avail.map(jobCard).join('')+'</div>':emptyBoard());
   }
   if(view==='mine'){
@@ -485,29 +798,32 @@ function saveProfile(){
   renderStaff('profile');
 }
 
+/* ---- Job-Karten mit Zusammenfassung ---- */
 function jobCard(j){
+  const cu=custById(j.customerId);
   return '<div class="job" id="job-'+j.id+'">'+
-    '<div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+j.area+'</div></div><span class="tag green">verfügbar</span></div>'+
+    '<div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+'</div></div><span class="tag green">verfügbar</span></div>'+
     '<div class="job-tags">'+j.skills.map(s=>'<span class="tag grey">'+s+'</span>').join('')+'</div>'+
+    '<div class="summary"><div class="sh">Zusammenfassung</div>Gesucht: '+cu.need.join(', ')+', '+freqText(cu)+' ('+cu.window+'). '+'Pflegegrad '+cu.pgrad+'. '+(cu.notes&&cu.notes!=='—'?'Wichtig: '+cu.notes:'')+'</div>'+
     '<div class="job-meta">'+
-      '<div><div class="k">Häufigkeit</div><div class="v">'+j.freq+'</div></div>'+
-      '<div><div class="k">Zeitfenster</div><div class="v">'+j.window+'</div></div>'+
-      '<div><div class="k">Pflegegrad</div><div class="v">'+j.pgrad+'</div></div>'+
-      '<div><div class="k">Haustier</div><div class="v">'+j.pet+'</div></div>'+
+      '<div><div class="k">Häufigkeit</div><div class="v">'+freqText(cu)+'</div></div>'+
+      '<div><div class="k">Zeitfenster</div><div class="v">'+cu.window+'</div></div>'+
+      '<div><div class="k">Pflegegrad</div><div class="v">'+cu.pgrad+'</div></div>'+
+      '<div><div class="k">Haustier</div><div class="v">'+cu.pet+'</div></div>'+
     '</div>'+
     '<div class="locked">🔒 Name & Adresse werden erst nach Annahme angezeigt</div>'+
     '<div class="job-actions"><button class="btn-accept" onclick="acceptJob('+j.id+')">Auftrag annehmen</button>'+
     '<button class="btn-danger-ghost" onclick="rejectJob('+j.id+')">Ablehnen</button></div></div>';
 }
 function mineCard(j){
-  const c=j.customer;
-  return '<div class="job"><div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+j.area+'</div></div><span class="tag green">angenommen</span></div>'+
+  const cu=custById(j.customerId);
+  return '<div class="job"><div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+'</div></div><span class="tag green">angenommen</span></div>'+
     '<div class="reveal"><div class="rh">✓ Vollständige Kundendaten</div>'+
-      '<div class="reveal-row"><span class="k">Name</span><span class="v">'+c.name+'</span></div>'+
-      '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+c.address+'</span></div>'+
-      '<div class="reveal-row"><span class="k">Telefon</span><span class="v">'+c.phone+'</span></div>'+
-      '<div class="reveal-row"><span class="k">Kontakt</span><span class="v">'+c.contact+'</span></div>'+
-      '<div class="reveal-row"><span class="k">Hinweise</span><span class="v" style="max-width:60%">'+c.notes+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Name</span><span class="v">'+fullName(cu)+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+cu.address+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Telefon</span><span class="v">'+cu.phone+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Kontakt</span><span class="v">'+cu.contact+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Hinweise</span><span class="v" style="max-width:60%">'+cu.notes+'</span></div>'+
     '</div>'+
     '<div class="job-actions"><button class="btn-accept" onclick="toast(\'Termin-Dialog folgt im echten System\')">Termin vereinbaren</button>'+
     '<button class="btn-danger-ghost" onclick="releaseJob('+j.id+')">Zurückgeben</button></div></div>';
@@ -519,7 +835,7 @@ function acceptJob(id){
   if(j.status!=='available'){toast('Leider schon vergeben an '+staffName(j.assignedTo),true);renderStaff('board');return;}
   const el=document.getElementById('job-'+id);if(el)el.classList.add('fade');
   setTimeout(()=>{j.status='assigned';j.assignedTo=myId;
-    const cust=customers.find(c=>c.name===j.customer.name);if(cust)cust.status='aktiv';
+    const cu=custById(j.customerId);if(cu)cu.status='aktiv';
     toast('Auftrag angenommen – Kundendaten freigeschaltet');renderStaff('mine');},200);
 }
 function rejectJob(id){
@@ -533,22 +849,193 @@ function releaseJob(id){
   j.status='available';j.assignedTo=null;
   toast('Auftrag zurückgegeben – wieder in der Börse',true);renderStaff('mine');
 }
-function createCustomer(){
-  const first=val('nc_first'),last=val('nc_last'),area=val('nc_area')||'—';
-  if(!first&&!last){toast('Bitte mindestens einen Namen eingeben',true);return;}
-  const name=(first+' '+last).trim();
-  const skills=[...document.querySelectorAll('#nc_skills .check.on')].map(e=>e.textContent);
-  const newId=Math.max(...jobs.map(j=>j.id))+1;
-  jobs.unshift({id:newId,title:(skills[0]||'Neuer Einsatz')+' – '+name,area,skills:skills.length?skills:['Haushaltshilfe'],freq:val('nc_freq')||'nach Bedarf',window:val('nc_window')||'flexibel',pet:'—',pgrad:val('nc_pgrad')||'Pflegegrad 1',status:'available',assignedTo:null,rejectedBy:[],customer:{name,address:val('nc_addr')||'—',phone:val('nc_phone')||'—',contact:'—',notes:val('nc_notes')||'—'}});
-  customers.unshift({name,area,need:skills[0]||'Haushaltshilfe',status:'Interessent',pgrad:(val('nc_pgrad')||'1').replace('Pflegegrad ','')});
-  toast('Kunde angelegt & als Auftrag freigegeben');renderAdmin('jobs');
+/* ============ BEWERBUNGS-WIZARD (öffentlich) ============ */
+let wizStep=0;
+const WIZ_TOTAL=8;
+let wizData={skills:[],docs:{Arbeitsvertrag:false,Datenschutzvertrag:false,NDA:false,Haftungserklärung:false},idFront:false,idBack:false,selfie:false};
+
+const TEAM=[['👩','Bianca','Einsatzleiterin'],['👨','Daniel','Geschäftsführung'],['👩','Ivonne','Haushaltshilfe'],['👨','Sven','Geschäftsführung'],['👩','Natalie','Betreuung'],['👩','Silvana','Haushaltshilfe']];
+const DOC_TEXTS={
+  'Arbeitsvertrag':'Zwischen der Alltagshilfe Hannover und dem/der Mitarbeiter/in wird folgender Arbeitsvertrag geschlossen. Die Tätigkeit umfasst haushaltsnahe Dienstleistungen, Begleitung und Betreuung. Die Vergütung erfolgt nach Vereinbarung. (Demo-Text – im echten System steht hier der vollständige Vertrag.)',
+  'Datenschutzvertrag':'Vereinbarung zur Verarbeitung personenbezogener Daten gemäß DSGVO. Der/die Mitarbeiter/in verpflichtet sich, Kundendaten vertraulich zu behandeln und nur für den Einsatz zu verwenden. (Demo-Text.)',
+  'NDA':'Vertraulichkeitsvereinbarung: Alle im Rahmen der Tätigkeit bekannt gewordenen Informationen über Kunden und das Unternehmen sind streng vertraulich zu behandeln. (Demo-Text.)',
+  'Haftungserklärung':'Erklärung zur Haftung bei Schäden während des Einsatzes sowie zum sorgsamen Umgang mit überlassenen Materialien und Fahrzeugen. (Demo-Text.)'
+};
+
+function startWizard(){
+  wizStep=0;
+  wizData={skills:[],docs:{Arbeitsvertrag:false,Datenschutzvertrag:false,NDA:false,Haftungserklärung:false},idFront:false,idBack:false,selfie:false};
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('wizard').classList.add('active');
+  renderWizard();
+}
+function exitWizard(){
+  document.getElementById('wizard').classList.remove('active');
+  document.getElementById('loginScreen').style.display='grid';
+}
+function wizNext(){ if(wizStep<WIZ_TOTAL-1){wizStep++;renderWizard();window.scrollTo(0,0);} }
+function wizBack(){ if(wizStep>0){wizStep--;renderWizard();window.scrollTo(0,0);} }
+
+function renderWizard(){
+  document.getElementById('wizBar').style.width=((wizStep+1)/WIZ_TOTAL*100)+'%';
+  const w=document.getElementById('wizWrap');
+  const steps=[wizAbout,wizTasks,wizRequirements,wizDataForm,wizContracts,wizIdSelfie,wizAgb,wizDone];
+  w.innerHTML='<div class="wiz-step active">'+steps[wizStep]()+'</div>';
+  if(wizStep===4) setTimeout(initSignPads,30);
 }
 
+function wizAbout(){
+  return '<div class="wiz-num">Schritt 1 von 8</div>'+
+  '<div class="wiz-card"><h2>Willkommen bei der Alltagshilfe Hannover</h2>'+
+  '<p class="lead">Wir unterstützen Menschen im Alltag – mit Haushaltshilfe, Begleitung und Betreuung. Werde Teil unseres Teams!</p>'+
+  '<div class="team-grid">'+TEAM.map(([e,n,r])=>'<div class="team-member"><div class="team-photo">'+e+'</div><b>'+n+'</b><span>'+r+'</span></div>').join('')+'</div>'+
+  '<p style="font-size:13.5px;color:var(--muted)">Über 10 Jahre Erfahrung in Haushaltsnähe und Betreuung. Bei uns arbeitest du flexibel und sinnstiftend.</p>'+
+  '<div class="wiz-nav"><span></span><button class="btn-primary" onclick="wizNext()">Weiter →</button></div></div>';
+}
+function wizTasks(){
+  const tasks=[['🧹','Haushaltshilfe','Reinigung, Wäsche, Einkäufe und Ordnung im Haushalt'],['🚶','Begleitung','Zu Arztterminen, Behörden oder beim Spaziergang'],['💬','Betreuung','Gesellschaft leisten, vorlesen, gemeinsame Aktivitäten'],['🤝','Zuverlässigkeit','Pünktlich und verlässlich bei festen Terminen']];
+  return '<div class="wiz-num">Schritt 2 von 8</div>'+
+  '<div class="wiz-card"><h2>Was du im Job machst</h2>'+
+  '<p class="lead">Deine Aufgaben sind abwechslungsreich und richten sich nach den Bedürfnissen unserer Kunden.</p>'+
+  '<ul class="task-list">'+tasks.map(([ic,t,d])=>'<li><span class="ic">'+ic+'</span><div><b>'+t+'</b><div style="color:var(--muted);font-size:13px">'+d+'</div></div></li>').join('')+'</ul>'+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="wizNext()">Weiter →</button></div></div>';
+}
+function wizRequirements(){
+  const reqs=['Zuverlässigkeit und Pünktlichkeit','Freundlicher, einfühlsamer Umgang mit Menschen','Eigener Pkw von Vorteil (nicht zwingend)','Erweitertes Führungszeugnis (wird benötigt)','Bereitschaft zu flexiblen Einsatzzeiten'];
+  return '<div class="wiz-num">Schritt 3 von 8</div>'+
+  '<div class="wiz-card"><h2>Was du mitbringen musst</h2>'+
+  '<p class="lead">Damit es passt, solltest du folgende Voraussetzungen erfüllen:</p>'+
+  '<ul class="task-list">'+reqs.map(r=>'<li><span class="ic">✓</span><div style="padding-top:2px">'+r+'</div></li>').join('')+'</ul>'+
+  '<div class="confirm-box" onclick="document.getElementById(\'reqChk\').click()"><input type="checkbox" id="reqChk" onclick="event.stopPropagation();document.getElementById(\'reqNext\').disabled=!this.checked"><label>Ich bestätige, dass ich die Voraussetzungen erfülle und zum Profil passe.</label></div>'+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="reqNext" disabled onclick="wizNext()">Weiter →</button></div></div>';
+}
+function wizDataForm(){
+  return '<div class="wiz-num">Schritt 4 von 8</div>'+
+  '<div class="wiz-card"><h2>Deine Daten</h2>'+
+  '<p class="lead">Bitte fülle alle Felder aus, damit wir dich kontaktieren können.</p>'+
+  '<div class="wiz-form">'+
+    '<div class="form-row"><div><label>Vorname</label><input id="wz_first" value="'+(wizData.first||'')+'"></div>'+
+    '<div><label>Nachname</label><input id="wz_last" value="'+(wizData.last||'')+'"></div></div>'+
+    '<label>E-Mail</label><input id="wz_email" type="email" value="'+(wizData.email||'')+'">'+
+    '<label>Telefon</label><input id="wz_phone" value="'+(wizData.phone||'')+'">'+
+    '<label>Gebiet / Wohnort</label><input id="wz_area" value="'+(wizData.area||'')+'" placeholder="z. B. Hannover">'+
+    '<label>Staatsbürgerschaft / Arbeitserlaubnis</label>'+
+    '<select id="wz_citizen"><option value="">Bitte wählen …</option><option>Deutsche Staatsbürgerschaft</option><option>EU-Bürger/in</option><option>Aufenthalts-/Arbeitserlaubnis vorhanden</option></select>'+
+    '<label>Was kannst du übernehmen?</label>'+
+    '<div class="checks" id="wz_skills">'+SKILLS.map(s=>'<span class="check '+(wizData.skills.includes(s)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+s+'</span>').join('')+'</div>'+
+    '<label>Kurze Motivation (optional)</label><textarea id="wz_motiv" rows="3" placeholder="Warum möchtest du bei uns arbeiten?">'+(wizData.motivation||'')+'</textarea>'+
+  '</div>'+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="saveWizData()">Weiter →</button></div></div>';
+}
+function saveWizData(){
+  wizData.first=val('wz_first');wizData.last=val('wz_last');wizData.email=val('wz_email');
+  wizData.phone=val('wz_phone');wizData.area=val('wz_area');
+  wizData.citizenship=document.getElementById('wz_citizen').value;
+  wizData.skills=[...document.querySelectorAll('#wz_skills .check.on')].map(e=>e.textContent);
+  wizData.motivation=val('wz_motiv');
+  if(!wizData.first||!wizData.last||!wizData.email){toast('Bitte Name und E-Mail ausfüllen',true);return;}
+  if(!wizData.citizenship){toast('Bitte Staatsbürgerschaft/Arbeitserlaubnis wählen',true);return;}
+  wizNext();
+}
+function wizContracts(){
+  const docs=Object.keys(wizData.docs);
+  return '<div class="wiz-num">Schritt 5 von 8</div>'+
+  '<div class="wiz-card"><h2>Verträge lesen & unterschreiben</h2>'+
+  '<p class="lead">Bitte öffne jedes Dokument, lies es und unterschreibe mit deiner Unterschrift (wie auf dem Personalausweis).</p>'+
+  docs.map((d,i)=>'<div class="doc-item"><div class="doc-head" onclick="toggleDoc('+i+')"><div class="dt">📄 '+d+'</div><div class="doc-state" id="docstate-'+i+'">'+(wizData.docs[d]?'<span style="color:var(--good)">✓ signiert</span>':'öffnen')+'</div></div>'+
+    '<div class="doc-body" id="docbody-'+i+'"><div class="doc-text">'+DOC_TEXTS[d]+'</div>'+
+    '<label style="font-size:12px;font-weight:600;color:var(--muted)">Deine Unterschrift:</label>'+
+    '<div class="sign-pad" id="signpad-'+i+'" data-doc="'+d+'" data-idx="'+i+'"><canvas></canvas><div class="sign-hint" id="signhint-'+i+'">Hier unterschreiben</div></div>'+
+    '<div class="sign-actions"><button class="btn-ghost btn-sm" onclick="clearSign('+i+')">Löschen</button><button class="btn-primary btn-sm" style="width:auto" onclick="confirmSign('+i+',\''+d+'\')">Unterschrift bestätigen</button></div>'+
+    '</div></div>').join('')+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="checkContracts()">Weiter →</button></div></div>';
+}
+function toggleDoc(i){document.getElementById('docbody-'+i).classList.toggle('open');setTimeout(()=>initSignPads(),20);}
+function checkContracts(){
+  const allSigned=Object.values(wizData.docs).every(v=>v);
+  if(!allSigned){toast('Bitte alle Verträge öffnen und unterschreiben',true);return;}
+  wizNext();
+}
+
+/* ---- Unterschrift-Canvas ---- */
+function initSignPads(){
+  document.querySelectorAll('.sign-pad').forEach(pad=>{
+    const canvas=pad.querySelector('canvas');
+    if(canvas.dataset.init)return;canvas.dataset.init='1';
+    const idx=pad.dataset.idx;
+    const rect=pad.getBoundingClientRect();
+    canvas.width=rect.width;canvas.height=rect.height;
+    const ctx=canvas.getContext('2d');ctx.strokeStyle='#0a444a';ctx.lineWidth=2.2;ctx.lineCap='round';ctx.lineJoin='round';
+    let drawing=false,last=null;
+    const pos=(e)=>{const r=canvas.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};};
+    const start=(e)=>{drawing=true;last=pos(e);const h=document.getElementById('signhint-'+idx);if(h)h.style.display='none';e.preventDefault();};
+    const move=(e)=>{if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;canvas.dataset.drawn='1';e.preventDefault();};
+    const end=()=>{drawing=false;};
+    canvas.addEventListener('mousedown',start);canvas.addEventListener('mousemove',move);window.addEventListener('mouseup',end);
+    canvas.addEventListener('touchstart',start,{passive:false});canvas.addEventListener('touchmove',move,{passive:false});canvas.addEventListener('touchend',end);
+  });
+}
+function clearSign(i){
+  const pad=document.getElementById('signpad-'+i);const canvas=pad.querySelector('canvas');
+  const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);
+  canvas.dataset.drawn='';const h=document.getElementById('signhint-'+i);if(h)h.style.display='grid';
+}
+function confirmSign(i,doc){
+  const pad=document.getElementById('signpad-'+i);const canvas=pad.querySelector('canvas');
+  if(!canvas.dataset.drawn){toast('Bitte zuerst unterschreiben',true);return;}
+  wizData.docs[doc]=true;
+  document.getElementById('docstate-'+i).innerHTML='<span style="color:var(--good)">✓ signiert</span>';
+  document.getElementById('docbody-'+i).classList.remove('open');
+  toast(doc+' signiert');
+}
+function wizIdSelfie(){
+  return '<div class="wiz-num">Schritt 6 von 8</div>'+
+  '<div class="wiz-card"><h2>Ausweis & Selfie</h2>'+
+  '<p class="lead">Zur Identitätsprüfung benötigen wir Fotos deines Personalausweises und ein Selfie.</p>'+
+  '<div class="example-id"><div class="mini-id"></div><div><b>So sollte das Foto aussehen:</b><br>Alle Ecken sichtbar, scharf, gut beleuchtet, Sicherheitsmerkmale erkennbar.</div></div>'+
+  '<div class="upload-box '+(wizData.idFront?'done':'')+'" id="up-idFront" onclick="simUpload(\'idFront\')"><div class="ub-ic">'+(wizData.idFront?'✓':'🪪')+'</div><div class="ub-t">'+(wizData.idFront?'Vorderseite hochgeladen':'Personalausweis – Vorderseite')+'</div><div class="ub-s">Tippen zum Fotografieren / Hochladen</div></div>'+
+  '<div class="upload-box '+(wizData.idBack?'done':'')+'" id="up-idBack" onclick="simUpload(\'idBack\')"><div class="ub-ic">'+(wizData.idBack?'✓':'🪪')+'</div><div class="ub-t">'+(wizData.idBack?'Rückseite hochgeladen':'Personalausweis – Rückseite')+'</div><div class="ub-s">Tippen zum Fotografieren / Hochladen</div></div>'+
+  '<div class="upload-box '+(wizData.selfie?'done':'')+'" id="up-selfie" onclick="simUpload(\'selfie\')"><div class="ub-ic">'+(wizData.selfie?'✓':'🤳')+'</div><div class="ub-t">'+(wizData.selfie?'Selfie hochgeladen':'Selfie')+'</div><div class="ub-s">Tippen zum Aufnehmen</div></div>'+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="checkIds()">Weiter →</button></div></div>';
+}
+function simUpload(which){
+  wizData[which]=true;
+  const box=document.getElementById('up-'+which);box.classList.add('done');
+  box.querySelector('.ub-ic').textContent='✓';
+  const labels={idFront:'Vorderseite',idBack:'Rückseite',selfie:'Selfie'};
+  box.querySelector('.ub-t').textContent=labels[which]+' hochgeladen';
+  toast(labels[which]+' hochgeladen');
+}
+function checkIds(){
+  if(!wizData.idFront||!wizData.idBack||!wizData.selfie){toast('Bitte alle drei Fotos hochladen',true);return;}
+  wizNext();
+}
+function wizAgb(){
+  return '<div class="wiz-num">Schritt 7 von 8</div>'+
+  '<div class="wiz-card"><h2>AGB & Datenschutz</h2>'+
+  '<p class="lead">Zum Abschluss bestätige bitte, dass du unsere Bedingungen gelesen hast.</p>'+
+  '<div class="confirm-box" onclick="document.getElementById(\'agbChk\').click()"><input type="checkbox" id="agbChk" onclick="event.stopPropagation();checkAgb()"><label>Ich habe die <a href="#" onclick="event.preventDefault()">AGB</a> und die <a href="#" onclick="event.preventDefault()">Datenschutzerklärung</a> gelesen und akzeptiere sie.</label></div>'+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="agbNext" disabled onclick="submitApplication()">Bewerbung absenden</button></div></div>';
+}
+function checkAgb(){document.getElementById('agbNext').disabled=!document.getElementById('agbChk').checked;}
+function submitApplication(){
+  applications.unshift({id:nextAppId++,first:wizData.first,last:wizData.last,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true});
+  wizNext();
+}
+function wizDone(){
+  return '<div class="wiz-card wiz-done"><div class="big-ic">✓</div>'+
+  '<h2>Danke für das Einrichten!</h2>'+
+  '<p class="lead" style="max-width:38ch;margin:0 auto 20px">Ein Spezialist schaut sich dein Profil an und wird dich zeitnah freischalten. Du erhältst dann deine Zugangsdaten per E-Mail.</p>'+
+  '<button class="btn-primary" style="width:auto;padding:12px 28px" onclick="exitWizard()">Fertig</button></div>';
+}
+
+/* ============ MODAL / HELPERS ============ */
 function openModal(){document.getElementById('modalBg').classList.add('show');}
-function closeModal(){document.getElementById('modalBg').classList.remove('show');}
+function closeModal(){document.getElementById('modalBg').classList.remove('show');document.getElementById('modalBox').classList.remove('wide');}
 function segPick(btn,group){document.querySelectorAll('#'+group+' button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
 function head(t,s){return '<div class="page-head"><div><h1>'+t+'</h1><p>'+s+'</p></div></div>';}
 function stat(l,v,f){return '<div class="stat"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="foot">'+f+'</div></div>';}
+function statClick(l,v,f,fn){return '<div class="stat click" onclick="'+fn+'"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="foot">'+f+'</div></div>';}
 function placeholder(icon,t,s){return '<div class="panel"><div class="empty"><div class="big">'+icon+'</div><b>'+t+'</b><p style="margin-top:6px;max-width:46ch;margin-inline:auto">'+s+'</p></div></div>';}
 function jobStatusTag(j){return j.status==='available'?'<span class="tag amber">verfügbar</span>':'<span class="tag green">angenommen</span>';}
 function statusTag(s){return s==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag amber">'+s+'</span>';}
