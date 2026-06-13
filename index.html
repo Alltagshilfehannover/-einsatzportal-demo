@@ -177,7 +177,7 @@
   .doc-state.signed{color:var(--good)}
   .doc-body{display:none;padding:0 16px 16px;border-top:1px solid var(--line)}
   .doc-body.open{display:block}
-  .doc-text{font-size:12.5px;color:var(--muted);background:var(--bg);border-radius:8px;padding:12px;max-height:120px;overflow:auto;margin:12px 0}
+  .doc-text{font-size:12.5px;line-height:1.55;color:#3a4a4b;background:var(--bg);border-radius:8px;padding:14px 16px;max-height:260px;overflow:auto;margin:12px 0;white-space:pre-wrap}
   .sign-pad{border:1.5px dashed var(--petrol);border-radius:9px;background:#fcfdfd;height:120px;position:relative;cursor:crosshair;touch-action:none}
   .sign-pad canvas{width:100%;height:100%;display:block}
   .sign-hint{position:absolute;inset:0;display:grid;place-items:center;color:#aab8b8;font-size:13px;pointer-events:none}
@@ -318,6 +318,7 @@ let myId=0;
 let staff=[
   {id:0,first:'Ivonne',last:'Bengsch',role:'Haushaltshilfe',status:'aktiv',skills:['Haushaltshilfe','Begleitung'],area:'Hannover',phone:'0171 1112233',email:'ivonne@alltagshilfe.de',maxHours:30,days:['Mo','Di','Mi','Do','Fr'],window:'Vormittags',
     login:'ivonne@alltagshilfe.de',hasLogin:true,
+    contracts:[{name:'Arbeitsvertrag',signedDate:'2024-03-01',signature:null},{name:'Datenschutzvertrag',signedDate:'2024-03-01',signature:null},{name:'NDA',signedDate:'2024-03-01',signature:null},{name:'Haftungserklärung',signedDate:'2024-03-01',signature:null}],
     intern:{birth:'14.03.1985',address:'Lindener Marktplatz 2, 30449 Hannover',taxId:'12 345 678 901',taxClass:'I',kvNr:'A123456789',kasse:'AOK Niedersachsen',employment:'Midijob',citizenship:'Deutsch',iban:'DE12 3456 7890 1234 5678 90'}},
   {id:1,first:'Natalie',last:'Nagel',role:'Betreuungskraft',status:'aktiv',skills:['Betreuung','Begleitung'],area:'Garbsen',phone:'0171 4445566',email:'natalie@alltagshilfe.de',maxHours:25,days:['Mo','Mi','Fr'],window:'Nachmittags',
     login:'natalie@alltagshilfe.de',hasLogin:true,
@@ -452,6 +453,7 @@ function buildStaffNav(active){
     navItem('payroll','€','Lohnabrechnung',active==='payroll')+
     '<div class="nav-group">Konto</div>'+
     navItem('profile','☺','Mein Profil',active==='profile')+
+    navItem('contracts','📄','Meine Verträge',active==='contracts')+
     navItem('emergency','✆','Notfallnummer',active==='emergency');
 }
 /* ============ ADMIN VIEWS ============ */
@@ -776,8 +778,10 @@ function approveApp(id){
 function sendAppLogin(id){
   const a=applications.find(x=>x.id===id);
   a.status='versendet';
+  // Signierte Verträge für die Mitarbeiter-Akte aufbereiten
+  const signedDocs=Object.keys(a.docs||{}).filter(d=>a.docs[d]).map(d=>({name:d,signedDate:todayISO(),signature:(a.signatures&&a.signatures[d])||null}));
   // Bewerber wird zum aktiven Mitarbeiter
-  staff.push({id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,intern:{birth:'',address:'',taxId:'',taxClass:'I',kvNr:'',kasse:'',employment:'Minijob',citizenship:a.citizenship,iban:''}});
+  staff.push({id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,contracts:signedDocs,intern:{birth:'',address:'',taxId:'',taxClass:'I',kvNr:'',kasse:'',employment:'Minijob',citizenship:a.citizenship,iban:''}});
   closeModal();document.getElementById('modalBox').classList.remove('wide');
   toast('Zugangsdaten an '+a.first+' gesendet – jetzt aktiver Mitarbeiter');renderAdmin('applications');
 }
@@ -865,6 +869,19 @@ function renderStaff(view){
         '</div></div>'+
     '</div>';
   }
+  if(view==='contracts'){
+    const m=me();const list=m.contracts||[];
+    c.innerHTML=head('Meine Verträge','Deine unterschriebenen Verträge und Vereinbarungen. Jederzeit einsehbar.')+
+    (list.length?'<div class="cards">'+list.map((ct,i)=>
+      '<div class="panel"><div class="list-row" style="padding:16px 20px">'+
+        '<div class="li-main"><b>📄 '+ct.name+'</b><div class="li-sub">Unterschrieben am '+fmtDate(ct.signedDate)+' · <span style="color:var(--good)">✓ signiert</span></div></div>'+
+        '<div style="display:flex;gap:8px;align-items:center">'+
+          (ct.signature?'<img src="'+ct.signature+'" alt="Unterschrift" style="height:46px;border:1px solid var(--line);border-radius:7px;background:#fff">':'')+
+          '<button class="btn-ghost btn-sm" onclick="viewContract(\''+ct.name+'\')">Lesen</button>'+
+        '</div>'+
+      '</div></div>').join('')+'</div>'
+      :placeholder('📄','Noch keine Verträge hinterlegt','Sobald du den Bewerbungsprozess abgeschlossen hast, erscheinen deine unterschriebenen Verträge hier.'));
+  }
   if(view==='emergency'){
     c.innerHTML=head('Notfallnummer','Im Notfall sofort erreichbar.')+
     '<div class="panel"><div class="panel-body" style="padding:26px;text-align:center">'+
@@ -942,10 +959,10 @@ let wizData={skills:[],docs:{Arbeitsvertrag:false,Datenschutzvertrag:false,NDA:f
 
 const TEAM=[['👩','Bianca','Einsatzleiterin'],['👨','Daniel','Geschäftsführung'],['👩','Ivonne','Haushaltshilfe'],['👨','Sven','Geschäftsführung'],['👩','Natalie','Betreuung'],['👩','Silvana','Haushaltshilfe']];
 const DOC_TEXTS={
-  'Arbeitsvertrag':'Zwischen der Alltagshilfe Hannover und dem/der Mitarbeiter/in wird folgender Arbeitsvertrag geschlossen. Die Tätigkeit umfasst haushaltsnahe Dienstleistungen, Begleitung und Betreuung. Die Vergütung erfolgt nach Vereinbarung. (Demo-Text – im echten System steht hier der vollständige Vertrag.)',
-  'Datenschutzvertrag':'Vereinbarung zur Verarbeitung personenbezogener Daten gemäß DSGVO. Der/die Mitarbeiter/in verpflichtet sich, Kundendaten vertraulich zu behandeln und nur für den Einsatz zu verwenden. (Demo-Text.)',
-  'NDA':'Vertraulichkeitsvereinbarung: Alle im Rahmen der Tätigkeit bekannt gewordenen Informationen über Kunden und das Unternehmen sind streng vertraulich zu behandeln. (Demo-Text.)',
-  'Haftungserklärung':'Erklärung zur Haftung bei Schäden während des Einsatzes sowie zum sorgsamen Umgang mit überlassenen Materialien und Fahrzeugen. (Demo-Text.)'
+  'Arbeitsvertrag':'ARBEITSVERTRAG\n\nzwischen der Alltagshilfe Hannover (Arbeitgeber)\nund [Name und Anschrift Arbeitnehmer]\nwird folgender Arbeitsvertrag geschlossen:\n\n§ 1 Beginn des Arbeitsverhältnisses\nDas Arbeitsverhältnis beginnt am [Datum] und wird auf unbestimmte Zeit geschlossen.\n\n§ 2 Tätigkeit\nDer Arbeitnehmer wird als [Tätigkeitsbezeichnung] beschäftigt. Der Arbeitgeber kann dem Arbeitnehmer andere gleichwertige Aufgaben zuweisen, soweit dies zumutbar ist.\n\n§ 3 Arbeitszeit\nDie regelmäßige Arbeitszeit beträgt [z. B. 40 Stunden] pro Woche.\n\n§ 4 Vergütung\nDer Arbeitnehmer erhält eine Bruttovergütung von [Betrag] € monatlich, zahlbar zum Monatsende auf das vom Arbeitnehmer benannte Konto.\n\n§ 5 Urlaub\nDer Arbeitnehmer erhält [Anzahl] Arbeitstage Urlaub pro Kalenderjahr. Mindestens der gesetzliche Urlaubsanspruch bleibt unberührt.\n\n§ 6 Arbeitsunfähigkeit\nDer Arbeitnehmer hat jede Arbeitsunfähigkeit unverzüglich mitzuteilen. Die gesetzlichen Nachweis- und Meldepflichten gelten.\n\n§ 7 Kündigung\nDas Arbeitsverhältnis kann von beiden Parteien unter Einhaltung der gesetzlichen Kündigungsfristen gekündigt werden.\n\n§ 8 Nebenabreden\nNebenabreden bestehen nicht. Änderungen und Ergänzungen dieses Vertrages bedürfen der Schriftform, soweit gesetzlich zulässig.\n\n§ 9 Schlussbestimmungen\nSollte eine Bestimmung dieses Vertrages unwirksam sein oder werden, bleibt die Wirksamkeit der übrigen Bestimmungen unberührt.\n\nOrt, Datum\nArbeitgeber\nArbeitnehmer',
+  'Datenschutzvertrag':'DATENSCHUTZ- UND VERTRAULICHKEITSVEREINBARUNG\n\nzwischen der Alltagshilfe Hannover\nund [Mitarbeiter / Auftragnehmer]\n\n§ 1 Gegenstand\nDer Vertragspartner verpflichtet sich, personenbezogene Daten ausschließlich im Rahmen der ihm übertragenen Aufgaben zu verarbeiten und die Vorschriften der Datenschutz-Grundverordnung (DSGVO) sowie des Bundesdatenschutzgesetzes (BDSG) einzuhalten.\n\n§ 2 Vertraulichkeit\nDer Vertragspartner verpflichtet sich, alle ihm bekannt werdenden Geschäfts-, Betriebs- und personenbezogenen Daten vertraulich zu behandeln und nicht an Dritte weiterzugeben.\n\n§ 3 Datensicherheit\nDer Vertragspartner verpflichtet sich, geeignete technische und organisatorische Maßnahmen zum Schutz personenbezogener Daten zu treffen und diese vor unbefugtem Zugriff zu schützen.\n\n§ 4 Nutzung personenbezogener Daten\nPersonenbezogene Daten dürfen nur für die vereinbarten Zwecke verarbeitet werden. Eine anderweitige Nutzung ist untersagt.\n\n§ 5 Meldepflicht\nDatenschutzverletzungen oder Verdachtsfälle sind dem Unternehmen unverzüglich mitzuteilen.\n\n§ 6 Rückgabe und Löschung\nNach Beendigung der Tätigkeit sind sämtliche Datenträger, Unterlagen und personenbezogenen Daten unverzüglich zurückzugeben oder nach Weisung zu löschen, soweit keine gesetzlichen Aufbewahrungspflichten bestehen.\n\n§ 7 Vertragsstrafe\nBei vorsätzlichen oder grob fahrlässigen Verstößen gegen diese Vereinbarung können Schadensersatzansprüche nach den gesetzlichen Vorschriften geltend gemacht werden.\n\n§ 8 Dauer der Verpflichtung\nDie Verpflichtung zur Vertraulichkeit besteht auch nach Beendigung der Zusammenarbeit fort.\n\n§ 9 Schlussbestimmungen\nSollten einzelne Bestimmungen dieses Vertrages unwirksam sein, bleibt die Wirksamkeit der übrigen Bestimmungen unberührt.\n\nOrt, Datum\nUnternehmen\nMitarbeiter / Auftragnehmer',
+  'NDA':'GEHEIMHALTUNGSVEREINBARUNG (NDA)\n\nzwischen der Alltagshilfe Hannover\nund [Mitarbeiter]\n\n§ 1 Vertrauliche Informationen\nAls vertrauliche Informationen gelten sämtliche nicht öffentlich bekannten Informationen des Unternehmens, insbesondere:\n• Kunden- und Lieferantendaten\n• Preis- und Kalkulationsdaten\n• Geschäftsstrategien\n• Betriebsabläufe\n• Rezepturen, Verfahren und Know-how\n• Marketing- und Vertriebsinformationen\n• Personalinformationen\n• technische Unterlagen, Dokumentationen und Datenbanken\nunabhängig davon, ob diese schriftlich, mündlich, elektronisch oder in sonstiger Form übermittelt werden.\n\n§ 2 Geheimhaltungspflicht\nDer Mitarbeiter verpflichtet sich:\n• alle vertraulichen Informationen streng vertraulich zu behandeln,\n• diese ausschließlich zur Erfüllung seiner beruflichen Aufgaben zu verwenden,\n• sie nicht ohne vorherige schriftliche Zustimmung des Unternehmens an Dritte weiterzugeben,\n• sie vor unbefugtem Zugriff zu schützen.\n\n§ 3 Datenträger und Unterlagen\nSämtliche Unterlagen, Dateien, Datenträger, Notizen, Kopien und Arbeitsmaterialien bleiben Eigentum des Unternehmens.\n\n§ 4 Rückgabe bei Beendigung\nSpätestens mit Beendigung des Arbeitsverhältnisses sind alle Unterlagen, Datenträger, Zugangsdaten, Schlüssel und sonstigen Unternehmenswerte unverzüglich zurückzugeben. Elektronische Kopien sind zu löschen, soweit keine gesetzliche Aufbewahrungspflicht besteht.\n\n§ 5 Ausnahmen\nDie Geheimhaltungspflicht gilt nicht für Informationen, die öffentlich bekannt sind oder werden, dem Mitarbeiter bereits rechtmäßig bekannt waren oder aufgrund gesetzlicher Vorschriften offengelegt werden müssen.\n\n§ 6 Vertragsstrafe\nFür jeden schuldhaften Verstoß gegen diese Vereinbarung kann das Unternehmen eine angemessene Vertragsstrafe geltend machen. Weitergehende Schadensersatzansprüche bleiben unberührt.\n\n§ 7 Dauer\nDie Geheimhaltungspflicht gilt während der gesamten Dauer des Arbeitsverhältnisses und für einen Zeitraum von 5 Jahren nach dessen Beendigung, soweit gesetzlich zulässig.\n\n§ 8 Schlussbestimmungen\nSollten einzelne Bestimmungen dieser Vereinbarung unwirksam sein oder werden, bleibt die Wirksamkeit der übrigen Bestimmungen unberührt.\n\nOrt, Datum\nUnternehmen\nMitarbeiter',
+  'Haftungserklärung':'HAFTUNGS- UND SORGFALTSERKLÄRUNG\n\nzwischen der Alltagshilfe Hannover (Arbeitgeber)\nund [Mitarbeiter]\n\n§ 1 Sorgfaltspflicht\nDer Mitarbeiter verpflichtet sich, die ihm übertragenen Aufgaben sorgfältig, gewissenhaft und entsprechend den betrieblichen Anweisungen auszuführen.\n\n§ 2 Schutz von Betriebseigentum\nDer Mitarbeiter verpflichtet sich, Betriebsmittel, Fahrzeuge, Werkzeuge, Maschinen, IT-Systeme, Dokumente und sonstige Vermögenswerte des Arbeitgebers pfleglich zu behandeln und vor Schäden zu schützen.\n\n§ 3 Meldepflicht\nDer Mitarbeiter hat Schäden, Verlust, Diebstahl, Fehlfunktionen oder sonstige sicherheitsrelevante Vorfälle unverzüglich dem Arbeitgeber zu melden.\n\n§ 4 Haftung\nDer Mitarbeiter haftet für Schäden, die er vorsätzlich oder grob fahrlässig verursacht, nach den gesetzlichen Vorschriften. Bei Schäden, die durch einfache oder mittlere Fahrlässigkeit entstehen, richtet sich die Haftung nach den gesetzlichen Grundsätzen der Arbeitnehmerhaftung und der hierzu ergangenen Rechtsprechung.\n\n§ 5 Strafbare Handlungen\nBei Diebstahl, Unterschlagung, Betrug, Sachbeschädigung oder sonstigen vorsätzlichen Pflichtverletzungen haftet der Mitarbeiter nach den gesetzlichen Vorschriften für den entstandenen Schaden.\n\n§ 6 Schlussbestimmungen\nDiese Vereinbarung ergänzt den bestehenden Arbeitsvertrag. Gesetzliche Arbeitnehmerrechte bleiben unberührt.\n\nOrt, Datum\nArbeitgeber\nMitarbeiter'
 };
 
 function startWizard(){
@@ -1036,7 +1053,7 @@ function wizContracts(){
     '</div></div>').join('')+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="checkContracts()">Weiter →</button></div></div>';
 }
-function toggleDoc(i){document.getElementById('docbody-'+i).classList.toggle('open');setTimeout(()=>initSignPads(),20);}
+function toggleDoc(i){document.getElementById('docbody-'+i).classList.toggle('open');setTimeout(initSignPads,60);}
 function checkContracts(){
   const allSigned=Object.values(wizData.docs).every(v=>v);
   if(!allSigned){toast('Bitte alle Verträge öffnen und unterschreiben',true);return;}
@@ -1047,18 +1064,32 @@ function checkContracts(){
 function initSignPads(){
   document.querySelectorAll('.sign-pad').forEach(pad=>{
     const canvas=pad.querySelector('canvas');
-    if(canvas.dataset.init)return;canvas.dataset.init='1';
+    if(canvas.dataset.init)return;
+    // Canvas-interne Auflösung exakt an die angezeigte Canvas-Größe koppeln
+    const rect=canvas.getBoundingClientRect();
+    if(rect.width===0||rect.height===0)return; // noch nicht sichtbar – später erneut
+    canvas.dataset.init='1';
     const idx=pad.dataset.idx;
-    const rect=pad.getBoundingClientRect();
     canvas.width=rect.width;canvas.height=rect.height;
-    const ctx=canvas.getContext('2d');ctx.strokeStyle='#0a444a';ctx.lineWidth=2.2;ctx.lineCap='round';ctx.lineJoin='round';
+    const ctx=canvas.getContext('2d');
+    ctx.strokeStyle='#0a444a';ctx.lineWidth=2.4;ctx.lineCap='round';ctx.lineJoin='round';
     let drawing=false,last=null;
-    const pos=(e)=>{const r=canvas.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};};
+    const pos=(e)=>{
+      const r=canvas.getBoundingClientRect();
+      const t=e.touches&&e.touches[0]?e.touches[0]:e;
+      // Skalierung berücksichtigen, falls CSS-Größe ≠ interne Größe
+      const sx=canvas.width/r.width, sy=canvas.height/r.height;
+      return {x:(t.clientX-r.left)*sx, y:(t.clientY-r.top)*sy};
+    };
     const start=(e)=>{drawing=true;last=pos(e);const h=document.getElementById('signhint-'+idx);if(h)h.style.display='none';e.preventDefault();};
     const move=(e)=>{if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;canvas.dataset.drawn='1';e.preventDefault();};
-    const end=()=>{drawing=false;};
-    canvas.addEventListener('mousedown',start);canvas.addEventListener('mousemove',move);window.addEventListener('mouseup',end);
-    canvas.addEventListener('touchstart',start,{passive:false});canvas.addEventListener('touchmove',move,{passive:false});canvas.addEventListener('touchend',end);
+    const end=()=>{drawing=false;last=null;};
+    canvas.addEventListener('mousedown',start);
+    canvas.addEventListener('mousemove',move);
+    window.addEventListener('mouseup',end);
+    canvas.addEventListener('touchstart',start,{passive:false});
+    canvas.addEventListener('touchmove',move,{passive:false});
+    canvas.addEventListener('touchend',end);
   });
 }
 function clearSign(i){
@@ -1070,6 +1101,9 @@ function confirmSign(i,doc){
   const pad=document.getElementById('signpad-'+i);const canvas=pad.querySelector('canvas');
   if(!canvas.dataset.drawn){toast('Bitte zuerst unterschreiben',true);return;}
   wizData.docs[doc]=true;
+  // Unterschriftsbild als Daten-URL sichern (für Speicherung beim Mitarbeiter)
+  wizData.signatures=wizData.signatures||{};
+  try{ wizData.signatures[doc]=canvas.toDataURL('image/png'); }catch(e){}
   document.getElementById('docstate-'+i).innerHTML='<span style="color:var(--good)">✓ signiert</span>';
   document.getElementById('docbody-'+i).classList.remove('open');
   toast(doc+' signiert');
@@ -1105,7 +1139,7 @@ function wizAgb(){
 }
 function checkAgb(){document.getElementById('agbNext').disabled=!document.getElementById('agbChk').checked;}
 function submitApplication(){
-  applications.unshift({id:nextAppId++,first:wizData.first,last:wizData.last,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true});
+  applications.unshift({id:nextAppId++,first:wizData.first,last:wizData.last,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true});
   wizNext();
 }
 function wizDone(){
@@ -1248,6 +1282,13 @@ function fmtDateLong(iso){if(!iso)return '';const[y,m,d]=iso.split('-');const da
 
 /* ============ MODAL / HELPERS ============ */
 function openModal(){document.getElementById('modalBg').classList.add('show');}
+function viewContract(name){
+  const txt=(typeof DOC_TEXTS!=='undefined'&&DOC_TEXTS[name])?DOC_TEXTS[name]:name;
+  document.getElementById('modalTitle').textContent=name;
+  document.getElementById('modalBody').innerHTML='<div class="doc-text" style="max-height:60vh;white-space:pre-wrap">'+txt+'</div>';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  openModal();
+}
 function closeModal(){document.getElementById('modalBg').classList.remove('show');document.getElementById('modalBox').classList.remove('wide');}
 function segPick(btn,group){document.querySelectorAll('#'+group+' button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
 function head(t,s){return '<div class="page-head"><div><h1>'+t+'</h1><p>'+s+'</p></div></div>';}
