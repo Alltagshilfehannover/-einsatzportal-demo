@@ -317,13 +317,16 @@ let myId=0;
 /* Mitarbeiter: jetzt mit internen Verwaltungsfeldern + Zugangsdaten */
 let staff=[
   {id:0,first:'Ivonne',last:'Bengsch',role:'Haushaltshilfe',status:'aktiv',skills:['Haushaltshilfe','Begleitung'],area:'Hannover',phone:'0171 1112233',email:'ivonne@alltagshilfe.de',maxHours:30,days:['Mo','Di','Mi','Do','Fr'],window:'Vormittags',
+    wage:14.50,bonus:{earned:50,pending:50,reason:'Führungszeugnis + Erste-Hilfe nachgereicht'},daysWorked:18,color:'#0f5b63',
     login:'ivonne@alltagshilfe.de',hasLogin:true,
     contracts:[{name:'Arbeitsvertrag',signedDate:'2024-03-01',signature:null},{name:'Datenschutzvertrag',signedDate:'2024-03-01',signature:null},{name:'NDA',signedDate:'2024-03-01',signature:null},{name:'Haftungserklärung',signedDate:'2024-03-01',signature:null}],
     intern:{birth:'14.03.1985',address:'Lindener Marktplatz 2, 30449 Hannover',taxId:'12 345 678 901',taxClass:'I',kvNr:'A123456789',kasse:'AOK Niedersachsen',employment:'Midijob',citizenship:'Deutsch',iban:'DE12 3456 7890 1234 5678 90'}},
   {id:1,first:'Natalie',last:'Nagel',role:'Betreuungskraft',status:'aktiv',skills:['Betreuung','Begleitung'],area:'Garbsen',phone:'0171 4445566',email:'natalie@alltagshilfe.de',maxHours:25,days:['Mo','Mi','Fr'],window:'Nachmittags',
+    wage:15.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:55,color:'#e08a2b',
     login:'natalie@alltagshilfe.de',hasLogin:true,
     intern:{birth:'22.07.1990',address:'Planetenring 12, 30823 Garbsen',taxId:'98 765 432 109',taxClass:'IV',kvNr:'B987654321',kasse:'TK',employment:'Minijob',citizenship:'Deutsch',iban:'DE98 7654 3210 9876 5432 10'}},
   {id:2,first:'Silvana',last:'Flasbart',role:'Haushaltshilfe',status:'Urlaub',skills:['Haushaltshilfe'],area:'Wunstorf',phone:'0171 7778899',email:'silvana@alltagshilfe.de',maxHours:20,days:['Di','Do'],window:'Flexibel',
+    wage:14.00,bonus:{earned:100,pending:0,reason:'Alle Nachweise vollständig'},daysWorked:64,color:'#2c6e9b',
     login:'silvana@alltagshilfe.de',hasLogin:true,
     intern:{birth:'03.11.1978',address:'Bahnhofstraße 5, 31515 Wunstorf',taxId:'45 678 901 234',taxClass:'III',kvNr:'C456789012',kasse:'Barmer',employment:'Teilzeit',citizenship:'Deutsch',iban:'DE45 6789 0123 4567 8901 23'}},
 ];
@@ -359,6 +362,8 @@ let appointments=[
 ];
 let timesheets=[
   {id:1,staffId:0,customerId:0,date:'2026-06-09',start:'09:00',end:'11:00',task:'Haushaltshilfe & Einkauf',status:'offen',proof:false},
+  {id:90,staffId:0,customerId:0,date:'2026-06-02',start:'09:00',end:'12:00',task:'Haushaltshilfe & Einkauf',status:'freigegeben',proof:true},
+  {id:91,staffId:0,customerId:2,date:'2026-06-04',start:'14:00',end:'17:30',task:'Betreuung & Gesellschaft',status:'freigegeben',proof:true},
 ];
 let notes=[
   {id:1,type:'staff',refId:0,text:'Sehr zuverlässig, kommt immer pünktlich.',visibility:'intern',date:'2026-06-01'},
@@ -368,7 +373,7 @@ let proofs=[];
 let payrolls=[
   {id:1,staffId:0,month:'Mai 2026',hours:42,gross:'546,00 €',status:'bereit'},
 ];
-let nextApptId=3, nextTsId=2, nextNoteId=3, nextProofId=1, nextPayrollId=2;
+let nextApptId=3, nextTsId=92, nextNoteId=3, nextProofId=1, nextPayrollId=2;
 
 function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fmtDate(iso){if(!iso)return '';const p=iso.split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:iso;}
@@ -793,12 +798,45 @@ function renderStaff(view){
   if(view==='dashboard'){
     const open=availableForMe().length;
     const mineCount=jobs.filter(j=>j.status==='assigned'&&j.assignedTo===myId).length;
-    c.innerHTML=head('Hallo '+m.first+' 👋','Dein Überblick für heute.')+
+    // bestätigte Minuten = freigegebene Stundenzettel des Mitarbeiters
+    const confirmedMin=timesheets.filter(t=>t.staffId===myId&&t.status==='freigegeben').reduce((s,t)=>s+tsMinutes(t),0);
+    const plannedMin=timesheets.filter(t=>t.staffId===myId).reduce((s,t)=>s+tsMinutes(t),0);
+    const confirmedH=confirmedMin/60, plannedH=plannedMin/60;
+    const wage=m.wage||14;
+    const earned=(confirmedH*wage);
+    const bonus=m.bonus||{earned:0,pending:0,reason:''};
+    const daysLeft=Math.max(0,70-(m.daysWorked||0));
+    const dayPct=Math.min(100,Math.round((m.daysWorked||0)/70*100));
+    const dayColor=daysLeft<=10?'var(--danger)':(daysLeft<=25?'var(--amber)':'var(--good)');
+    c.innerHTML=head('Hallo '+m.first+' 👋','Dein Überblick für diesen Monat.')+
     (m.status!=='aktiv'?statusBanner(m.status):'')+
+    '<div class="cards grid-3">'+
+      stat('Bestätigte Stunden',confirmedH.toFixed(1).replace('.',',')+' h','tatsächlich abgerechnet')+
+      stat('Voraussichtliche Stunden',plannedH.toFixed(1).replace('.',',')+' h','inkl. noch offener Einträge')+
+      stat('Verdienst (Monat)',earned.toFixed(2).replace('.',',')+' €','bei '+wage.toFixed(2).replace('.',',')+' €/h')+
+    '</div><div style="height:16px"></div>'+
+    '<div class="cards grid-2">'+
+      // Bonus-Karte
+      '<div class="panel"><div class="panel-body" style="padding:18px 20px">'+
+        '<div class="stat-row" style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="label" style="font-size:13px;color:var(--muted);font-weight:600">Bonus</div>'+
+        '<div class="value" style="font-size:28px;font-weight:700;color:var(--good);margin-top:4px">'+(bonus.earned).toFixed(0)+' €</div>'+
+        '<div class="foot" style="font-size:12.5px;color:var(--muted);margin-top:2px">erhalten</div></div>'+
+        '<div style="text-align:right"><div class="value" style="font-size:22px;font-weight:700;color:'+(bonus.pending>0?'var(--amber)':'var(--muted)')+'">'+(bonus.pending).toFixed(0)+' €</div>'+
+        '<div class="foot" style="font-size:12.5px;color:var(--muted)">ausstehend</div></div></div>'+
+        (bonus.reason?'<div style="margin-top:10px;font-size:12.5px;color:var(--muted);border-top:1px solid #eef3f3;padding-top:10px">'+bonus.reason+'</div>':'')+
+      '</div></div>'+
+      // 70-Tage-Karte
+      '<div class="panel"><div class="panel-body" style="padding:18px 20px">'+
+        '<div class="label" style="font-size:13px;color:var(--muted);font-weight:600">70-Tage-Richtlinie (kurzfristige Beschäftigung)</div>'+
+        '<div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><div class="value" style="font-size:28px;font-weight:700;color:'+dayColor+'">'+daysLeft+'</div><div style="font-size:13px;color:var(--muted)">Tage noch möglich</div></div>'+
+        '<div style="height:9px;background:#eef3f3;border-radius:6px;margin-top:10px;overflow:hidden"><div style="height:100%;width:'+dayPct+'%;background:'+dayColor+';border-radius:6px"></div></div>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-top:6px">'+(m.daysWorked||0)+' von 70 Tagen genutzt</div>'+
+      '</div></div>'+
+    '</div><div style="height:16px"></div>'+
     '<div class="cards grid-3">'+
       stat('Verfügbare Aufträge',open,'in deinem Gebiet')+
       stat('Meine Kunden',mineCount,'aktiv angenommen')+
-      stat('Stunden (Monat)','38','von ~'+m.maxHours*4+' geplant')+
+      stat('Wunsch-Stunden',(m.maxHours||0)+' h','pro Woche')+
     '</div><div style="height:18px"></div>'+
     '<div class="panel"><div class="panel-head"><h3>Neue Aufträge für dich</h3>'+
       '<button class="btn-ghost btn-sm" onclick="renderStaff(\'board\')">Zur Börse</button></div>'+
