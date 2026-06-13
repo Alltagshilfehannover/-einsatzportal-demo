@@ -470,13 +470,40 @@ function renderAdmin(view){
   const newApps=applications.filter(a=>a.status!=='aktiv').length;
 
   if(view==='dashboard'){
-    const rejTotal=jobs.reduce((n,j)=>n+j.rejectedBy.length,0);
-    c.innerHTML=head('Dashboard','Überblick über Aufträge, Team und offene Punkte.')+
+    // Kennzahlen berechnen
+    const openTs=timesheets.filter(t=>t.status==='offen').length;
+    const plannedAppts=appointments.length;
+    // Umsatz = bestätigte Stunden * Kundensatz (Demo: 28 €/h)
+    const confirmedMin=timesheets.filter(t=>t.status==='freigegeben').reduce((s,t)=>s+tsMinutes(t),0);
+    const revenue=(confirmedMin/60*28);
+    const bonusDue=staff.reduce((s,m)=>s+((m.bonus&&m.bonus.pending)||0),0);
+    // 70-Tage: wer scheidet bald aus (>=60 Tage)
+    const leaving=staff.filter(m=>(m.daysWorked||0)>=60);
+    // Risiko: unzuverlässig (hohe Absagequote) und positiv
+    const staffReject=(m)=>{const t=jobs.filter(j=>j.rejectedBy.includes(m.id)).length+jobs.filter(j=>j.assignedTo===m.id).length;const r=jobs.filter(j=>j.rejectedBy.includes(m.id)).length;return t>0?r/t:0;};
+    const unreliable=staff.filter(m=>staffReject(m)>=0.5);
+    const positive=staff.filter(m=>m.status==='aktiv'&&staffReject(m)===0&&(m.bonus&&m.bonus.earned>0));
+    c.innerHTML=head('Dashboard','Überblick über Umsatz, Team und offene Punkte.')+
     '<div class="cards grid-4">'+
+      stat('Umsatz (bestätigt)',revenue.toFixed(0)+' €','aus freigegebenen Stunden')+
+      statClick('Geplante Termine',plannedAppts,'im Kalender',"renderAdmin('calendar')")+
+      statClick('Offene Stundenzettel',openTs,'zu prüfen',"renderAdmin('hours')")+
+      stat('Fällige Boni',bonusDue+' €','an Mitarbeiter auszuzahlen')+
+    '</div><div style="height:16px"></div>'+
+    '<div class="cards grid-2">'+
       statClick('Offene Aufträge',open,'warten auf Annahme',"renderAdmin('jobs')")+
       statClick('Neue Bewerbungen',newApps,'in Bearbeitung',"renderAdmin('applications')")+
-      stat('Aktive Mitarbeiter',staff.filter(s=>s.status==='aktiv').length,'von '+staff.length+' im Team')+
-      stat('Ablehnungen gesamt',rejTotal,'über alle Aufträge')+
+    '</div><div style="height:18px"></div>'+
+    // Meldungen
+    '<div class="cards grid-2">'+
+      '<div class="panel"><div class="panel-head"><h3>⚠️ Achtung erforderlich</h3></div><div class="panel-body" style="padding-top:8px">'+
+        (leaving.length?leaving.map(m=>'<div class="list-row"><div class="li-main"><b>'+fullName(m)+'</b><div class="li-sub">70-Tage-Grenze: '+(m.daysWorked||0)+'/70 Tage – scheidet bald aus</div></div><span class="tag amber">'+(70-(m.daysWorked||0))+' Tage</span></div>').join(''):'')+
+        (unreliable.length?unreliable.map(m=>'<div class="list-row"><div class="li-main"><b>'+fullName(m)+'</b><div class="li-sub">Hohe Absagequote ('+Math.round(staffReject(m)*100)+'%) – Termine begrenzen</div></div><span class="tag red">unzuverlässig</span></div>').join(''):'')+
+        (!leaving.length&&!unreliable.length?'<p style="color:var(--muted);padding:8px 0">Keine Auffälligkeiten.</p>':'')+
+      '</div></div>'+
+      '<div class="panel"><div class="panel-head"><h3>⭐ Positive Mitarbeiter</h3></div><div class="panel-body" style="padding-top:8px">'+
+        (positive.length?positive.map(m=>'<div class="list-row"><div class="li-main"><b>'+fullName(m)+'</b><div class="li-sub">Zuverlässig, keine Absagen · Bonus erhalten</div></div><span class="tag green">Top</span></div>').join(''):'<p style="color:var(--muted);padding:8px 0">Noch keine Auswertung.</p>')+
+      '</div></div>'+
     '</div><div style="height:18px"></div>'+
     '<div class="panel"><div class="panel-head"><h3>Zuletzt freigegebene Aufträge</h3>'+
       '<button class="btn-ghost btn-sm" onclick="renderAdmin(\'jobs\')">Alle ansehen</button></div>'+
@@ -501,7 +528,7 @@ function renderAdmin(view){
     '<div class="panel"><div class="panel-head"><h3>Team ('+staff.length+')</h3><button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button></div>'+
     '<div class="panel-body" style="padding-top:8px"><table>'+
       '<thead><tr><th>Name</th><th>Funktion</th><th>Gebiet</th><th>Login</th><th>Status</th></tr></thead><tbody>'+
-      staff.map(s=>'<tr class="clickable" onclick="editStaff('+s.id+')"><td><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td><td>'+statusTag(s.status)+'</td></tr>').join('')+
+      staff.map(s=>'<tr class="clickable" onclick="editStaff('+s.id+')"><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:'+(s.color||'#0f5b63')+';margin-right:7px"></span><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td><td>'+statusTag(s.status)+'</td></tr>').join('')+
       '</tbody></table></div></div>';
   }
 
@@ -649,7 +676,7 @@ function saveStaff(){
     const s=staff.find(x=>x.id===editingStaffId);gatherStaff(s);
     closeModal();toast('Mitarbeiterdaten gespeichert');
   }else{
-    const s={id:nextStaffId++,maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',skills:[],intern:{}};
+    const s={id:nextStaffId++,maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',skills:[],color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,intern:{}};
     gatherStaff(s);
     if(!s.first&&!s.last){toast('Bitte Namen eingeben',true);return;}
     const login=val('es_login');const pass=val('es_pass');
@@ -720,10 +747,16 @@ function gatherCustomer(c){
 function createCustomer(){
   const c={id:nextCustomerId++,status:'Interessent',intern:{}};
   gatherCustomer(c);
-  if(!c.first&&!c.last){toast('Bitte mindestens einen Namen eingeben',true);return;}
+  // Sicherheitsmechanismus: Pflichtfelder prüfen, sonst keine Freigabe
+  const missing=[];
+  if(!c.first||!c.last) missing.push('Name');
+  if(!c.address||c.address==='—') missing.push('Adresse');
+  if(!c.phone||c.phone==='—') missing.push('Telefon');
+  if(!c.need||!c.need.length) missing.push('Leistung');
+  if(missing.length){toast('Kunde unvollständig – fehlt: '+missing.join(', '),true);return;}
   customers.unshift(c);
   jobs.unshift({id:nextJobId++,customerId:c.id,title:(c.need[0]||'Neuer Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]});
-  toast('Kunde angelegt & als Auftrag freigegeben');renderAdmin('jobs');
+  toast('Kunde korrekt angelegt & als Auftrag freigegeben');renderAdmin('jobs');
 }
 function editCustomer(id){
   const c=custById(id);
@@ -745,16 +778,24 @@ function showApplication(id){
   document.getElementById('modalTitle').textContent='Bewerbung: '+fullName(a);
   const docRow=(name)=>'<div class="reveal-row"><span class="k">'+name+'</span><span class="v">'+(a.docs[name]?'<span class="tag green">✓ signiert</span>':'<span class="tag red">offen</span>')+'</span></div>';
   const fileRow=(label,ok)=>'<div class="reveal-row"><span class="k">'+label+'</span><span class="v">'+(ok?'<span class="tag green">✓ hochgeladen</span>':'<span class="tag red">fehlt</span>')+'</span></div>';
+  const declRow=(label,ok)=>'<div class="reveal-row"><span class="k">'+label+'</span><span class="v">'+(ok?'<span class="tag green">✓ bestätigt</span>':'<span class="tag grey">—</span>')+'</span></div>';
+  const PFB_LABELS={birth:'Geburtsdatum',birthplace:'Geburtsort',address:'Anschrift',maritalStatus:'Familienstand',taxId:'Steuer-ID',taxClass:'Steuerklasse',kvNr:'KV-Nummer',kasse:'Krankenkasse',iban:'IBAN',employment:'Anstellungsart',otherJob:'Weitere Beschäftigung'};
+  const q=a.questionnaire||{};const decl=a.declaration||{};
+  const pfbRows=Object.keys(PFB_LABELS).filter(k=>q[k]).map(k=>'<div class="reveal-row"><span class="k">'+PFB_LABELS[k]+'</span><span class="v">'+q[k]+'</span></div>').join('')||'<div style="color:var(--muted);font-size:13px;padding:4px 0">Keine Angaben.</div>';
   document.getElementById('modalBody').innerHTML=
     statusStepper(a.status)+
     '<div class="section-label" style="margin-top:18px">Persönliche Daten</div>'+
     '<div class="reveal-row"><span class="k">Name</span><span class="v">'+fullName(a)+'</span></div>'+
+    (a.gender?'<div class="reveal-row"><span class="k">Geschlecht</span><span class="v">'+a.gender+'</span></div>':'')+
     '<div class="reveal-row"><span class="k">E-Mail</span><span class="v">'+a.email+'</span></div>'+
     '<div class="reveal-row"><span class="k">Telefon</span><span class="v">'+a.phone+'</span></div>'+
     '<div class="reveal-row"><span class="k">Gebiet</span><span class="v">'+a.area+'</span></div>'+
     '<div class="reveal-row"><span class="k">Staatsbürgerschaft</span><span class="v">'+a.citizenship+'</span></div>'+
     '<div class="reveal-row"><span class="k">Fähigkeiten</span><span class="v">'+a.skills.join(', ')+'</span></div>'+
     '<div style="margin-top:10px;font-size:14px"><b>Motivation:</b> '+a.motivation+'</div>'+
+    '<div class="section-label">Personalfragebogen</div>'+pfbRows+
+    '<div class="section-label">Erklärung & Nachweise</div>'+
+    declRow('Keine Vorstrafen',decl.noCrime)+declRow('Führungszeugnis wird nachgereicht',decl.bringCertificate)+declRow('Erste-Hilfe-Kurs wird absolviert',decl.bringFirstAid)+declRow('KV-Karte wird eingesendet',decl.sendKvCard)+
     '<div class="section-label">Signierte Verträge</div>'+docRow('Arbeitsvertrag')+docRow('Datenschutzvertrag')+docRow('NDA')+docRow('Haftungserklärung')+
     '<div class="section-label">Identität & Bestätigungen</div>'+
     fileRow('Personalausweis Vorderseite',a.idFront)+fileRow('Personalausweis Rückseite',a.idBack)+fileRow('Selfie',a.selfie)+
@@ -786,7 +827,7 @@ function sendAppLogin(id){
   // Signierte Verträge für die Mitarbeiter-Akte aufbereiten
   const signedDocs=Object.keys(a.docs||{}).filter(d=>a.docs[d]).map(d=>({name:d,signedDate:todayISO(),signature:(a.signatures&&a.signatures[d])||null}));
   // Bewerber wird zum aktiven Mitarbeiter
-  staff.push({id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,contracts:signedDocs,intern:{birth:'',address:'',taxId:'',taxClass:'I',kvNr:'',kasse:'',employment:'Minijob',citizenship:a.citizenship,iban:''}});
+  staff.push({id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,contracts:signedDocs,intern:{birth:(a.questionnaire&&a.questionnaire.birth)||'',address:(a.questionnaire&&a.questionnaire.address)||'',taxId:(a.questionnaire&&a.questionnaire.taxId)||'',taxClass:(a.questionnaire&&a.questionnaire.taxClass)||'I',kvNr:(a.questionnaire&&a.questionnaire.kvNr)||'',kasse:(a.questionnaire&&a.questionnaire.kasse)||'',employment:(a.questionnaire&&a.questionnaire.employment)||'Minijob',citizenship:a.citizenship,iban:(a.questionnaire&&a.questionnaire.iban)||''}});
   closeModal();document.getElementById('modalBox').classList.remove('wide');
   toast('Zugangsdaten an '+a.first+' gesendet – jetzt aktiver Mitarbeiter');renderAdmin('applications');
 }
@@ -940,25 +981,43 @@ function saveProfile(){
 }
 
 /* ---- Job-Karten mit Zusammenfassung ---- */
+function distanceKm(customerId){return 3+((customerId*7)%22);} // Demo: stabile Pseudo-Entfernung 3–24 km
+const STAFF_COLORS=['#0f5b63','#e08a2b','#2c6e9b','#7a4ca0','#2f8f5b','#b5402f','#c79a00','#1f7a8c'];
+function nextColor(){return STAFF_COLORS[staff.length % STAFF_COLORS.length];}
+function jobEstHours(j){const cu=custById(j.customerId);const per=cu&&cu.freqUnit==='pro Woche'?(cu.freqNum||1):1;return Math.max(2,per*2);} // grobe Schätzung h/Woche
+function myWeeklyLoad(){return jobs.filter(j=>j.status==='assigned'&&j.assignedTo===myId).reduce((s,j)=>s+jobEstHours(j),0);}
+function myRejectRate(){
+  const total=jobs.filter(j=>j.rejectedBy.includes(myId)).length + jobs.filter(j=>j.assignedTo===myId).length;
+  const rej=jobs.filter(j=>j.rejectedBy.includes(myId)).length;
+  return total>0?rej/total:0;
+}
 function jobCard(j){
   const cu=custById(j.customerId);
+  const km=distanceKm(cu.id);
+  // weniger detailreich: Tätigkeit, Entfernung, Häufigkeit, kurze Zusammenfassung
   return '<div class="job" id="job-'+j.id+'">'+
-    '<div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+'</div></div><span class="tag green">verfügbar</span></div>'+
+    '<div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+' · ca. '+km+' km von dir</div></div><span class="tag green">verfügbar</span></div>'+
     '<div class="job-tags">'+j.skills.map(s=>'<span class="tag grey">'+s+'</span>').join('')+'</div>'+
-    '<div class="summary"><div class="sh">Zusammenfassung</div>Gesucht: '+cu.need.join(', ')+', '+freqText(cu)+' ('+cu.window+'). '+'Pflegegrad '+cu.pgrad+'. '+(cu.notes&&cu.notes!=='—'?'Wichtig: '+cu.notes:'')+'</div>'+
-    '<div class="job-meta">'+
-      '<div><div class="k">Häufigkeit</div><div class="v">'+freqText(cu)+'</div></div>'+
-      '<div><div class="k">Zeitfenster</div><div class="v">'+cu.window+'</div></div>'+
-      '<div><div class="k">Pflegegrad</div><div class="v">'+cu.pgrad+'</div></div>'+
-      '<div><div class="k">Haustier</div><div class="v">'+cu.pet+'</div></div>'+
-    '</div>'+
-    '<div class="locked">🔒 Name & Adresse werden erst nach Annahme angezeigt</div>'+
-    '<div class="job-actions"><button class="btn-accept" onclick="acceptJob('+j.id+')">Auftrag annehmen</button>'+
+    '<div class="summary"><div class="sh">Kurzinfo</div>'+cu.need.join(', ')+' · '+freqText(cu)+' · '+cu.window+'</div>'+
+    '<div class="locked">🔒 Genaue Adresse & Name erst nach Annahme</div>'+
+    '<div class="job-actions"><button class="btn-accept" onclick="askCommit('+j.id+')">Auftrag annehmen</button>'+
     '<button class="btn-danger-ghost" onclick="rejectJob('+j.id+')">Ablehnen</button></div></div>';
 }
 function mineCard(j){
   const cu=custById(j.customerId);
-  return '<div class="job"><div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+'</div></div><span class="tag green">angenommen</span></div>'+
+  let timerHtml='';
+  if(j.commitDeadline){
+    const remMs=j.commitDeadline-Date.now();
+    if(remMs>0){
+      const h=Math.floor(remMs/3600000);const min=Math.floor((remMs%3600000)/60000);
+      const urgent=h<12;
+      timerHtml='<div class="example-id" style="background:'+(urgent?'var(--amber-soft);border-color:#f0dcc2':'var(--blue-soft);border-color:#c5dcec')+';margin-bottom:12px"><div style="font-size:20px">⏱</div><div><b>Termin vereinbaren:</b> noch '+h+' h '+min+' min Zeit</div></div>';
+    }else{
+      timerHtml='<div class="example-id" style="background:var(--danger-soft);border-color:#eccfc8;margin-bottom:12px"><div style="font-size:20px">⚠️</div><div><b>Frist abgelaufen</b> – bitte umgehend Termin vereinbaren oder zurückgeben.</div></div>';
+    }
+  }
+  return '<div class="job"><div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+' · ca. '+distanceKm(cu.id)+' km</div></div><span class="tag green">angenommen</span></div>'+
+    timerHtml+
     '<div class="reveal"><div class="rh">✓ Vollständige Kundendaten</div>'+
       '<div class="reveal-row"><span class="k">Name</span><span class="v">'+fullName(cu)+'</span></div>'+
       '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+cu.address+'</span></div>'+
@@ -971,14 +1030,39 @@ function mineCard(j){
 }
 function emptyBoard(){return '<div class="empty"><div class="big">🎉</div><b>Aktuell keine offenen Aufträge</b><p style="margin-top:6px">Sobald das Büro einen neuen Kunden freigibt, erscheint er hier. Abgelehnte Aufträge werden dir nicht erneut angezeigt.</p></div>';}
 
-function acceptJob(id){
+function askCommit(id){
   const j=jobs.find(x=>x.id===id);if(!j)return;
   if(j.status!=='available'){toast('Leider schon vergeben an '+staffName(j.assignedTo),true);renderStaff('board');return;}
-  const el=document.getElementById('job-'+id);if(el)el.classList.add('fade');
-  setTimeout(()=>{j.status='assigned';j.assignedTo=myId;
-    const cu=custById(j.customerId);if(cu)cu.status='aktiv';
-    toast('Auftrag angenommen – Kundendaten freigeschaltet');renderStaff('mine');},200);
+  const m=me();const cu=custById(j.customerId);
+  const est=jobEstHours(j);const load=myWeeklyLoad();const cap=m.maxHours||20;
+  const wouldBe=load+est;
+  const overCap=wouldBe>cap;
+  const highRisk=myRejectRate()>=0.5;
+  const km=distanceKm(cu.id);
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Auftrag verbindlich annehmen';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="summary" style="margin-bottom:14px"><div class="sh">'+j.title+'</div>'+cu.area+' · ca. '+km+' km · '+freqText(cu)+'<br>Geschätzter Aufwand: ca. '+est+' h/Woche</div>'+
+    '<div class="reveal-row"><span class="k">Deine Wochenstunden bisher</span><span class="v">'+load+' h</span></div>'+
+    '<div class="reveal-row"><span class="k">Mit diesem Auftrag</span><span class="v">'+wouldBe+' h von '+cap+' h</span></div>'+
+    (overCap?'<div class="example-id" style="background:var(--danger-soft);border-color:#eccfc8;margin-top:12px"><div style="font-size:20px">⚠️</div><div>Damit überschreitest du dein Wochenkontingent von '+cap+' h. Bitte zuerst im Profil anpassen oder einen anderen Auftrag wählen.</div></div>':'')+
+    (highRisk?'<div class="example-id" style="background:var(--amber-soft);border-color:#f0dcc2;margin-top:12px"><div style="font-size:20px">📉</div><div>Hinweis: Deine Absagequote ist erhöht. Bitte nimm nur Aufträge an, die du sicher wahrnehmen kannst.</div></div>':'')+
+    '<div class="confirm-box" style="margin-top:14px" onclick="document.getElementById(\'commitChk\').click()"><input type="checkbox" id="commitChk" onclick="event.stopPropagation();document.getElementById(\'commitBtn\').disabled=!this.checked"><label>Ich verpflichte mich, diesen Auftrag verbindlich zu übernehmen und innerhalb von 48 Stunden einen Termin mit dem Kunden zu vereinbaren.</label></div>';
+  let foot='<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>';
+  if(!overCap) foot+='<button class="btn-primary" id="commitBtn" style="width:auto;padding:11px 20px" disabled onclick="confirmAccept('+id+')">Verbindlich annehmen</button>';
+  document.getElementById('modalFoot').innerHTML=foot;
+  openModal();
 }
+function confirmAccept(id){
+  const j=jobs.find(x=>x.id===id);if(!j||j.status!=='available'){closeModal();toast('Leider schon vergeben',true);renderStaff('board');return;}
+  j.status='assigned';j.assignedTo=myId;
+  // 48h-Timer für Terminvereinbarung setzen
+  j.commitDeadline=Date.now()+48*3600*1000;
+  const cu=custById(j.customerId);if(cu)cu.status='aktiv';
+  closeModal();
+  toast('Verbindlich angenommen – Termin innerhalb 48 h vereinbaren');renderStaff('mine');
+}
+function acceptJob(id){ askCommit(id); }
 function rejectJob(id){
   const j=jobs.find(x=>x.id===id);if(!j)return;
   if(!j.rejectedBy.includes(myId))j.rejectedBy.push(myId);
@@ -992,8 +1076,9 @@ function releaseJob(id){
 }
 /* ============ BEWERBUNGS-WIZARD (öffentlich) ============ */
 let wizStep=0;
-const WIZ_TOTAL=8;
-let wizData={skills:[],docs:{Arbeitsvertrag:false,Datenschutzvertrag:false,NDA:false,Haftungserklärung:false},idFront:false,idBack:false,selfie:false};
+const WIZ_TOTAL=10;
+function freshWizData(){return {gender:'',skills:[],docs:{Arbeitsvertrag:false,Datenschutzvertrag:false,NDA:false,Haftungserklärung:false},signatures:{},questionnaire:{},declaration:{noCrime:false,bringCertificate:false,bringFirstAid:false,sendKvCard:false},idFront:false,idBack:false,selfie:false};}
+let wizData=freshWizData();
 
 const TEAM=[['👩','Bianca','Einsatzleiterin'],['👨','Daniel','Geschäftsführung'],['👩','Ivonne','Haushaltshilfe'],['👨','Sven','Geschäftsführung'],['👩','Natalie','Betreuung'],['👩','Silvana','Haushaltshilfe']];
 const DOC_TEXTS={
@@ -1005,7 +1090,7 @@ const DOC_TEXTS={
 
 function startWizard(){
   wizStep=0;
-  wizData={skills:[],docs:{Arbeitsvertrag:false,Datenschutzvertrag:false,NDA:false,Haftungserklärung:false},idFront:false,idBack:false,selfie:false};
+  wizData=freshWizData();
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('wizard').classList.add('active');
   renderWizard();
@@ -1020,13 +1105,14 @@ function wizBack(){ if(wizStep>0){wizStep--;renderWizard();window.scrollTo(0,0);
 function renderWizard(){
   document.getElementById('wizBar').style.width=((wizStep+1)/WIZ_TOTAL*100)+'%';
   const w=document.getElementById('wizWrap');
-  const steps=[wizAbout,wizTasks,wizRequirements,wizDataForm,wizContracts,wizIdSelfie,wizAgb,wizDone];
+  const steps=[wizAbout,wizTasks,wizRequirements,wizDataForm,wizQuestionnaire,wizContracts,wizDeclaration,wizIdSelfie,wizAgb,wizDone];
   w.innerHTML='<div class="wiz-step active">'+steps[wizStep]()+'</div>';
-  if(wizStep===4) setTimeout(initSignPads,30);
+  if(wizStep===5) setTimeout(initSignPads,30);
 }
+function wizNumLabel(n){return '<div class="wiz-num">Schritt '+n+' von '+WIZ_TOTAL+'</div>';}
 
 function wizAbout(){
-  return '<div class="wiz-num">Schritt 1 von 8</div>'+
+  return wizNumLabel(1)+
   '<div class="wiz-card"><h2>Willkommen bei der Alltagshilfe Hannover</h2>'+
   '<p class="lead">Wir unterstützen Menschen im Alltag – mit Haushaltshilfe, Begleitung und Betreuung. Werde Teil unseres Teams!</p>'+
   '<div class="team-grid">'+TEAM.map(([e,n,r])=>'<div class="team-member"><div class="team-photo">'+e+'</div><b>'+n+'</b><span>'+r+'</span></div>').join('')+'</div>'+
@@ -1035,7 +1121,7 @@ function wizAbout(){
 }
 function wizTasks(){
   const tasks=[['🧹','Haushaltshilfe','Reinigung, Wäsche, Einkäufe und Ordnung im Haushalt'],['🚶','Begleitung','Zu Arztterminen, Behörden oder beim Spaziergang'],['💬','Betreuung','Gesellschaft leisten, vorlesen, gemeinsame Aktivitäten'],['🤝','Zuverlässigkeit','Pünktlich und verlässlich bei festen Terminen']];
-  return '<div class="wiz-num">Schritt 2 von 8</div>'+
+  return wizNumLabel(2)+
   '<div class="wiz-card"><h2>Was du im Job machst</h2>'+
   '<p class="lead">Deine Aufgaben sind abwechslungsreich und richten sich nach den Bedürfnissen unserer Kunden.</p>'+
   '<ul class="task-list">'+tasks.map(([ic,t,d])=>'<li><span class="ic">'+ic+'</span><div><b>'+t+'</b><div style="color:var(--muted);font-size:13px">'+d+'</div></div></li>').join('')+'</ul>'+
@@ -1043,7 +1129,7 @@ function wizTasks(){
 }
 function wizRequirements(){
   const reqs=['Zuverlässigkeit und Pünktlichkeit','Freundlicher, einfühlsamer Umgang mit Menschen','Eigener Pkw von Vorteil (nicht zwingend)','Erweitertes Führungszeugnis (wird benötigt)','Bereitschaft zu flexiblen Einsatzzeiten'];
-  return '<div class="wiz-num">Schritt 3 von 8</div>'+
+  return wizNumLabel(3)+
   '<div class="wiz-card"><h2>Was du mitbringen musst</h2>'+
   '<p class="lead">Damit es passt, solltest du folgende Voraussetzungen erfüllen:</p>'+
   '<ul class="task-list">'+reqs.map(r=>'<li><span class="ic">✓</span><div style="padding-top:2px">'+r+'</div></li>').join('')+'</ul>'+
@@ -1051,12 +1137,15 @@ function wizRequirements(){
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="reqNext" disabled onclick="wizNext()">Weiter →</button></div></div>';
 }
 function wizDataForm(){
-  return '<div class="wiz-num">Schritt 4 von 8</div>'+
+  return wizNumLabel(4)+
   '<div class="wiz-card"><h2>Deine Daten</h2>'+
   '<p class="lead">Bitte fülle alle Felder aus, damit wir dich kontaktieren können.</p>'+
   '<div class="wiz-form">'+
     '<div class="form-row"><div><label>Vorname</label><input id="wz_first" value="'+(wizData.first||'')+'"></div>'+
     '<div><label>Nachname</label><input id="wz_last" value="'+(wizData.last||'')+'"></div></div>'+
+    '<label>Geschlecht</label>'+
+    '<div class="seg" id="wz_gender">'+['männlich','weiblich','divers'].map(g=>'<button data-v="'+g+'" class="'+(wizData.gender===g?'on':'')+'" onclick="segPick(this,\'wz_gender\')">'+g+'</button>').join('')+'</div>'+
+    '<div style="height:14px"></div>'+
     '<label>E-Mail</label><input id="wz_email" type="email" value="'+(wizData.email||'')+'">'+
     '<label>Telefon</label><input id="wz_phone" value="'+(wizData.phone||'')+'">'+
     '<label>Gebiet / Wohnort</label><input id="wz_area" value="'+(wizData.area||'')+'" placeholder="z. B. Hannover">'+
@@ -1071,20 +1160,76 @@ function wizDataForm(){
 function saveWizData(){
   wizData.first=val('wz_first');wizData.last=val('wz_last');wizData.email=val('wz_email');
   wizData.phone=val('wz_phone');wizData.area=val('wz_area');
+  const g=document.querySelector('#wz_gender button.on');wizData.gender=g?g.dataset.v:'';
   wizData.citizenship=document.getElementById('wz_citizen').value;
   wizData.skills=[...document.querySelectorAll('#wz_skills .check.on')].map(e=>e.textContent);
   wizData.motivation=val('wz_motiv');
   if(!wizData.first||!wizData.last||!wizData.email){toast('Bitte Name und E-Mail ausfüllen',true);return;}
+  if(!wizData.gender){toast('Bitte Geschlecht wählen',true);return;}
   if(!wizData.citizenship){toast('Bitte Staatsbürgerschaft/Arbeitserlaubnis wählen',true);return;}
   wizNext();
 }
+
+/* ---- Schritt 5: Personalfragebogen (Fragen einzeln) ---- */
+const PFB_QUESTIONS=[
+  {key:'birth',label:'Geburtsdatum',type:'date'},
+  {key:'birthplace',label:'Geburtsort',type:'text',ph:'z. B. Hannover'},
+  {key:'address',label:'Anschrift (Straße, PLZ, Ort)',type:'text',ph:'Straße Hausnr., PLZ Ort'},
+  {key:'maritalStatus',label:'Familienstand',type:'select',opts:['ledig','verheiratet','geschieden','verwitwet']},
+  {key:'taxId',label:'Steuer-Identifikationsnummer',type:'text',ph:'11-stellig'},
+  {key:'taxClass',label:'Steuerklasse',type:'select',opts:['I','II','III','IV','V','VI']},
+  {key:'kvNr',label:'Krankenversicherungsnummer',type:'text',ph:'KV-Nummer'},
+  {key:'kasse',label:'Krankenkasse',type:'text',ph:'z. B. AOK Niedersachsen'},
+  {key:'iban',label:'IBAN (für die Lohnzahlung)',type:'text',ph:'DE..'},
+  {key:'employment',label:'Gewünschte Anstellungsart',type:'select',opts:['Minijob','Midijob','Teilzeit','Vollzeit','kurzfristige Beschäftigung']},
+  {key:'otherJob',label:'Übst du weitere Beschäftigungen aus?',type:'select',opts:['nein','ja, ein Minijob','ja, Hauptbeschäftigung','ja, Sonstiges']}
+];
+let pfbIndex=0;
+function wizQuestionnaire(){
+  // Vorbefüllung: Name/Geschlecht aus vorherigem Schritt ist bereits in wizData
+  const q=PFB_QUESTIONS[pfbIndex];
+  const val0=(wizData.questionnaire&&wizData.questionnaire[q.key])||'';
+  let field='';
+  if(q.type==='select'){
+    field='<select id="pfb_input">'+'<option value="">Bitte wählen …</option>'+q.opts.map(o=>'<option '+(val0===o?'selected':'')+'>'+o+'</option>').join('')+'</select>';
+  }else{
+    field='<input id="pfb_input" type="'+(q.type==='date'?'date':'text')+'" value="'+val0+'" placeholder="'+(q.ph||'')+'">';
+  }
+  return wizNumLabel(5)+
+  '<div class="wiz-card"><h2>Personalfragebogen</h2>'+
+  '<p class="lead">Frage '+(pfbIndex+1)+' von '+PFB_QUESTIONS.length+' · Diese Angaben werden für deinen Arbeitsvertrag und den Personalfragebogen verwendet.</p>'+
+  '<div style="height:9px;background:#eef3f3;border-radius:6px;margin-bottom:20px;overflow:hidden"><div style="height:100%;width:'+Math.round((pfbIndex+1)/PFB_QUESTIONS.length*100)+'%;background:var(--petrol);border-radius:6px;transition:width .3s"></div></div>'+
+  '<div class="wiz-form"><label>'+q.label+'</label>'+field+'</div>'+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="pfbBack()">← Zurück</button><button class="btn-primary" onclick="pfbNext()">'+(pfbIndex<PFB_QUESTIONS.length-1?'Weiter →':'Fragebogen abschließen →')+'</button></div></div>';
+}
+function pfbNext(){
+  const q=PFB_QUESTIONS[pfbIndex];
+  const v=val('pfb_input');
+  wizData.questionnaire=wizData.questionnaire||{};
+  wizData.questionnaire[q.key]=v;
+  if(pfbIndex<PFB_QUESTIONS.length-1){pfbIndex++;renderWizard();window.scrollTo(0,0);}
+  else {pfbIndex=0;wizNext();}
+}
+function pfbBack(){
+  if(pfbIndex>0){const q=PFB_QUESTIONS[pfbIndex];wizData.questionnaire[q.key]=val('pfb_input');pfbIndex--;renderWizard();window.scrollTo(0,0);}
+  else {pfbIndex=0;wizBack();}
+}
+function fillContract(text){
+  const name=((wizData.first||'')+' '+(wizData.last||'')).trim();
+  const q=wizData.questionnaire||{};
+  let t=text;
+  if(name){t=t.replace('[Name und Anschrift Arbeitnehmer]', name+(q.address?', '+q.address:''));}
+  const taetigkeit=(wizData.skills&&wizData.skills.length)?wizData.skills.join(' / '):'Alltagshilfe';
+  t=t.replace('[Tätigkeitsbezeichnung]', taetigkeit);
+  return t;
+}
 function wizContracts(){
   const docs=Object.keys(wizData.docs);
-  return '<div class="wiz-num">Schritt 5 von 8</div>'+
+  return wizNumLabel(6)+
   '<div class="wiz-card"><h2>Verträge lesen & unterschreiben</h2>'+
-  '<p class="lead">Bitte öffne jedes Dokument, lies es und unterschreibe mit deiner Unterschrift (wie auf dem Personalausweis).</p>'+
+  '<p class="lead">Deine Angaben wurden bereits in den Arbeitsvertrag übernommen. Bitte öffne jedes Dokument, lies es und unterschreibe (wie auf dem Personalausweis).</p>'+
   docs.map((d,i)=>'<div class="doc-item"><div class="doc-head" onclick="toggleDoc('+i+')"><div class="dt">📄 '+d+'</div><div class="doc-state" id="docstate-'+i+'">'+(wizData.docs[d]?'<span style="color:var(--good)">✓ signiert</span>':'öffnen')+'</div></div>'+
-    '<div class="doc-body" id="docbody-'+i+'"><div class="doc-text">'+DOC_TEXTS[d]+'</div>'+
+    '<div class="doc-body" id="docbody-'+i+'"><div class="doc-text">'+fillContract(DOC_TEXTS[d])+'</div>'+
     '<label style="font-size:12px;font-weight:600;color:var(--muted)">Deine Unterschrift:</label>'+
     '<div class="sign-pad" id="signpad-'+i+'" data-doc="'+d+'" data-idx="'+i+'"><canvas></canvas><div class="sign-hint" id="signhint-'+i+'">Hier unterschreiben</div></div>'+
     '<div class="sign-actions"><button class="btn-ghost btn-sm" onclick="clearSign('+i+')">Löschen</button><button class="btn-primary btn-sm" style="width:auto" onclick="confirmSign('+i+',\''+d+'\')">Unterschrift bestätigen</button></div>'+
@@ -1095,6 +1240,32 @@ function toggleDoc(i){document.getElementById('docbody-'+i).classList.toggle('op
 function checkContracts(){
   const allSigned=Object.values(wizData.docs).every(v=>v);
   if(!allSigned){toast('Bitte alle Verträge öffnen und unterschreiben',true);return;}
+  wizNext();
+}
+
+/* ---- Schritt 7: Erklärung (Führungszeugnis / Erste-Hilfe / Vorstrafen / KV-Karte) ---- */
+function wizDeclaration(){
+  const d=wizData.declaration;
+  const chk=(key,label,sub)=>'<div class="confirm-box" style="background:#fff;border-color:var(--line)" onclick="toggleDecl(\''+key+'\')"><input type="checkbox" '+(d[key]?'checked':'')+' onclick="event.stopPropagation();toggleDecl(\''+key+'\')"><label><b>'+label+'</b>'+(sub?'<div style="font-weight:400;color:var(--muted);font-size:12.5px;margin-top:2px">'+sub+'</div>':'')+'</label></div>';
+  return wizNumLabel(7)+
+  '<div class="wiz-card"><h2>Erklärung & Nachweise</h2>'+
+  '<p class="lead">Fast geschafft. Bitte bestätige die folgenden Punkte.</p>'+
+  chk('noCrime','Ich versichere, nicht vorbestraft zu sein','und dass keine Verfahren anhängig sind, die der Tätigkeit entgegenstehen.')+
+  chk('bringCertificate','Ich reiche innerhalb der ersten 2–3 Monate ein erweitertes Führungszeugnis nach','Pflicht für die Tätigkeit bei schutzbedürftigen Personen.')+
+  chk('bringFirstAid','Ich absolviere innerhalb der ersten 2–3 Monate einen Erste-Hilfe-Kurs','Die Kosten werden nach Vorlage erstattet.')+
+  chk('sendKvCard','Ich sende zusätzlich eine Kopie meiner Krankenversichertenkarte (KV-Karte) ein','Wird für die Anmeldung zur Sozialversicherung benötigt.')+
+  '<div class="example-id" style="background:var(--good-soft);border-color:#c4e6d2;margin-top:16px"><div style="font-size:22px">🎁</div><div><b>Bonus:</b> Wer Führungszeugnis und Erste-Hilfe-Nachweis fristgerecht einreicht, erhält einen einmaligen Bonus von 100 €.</div></div>'+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="declNext" onclick="checkDeclaration()">Weiter →</button></div></div>';
+}
+function toggleDecl(key){
+  wizData.declaration[key]=!wizData.declaration[key];
+  renderWizard();
+}
+function checkDeclaration(){
+  const d=wizData.declaration;
+  if(!d.noCrime){toast('Bitte die Vorstrafen-Erklärung bestätigen',true);return;}
+  if(!d.bringCertificate||!d.bringFirstAid){toast('Bitte Führungszeugnis und Erste-Hilfe bestätigen',true);return;}
+  if(!d.sendKvCard){toast('Bitte den Versand der KV-Karte bestätigen',true);return;}
   wizNext();
 }
 
@@ -1147,7 +1318,7 @@ function confirmSign(i,doc){
   toast(doc+' signiert');
 }
 function wizIdSelfie(){
-  return '<div class="wiz-num">Schritt 6 von 8</div>'+
+  return wizNumLabel(8)+
   '<div class="wiz-card"><h2>Ausweis & Selfie</h2>'+
   '<p class="lead">Zur Identitätsprüfung benötigen wir Fotos deines Personalausweises und ein Selfie.</p>'+
   '<div class="example-id"><div class="mini-id"></div><div><b>So sollte das Foto aussehen:</b><br>Alle Ecken sichtbar, scharf, gut beleuchtet, Sicherheitsmerkmale erkennbar.</div></div>'+
@@ -1169,7 +1340,7 @@ function checkIds(){
   wizNext();
 }
 function wizAgb(){
-  return '<div class="wiz-num">Schritt 7 von 8</div>'+
+  return wizNumLabel(9)+
   '<div class="wiz-card"><h2>AGB & Datenschutz</h2>'+
   '<p class="lead">Zum Abschluss bestätige bitte, dass du unsere Bedingungen gelesen hast.</p>'+
   '<div class="confirm-box" onclick="document.getElementById(\'agbChk\').click()"><input type="checkbox" id="agbChk" onclick="event.stopPropagation();checkAgb()"><label>Ich habe die <a href="#" onclick="event.preventDefault()">AGB</a> und die <a href="#" onclick="event.preventDefault()">Datenschutzerklärung</a> gelesen und akzeptiere sie.</label></div>'+
@@ -1177,13 +1348,14 @@ function wizAgb(){
 }
 function checkAgb(){document.getElementById('agbNext').disabled=!document.getElementById('agbChk').checked;}
 function submitApplication(){
-  applications.unshift({id:nextAppId++,first:wizData.first,last:wizData.last,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true});
+  applications.unshift({id:nextAppId++,first:wizData.first,last:wizData.last,gender:wizData.gender,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),questionnaire:Object.assign({},wizData.questionnaire||{}),declaration:Object.assign({},wizData.declaration||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true});
   wizNext();
 }
 function wizDone(){
   return '<div class="wiz-card wiz-done"><div class="big-ic">✓</div>'+
   '<h2>Danke für das Einrichten!</h2>'+
-  '<p class="lead" style="max-width:38ch;margin:0 auto 20px">Ein Spezialist schaut sich dein Profil an und wird dich zeitnah freischalten. Du erhältst dann deine Zugangsdaten per E-Mail.</p>'+
+  '<p class="lead" style="max-width:40ch;margin:0 auto 10px">Dein Personalfragebogen wurde automatisch erstellt und bei uns hinterlegt.</p>'+
+  '<p class="lead" style="max-width:40ch;margin:0 auto 20px">Ein Spezialist schaut sich dein Profil an und wird dich zeitnah freischalten. Du erhältst dann deine Zugangsdaten per E-Mail.</p>'+
   '<button class="btn-primary" style="width:auto;padding:12px 28px" onclick="exitWizard()">Fertig</button></div>';
 }
 
@@ -1197,7 +1369,7 @@ function calendarHTML(staffFilter){
   if(!dates.length) return placeholder('▦','Noch keine Termine',staffFilter!==null?'Vereinbare bei „Meine Kunden“ einen Termin – er erscheint dann hier.':'Sobald Mitarbeiter Termine vereinbaren, erscheinen sie hier.');
   return '<div class="cards">'+dates.map(d=>
     '<div class="panel"><div class="panel-head"><h3>'+fmtDateLong(d)+'</h3></div><div class="panel-body" style="padding-top:8px"><table><tbody>'+
-    byDate[d].map(a=>{const cu=custById(a.customerId);return '<tr class="clickable" onclick="showAppt('+a.id+')"><td style="width:70px"><b>'+a.time+'</b></td><td><b>'+(cu?fullName(cu):'—')+'</b><div style="color:var(--muted);font-size:12.5px">'+(a.note||'')+'</div></td><td style="text-align:right;color:var(--muted)">'+a.duration+' Min.'+(staffFilter===null?'<br><span style="font-size:12px">'+staffName(a.staffId)+'</span>':'')+'</td></tr>';}).join('')+
+    byDate[d].map(a=>{const cu=custById(a.customerId);const sf=staff.find(s=>s.id===a.staffId);const col=sf&&sf.color?sf.color:'#0f5b63';return '<tr class="clickable" onclick="showAppt('+a.id+')"><td style="width:70px"><b>'+a.time+'</b></td><td><b>'+(cu?fullName(cu):'—')+'</b><div style="color:var(--muted);font-size:12.5px">'+(a.note||'')+'</div></td><td style="text-align:right;color:var(--muted)">'+a.duration+' Min.'+(staffFilter===null?'<br><span style="font-size:12px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+col+';margin-right:4px"></span>'+staffName(a.staffId)+'</span>':'')+'</td></tr>';}).join('')+
     '</tbody></table></div></div>').join('')+'</div>';
 }
 function addAppointment(customerId){
