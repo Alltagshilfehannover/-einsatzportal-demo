@@ -3,14 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Einsatzportal – Demo</title>
+<title>DailyDo</title>
 <style>
   :root{
-    --petrol:#0f5b63;--petrol-dark:#0a444a;--petrol-soft:#e7f1f1;
-    --amber:#e08a2b;--amber-soft:#fbeede;--ink:#1c2a2b;--muted:#5d7173;
-    --line:#dde7e7;--bg:#f4f7f6;--card:#ffffff;--good:#2f8f5b;--good-soft:#e3f3ea;
-    --danger:#b5402f;--danger-soft:#f8e6e2;--blue:#2c6e9b;--blue-soft:#e3eef6;
-    --radius:14px;--shadow:0 1px 2px rgba(15,91,99,.06),0 8px 24px rgba(15,91,99,.06);
+    --petrol:#6d28d9;--petrol-dark:#4c1d95;--petrol-soft:#f0e9ff;
+    --amber:#ff6b9d;--amber-soft:#ffe4ee;--ink:#1f1633;--muted:#6b6480;
+    --line:#e8e2f5;--bg:#f7f5fc;--card:#ffffff;--good:#16a34a;--good-soft:#dcfce7;
+    --danger:#e11d48;--danger-soft:#ffe4e9;--blue:#7c3aed;--blue-soft:#f0e9ff;
+    --accent:#22c55e;--accent-soft:#dcfce7;
+    --radius:16px;--shadow:0 1px 2px rgba(109,40,217,.06),0 8px 28px rgba(109,40,217,.10);
     --font:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -19,7 +20,7 @@
   input,select,textarea{font-family:inherit;font-size:15px}
   a{color:var(--petrol)}
   .login-wrap{min-height:100vh;display:grid;grid-template-columns:1.1fr .9fr}
-  .login-art{background:linear-gradient(150deg,var(--petrol),var(--petrol-dark));color:#fff;padding:56px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
+  .login-art{background:linear-gradient(150deg,#7c3aed,#6d28d9 45%,#db2777);color:#fff;padding:56px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
   .login-art::after{content:"";position:absolute;right:-120px;bottom:-120px;width:420px;height:420px;border-radius:50%;background:rgba(255,255,255,.05)}
   .login-art::before{content:"";position:absolute;right:60px;top:-80px;width:240px;height:240px;border-radius:50%;background:rgba(255,255,255,.04)}
   .brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:19px;z-index:1}
@@ -44,8 +45,16 @@
   .field input:focus{outline:none;border-color:var(--petrol);box-shadow:0 0 0 3px var(--petrol-soft)}
   .btn-primary{width:100%;padding:13px;background:var(--petrol);color:#fff;border-radius:10px;font-weight:600;font-size:15px;transition:.15s}
   .btn-primary:hover{background:var(--petrol-dark)}
-  .demo-note{margin-top:18px;font-size:12.5px;color:var(--muted);background:var(--amber-soft);border:1px solid #f0dcc2;padding:11px 13px;border-radius:10px}
+  .demo-note{margin-top:18px;font-size:12.5px;color:var(--muted);background:var(--amber-soft);border:1px solid #ffd0e0;padding:11px 13px;border-radius:10px}
   .demo-note b{color:var(--amber)}
+  .forgot-link{margin-top:12px;text-align:center}
+  .forgot-link button{color:var(--muted);font-size:13px;font-weight:600}
+  .forgot-link button:hover{color:var(--petrol)}
+  .apply-big{margin-top:22px;padding-top:20px;border-top:1px dashed var(--line);text-align:center}
+  .apply-big-text{font-size:14px;color:var(--muted);margin-bottom:10px;font-weight:600}
+  .btn-apply{width:100%;padding:14px;background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff;border-radius:12px;font-weight:700;font-size:15.5px;transition:.18s;box-shadow:0 4px 14px rgba(219,39,119,.3)}
+  .btn-apply:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(219,39,119,.4)}
+  .company-logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff;display:grid;place-items:center;font-weight:800;font-size:16px}
   .apply-link{margin-top:14px;text-align:center;font-size:13.5px}
   .apply-link button{color:var(--petrol);font-weight:600;text-decoration:underline}
   .app{display:none;min-height:100vh}.app.active{display:block}
@@ -154,6 +163,8 @@
   @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   .wiz-num{font-size:13px;font-weight:700;color:var(--petrol);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
   .wiz-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:28px;box-shadow:var(--shadow)}
+  .wiz-hero{height:120px;border-radius:14px;background:linear-gradient(135deg,#7c3aed,#db2777);display:grid;place-items:center;font-size:54px;margin-bottom:18px}
+  .info-box{background:var(--petrol-soft);border-radius:12px;padding:14px 16px;font-size:13px;color:#4a4060;line-height:1.55;margin-bottom:6px}
   .wiz-card h2{font-size:23px;margin-bottom:10px}
   .wiz-card p.lead{color:var(--muted);margin-bottom:20px}
   .team-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}
@@ -236,32 +247,36 @@
 <!-- ============ LOGIN ============ -->
 <div class="login-wrap" id="loginScreen">
   <div class="login-art">
-    <div class="brand"><span class="mark">E</span> Einsatzportal</div>
+    <div class="brand"><span class="mark">D</span> DailyDo</div>
     <div class="art-head">
-      <h1>Aufträge dort, wo sie ankommen.</h1>
-      <p>Das Büro legt Kunden an – die passenden Mitarbeiter sehen den Auftrag sofort und nehmen selbst an. Wer zuerst zusagt, bekommt ihn.</p>
+      <h1>Dein Job. Dein Tempo. Dein Alltag.</h1>
+      <p>Finde Einsätze in deiner Nähe, nimm sie mit einem Tipp an und teile dir deine Woche selbst ein. Wer zuerst zusagt, ist dabei.</p>
     </div>
     <div class="art-flow">
-      <div class="art-step"><span class="n">1</span><div><b>Büro gibt Kunde frei</b><span>Auftrag erscheint bei passenden Kräften</span></div></div>
-      <div class="art-step"><span class="n">2</span><div><b>Mitarbeiter nimmt an</b><span>Windhundprinzip – der Erste gewinnt</span></div></div>
-      <div class="art-step"><span class="n">3</span><div><b>Volle Daten & Termin</b><span>Kontakt wird freigeschaltet</span></div></div>
+      <div class="art-step"><span class="n">1</span><div><b>Einsatz erscheint</b><span>Passende Jobs direkt in deiner Nähe</span></div></div>
+      <div class="art-step"><span class="n">2</span><div><b>Du sagst zu</b><span>Schnapp dir den Einsatz, bevor's jemand anders tut</span></div></div>
+      <div class="art-step"><span class="n">3</span><div><b>Los geht's</b><span>Kontaktdaten & Termin sofort freigeschaltet</span></div></div>
     </div>
   </div>
   <div class="login-form">
     <div class="form-card">
-      <h2>Anmelden</h2>
-      <p class="sub">Wähle deinen Bereich und melde dich an.</p>
+      <h2>Willkommen zurück 👋</h2>
+      <p class="sub">Melde dich an und leg los.</p>
       <div class="role-toggle">
-        <button id="roleAdmin" class="active" onclick="setRole('admin')">Admin / Büro</button>
+        <button id="roleAdmin" class="active" onclick="setRole('admin')">Büro</button>
         <button id="roleStaff" onclick="setRole('staff')">Mitarbeiter</button>
       </div>
       <div class="field"><label for="user">Benutzername oder E-Mail</label>
-        <input id="user" type="text" placeholder="z. B. daniel@alltagshilfe.de" /></div>
+        <input id="user" type="text" placeholder="z. B. daniel@dailydo.de" /></div>
       <div class="field"><label for="pass">Passwort</label>
         <input id="pass" type="password" placeholder="••••••••" /></div>
       <button class="btn-primary" onclick="doLogin()">Anmelden</button>
-      <div class="demo-note"><b>Demo-Modus:</b> Die Anmeldung akzeptiert jede Eingabe. Der Bereich richtet sich nach der Auswahl oben.</div>
-      <div class="apply-link">Neu hier? <button onclick="startWizard()">Als Mitarbeiter bewerben →</button></div>
+      <div class="forgot-link"><button onclick="showForgot()">Passwort vergessen?</button></div>
+      <div class="demo-note"><b>Test-Modus:</b> Die Anmeldung akzeptiert jede Eingabe. Der Bereich richtet sich nach der Auswahl oben.</div>
+      <div class="apply-big">
+        <div class="apply-big-text">Noch kein Teil des Teams?</div>
+        <button class="btn-apply" onclick="startWizard()">✨ Jetzt als Mitarbeiter bewerben</button>
+      </div>
     </div>
   </div>
 </div>
@@ -271,12 +286,13 @@
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:14px">
       <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
-      <div class="brand"><span class="mark">E</span> Einsatzportal</div>
+      <div class="brand"><span class="mark">D</span> DailyDo</div>
     </div>
     <div class="top-right">
-      <span class="role-pill" id="rolePill">Admin</span>
+      <span class="role-pill" id="rolePill">Büro</span>
       <div class="who"><span class="avatar" id="avatar">D</span>
         <div class="meta"><b id="whoName">Daniel D.</b><span id="whoRole">Büro / Verwaltung</span></div></div>
+      <span class="company-logo" title="DailyDo">D</span>
       <button class="logout" onclick="logout()">Abmelden</button>
     </div>
   </div>
@@ -289,7 +305,7 @@
 <!-- ============ BEWERBUNGS-WIZARD ============ -->
 <div class="wizard" id="wizard">
   <div class="wiz-top">
-    <div class="brand" style="color:var(--petrol)"><span class="mark" style="background:var(--petrol);color:#fff">A</span> Alltagshilfe Hannover</div>
+    <div class="brand" style="color:var(--petrol)"><span class="mark" style="background:var(--petrol);color:#fff">D</span> DailyDo</div>
     <button class="logout" onclick="exitWizard()">Abbrechen</button>
   </div>
   <div class="wiz-progress"><div class="bar" id="wizBar" style="width:12.5%"></div></div>
@@ -310,7 +326,7 @@
 <script>
 /* ============ DEMO-DATEN ============ */
 let currentRole='admin';
-const SKILLS=['Haushaltshilfe','Begleitung','Betreuung','Haustier ok'];
+const SKILLS=['Haushaltshilfe','Einkaufsservice','Begleitdienste','Organisatorische Hilfe','Digitale Fragen'];
 const WEEKDAYS=['Mo','Di','Mi','Do','Fr','Sa','So'];
 const FREQ_UNITS=['pro Woche','alle 2 Wochen','pro Monat','nach Bedarf'];
 let myId=0;
@@ -424,8 +440,8 @@ function rowToCust(r){return {
 };}
 function jobToRow(j){return {customer_id:j.customerId,title:j.title,skills:j.skills||[],status:j.status,assigned_to:j.assignedTo,rejected_by:j.rejectedBy||[],commit_deadline:j.commitDeadline?new Date(j.commitDeadline).toISOString():null};}
 function rowToJob(r){return {id:r.id,customerId:r.customer_id,title:r.title,skills:r.skills||[],status:r.status,assignedTo:r.assigned_to,rejectedBy:r.rejected_by||[],commitDeadline:r.commit_deadline?new Date(r.commit_deadline).getTime():null};}
-function appToRow(a){return {first:a.first,last:a.last,gender:a.gender||null,email:a.email,phone:a.phone,area:a.area,citizenship:a.citizenship,skills:a.skills||[],motivation:a.motivation,status:a.status,docs:a.docs||{},signatures:a.signatures||{},questionnaire:a.questionnaire||{},declaration:a.declaration||{},id_front:!!a.idFront,id_back:!!a.idBack,selfie:!!a.selfie,agb:!!a.agb};}
-function rowToApp(r){return {id:r.id,first:r.first,last:r.last,gender:r.gender,email:r.email,phone:r.phone,area:r.area,citizenship:r.citizenship,skills:r.skills||[],motivation:r.motivation,status:r.status,docs:r.docs||{},signatures:r.signatures||{},questionnaire:r.questionnaire||{},declaration:r.declaration||{},idFront:r.id_front,idBack:r.id_back,selfie:r.selfie,agb:r.agb};}
+function appToRow(a){const q=a.questionnaire||{};return {first:a.first,last:a.last,gender:a.gender||null,email:a.email,phone:a.phone,area:a.area,citizenship:a.citizenship,skills:a.skills||[],motivation:a.motivation,status:a.status,docs:a.docs||{},signatures:a.signatures||{},questionnaire:a.questionnaire||{},declaration:a.declaration||{},id_front:!!a.idFront,id_back:!!a.idBack,selfie:!!a.selfie,agb:!!a.agb,street:q.street||null,house_no:q.houseNo||null,plz:q.plz||null,city:q.city||null,employment:q.employment||null,other_job:q.otherJob||null,is_student:!!a.isStudent,enrollment_file:!!a.enrollmentFile,pets:a.pets||[]};}
+function rowToApp(r){return {id:r.id,first:r.first,last:r.last,gender:r.gender,email:r.email,phone:r.phone,area:r.area,citizenship:r.citizenship,skills:r.skills||[],motivation:r.motivation,status:r.status,docs:r.docs||{},signatures:r.signatures||{},questionnaire:r.questionnaire||{},declaration:r.declaration||{},idFront:r.id_front,idBack:r.id_back,selfie:r.selfie,agb:r.agb,isStudent:r.is_student,enrollmentFile:r.enrollment_file,pets:r.pets||[]};}
 
 /* ---- Speicher-Helfer: schreiben einzelne Objekte zurück ---- */
 async function cloudInsert(table,row){ if(!CLOUD)return null; try{const{data,error}=await sb.from(table).insert(row).select().single(); if(error){console.warn('insert',table,error.message);return null;} return data;}catch(e){console.warn(e);return null;} }
@@ -506,7 +522,15 @@ function freqText(c){return c.freqUnit==='nach Bedarf'?'nach Bedarf':(c.freqNum+
 function setRole(r){currentRole=r;
   document.getElementById('roleAdmin').classList.toggle('active',r==='admin');
   document.getElementById('roleStaff').classList.toggle('active',r==='staff');
-  document.getElementById('user').placeholder=r==='admin'?'z. B. daniel@alltagshilfe.de':'z. B. ivonne@alltagshilfe.de';
+  document.getElementById('user').placeholder=r==='admin'?'z. B. daniel@dailydo.de':'z. B. ivonne@dailydo.de';
+}
+function showForgot(){
+  const email=prompt('Passwort zurücksetzen\n\nGib deine E-Mail-Adresse ein. Du erhältst dann einen Link zum Zurücksetzen.');
+  if(email&&email.indexOf('@')>0){
+    toast('Wenn ein Konto existiert, wurde ein Reset-Link an '+email+' gesendet.');
+  }else if(email!==null){
+    toast('Bitte eine gültige E-Mail-Adresse eingeben',true);
+  }
 }
 function doLogin(){
   document.getElementById('loginScreen').style.display='none';
@@ -1253,49 +1277,58 @@ function wizNumLabel(n){return '<div class="wiz-num">Schritt '+n+' von '+WIZ_TOT
 
 function wizAbout(){
   return wizNumLabel(1)+
-  '<div class="wiz-card"><h2>Willkommen bei der Alltagshilfe Hannover</h2>'+
-  '<p class="lead">Wir unterstützen Menschen im Alltag – mit Haushaltshilfe, Begleitung und Betreuung. Werde Teil unseres Teams!</p>'+
-  '<div class="team-grid">'+TEAM.map(([e,n,r])=>'<div class="team-member"><div class="team-photo">'+e+'</div><b>'+n+'</b><span>'+r+'</span></div>').join('')+'</div>'+
-  '<p style="font-size:13.5px;color:var(--muted)">Über 10 Jahre Erfahrung in Haushaltsnähe und Betreuung. Bei uns arbeitest du flexibel und sinnstiftend.</p>'+
-  '<div class="wiz-nav"><span></span><button class="btn-primary" onclick="wizNext()">Weiter →</button></div></div>';
+  '<div class="wiz-card">'+
+  '<div class="wiz-hero">🤝</div>'+
+  '<h2>Willkommen bei DailyDo</h2>'+
+  '<p class="lead">Alltagshilfe leicht gemacht: Unsere Plattform bringt hilfesuchende Menschen und engagierte Helfer zusammen. Nutzer können unkompliziert Aufträge erstellen oder passende Jobs finden – von Haushalt und Einkäufen bis hin zu Begleitdiensten. Schnell, lokal und zuverlässig.</p>'+
+  '<div class="info-box">Seit über 15 Jahren stehen wir für zuverlässige Unterstützung im Alltag. Jährlich vertrauen uns mehr als 1.000 zufriedene Kunden bei der Vermittlung von qualifizierten Helfern für Haushalt, Einkäufe, Begleitdienste und viele weitere Dienstleistungen. Unser Ziel: schnelle Hilfe, persönliche Betreuung und höchste Kundenzufriedenheit.</div>'+
+  '<div class="wiz-nav"><span></span><button class="btn-primary" onclick="wizNext()">Los geht\'s →</button></div></div>';
 }
 function wizTasks(){
-  const tasks=[['🧹','Haushaltshilfe','Reinigung, Wäsche, Einkäufe und Ordnung im Haushalt'],['🚶','Begleitung','Zu Arztterminen, Behörden oder beim Spaziergang'],['💬','Betreuung','Gesellschaft leisten, vorlesen, gemeinsame Aktivitäten'],['🤝','Zuverlässigkeit','Pünktlich und verlässlich bei festen Terminen']];
+  const tasks=[['🧹','Haushaltshilfe','Reinigung, Wäsche und Ordnung im Haushalt'],['🛒','Einkaufsservice','Einkäufe erledigen und Besorgungen machen'],['🚶','Begleitdienste','Zu Arztterminen, Behörden oder beim Spaziergang'],['🗂️','Organisatorische Hilfe','Post, Termine und Papierkram im Griff'],['📱','Digitale Fragen','Unterstützung bei Handy, Tablet und Computer']];
   return wizNumLabel(2)+
-  '<div class="wiz-card"><h2>Was du im Job machst</h2>'+
+  '<div class="wiz-card"><h2>Was du bei uns machst</h2>'+
   '<p class="lead">Deine Aufgaben sind abwechslungsreich und richten sich nach den Bedürfnissen unserer Kunden.</p>'+
   '<ul class="task-list">'+tasks.map(([ic,t,d])=>'<li><span class="ic">'+ic+'</span><div><b>'+t+'</b><div style="color:var(--muted);font-size:13px">'+d+'</div></div></li>').join('')+'</ul>'+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="wizNext()">Weiter →</button></div></div>';
 }
 function wizRequirements(){
-  const reqs=['Zuverlässigkeit und Pünktlichkeit','Freundlicher, einfühlsamer Umgang mit Menschen','Eigener Pkw von Vorteil (nicht zwingend)','Erweitertes Führungszeugnis (wird benötigt)','Bereitschaft zu flexiblen Einsatzzeiten'];
+  const reqs=['Freundlicher, einfühlsamer Umgang mit Menschen','Eigener Pkw von Vorteil (nicht zwingend)','Bereitschaft zu flexiblen Einsatzzeiten'];
   return wizNumLabel(3)+
-  '<div class="wiz-card"><h2>Was du mitbringen musst</h2>'+
+  '<div class="wiz-card"><h2>Was du mitbringen solltest</h2>'+
   '<p class="lead">Damit es passt, solltest du folgende Voraussetzungen erfüllen:</p>'+
   '<ul class="task-list">'+reqs.map(r=>'<li><span class="ic">✓</span><div style="padding-top:2px">'+r+'</div></li>').join('')+'</ul>'+
-  '<div class="confirm-box" onclick="document.getElementById(\'reqChk\').click()"><input type="checkbox" id="reqChk" onclick="event.stopPropagation();document.getElementById(\'reqNext\').disabled=!this.checked"><label>Ich bestätige, dass ich die Voraussetzungen erfülle und zum Profil passe.</label></div>'+
-  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="reqNext" disabled onclick="wizNext()">Weiter →</button></div></div>';
+  '<div class="confirm-box" onclick="document.getElementById(\'crimeChk\').click()"><input type="checkbox" id="crimeChk" onclick="event.stopPropagation();document.getElementById(\'reqNext\').disabled=!this.checked"><label>Ich bestätige, dass keine Einträge im Führungszeugnis vorhanden sind.</label></div>'+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="reqNext" disabled onclick="saveCrimeCheck()">Weiter →</button></div></div>';
 }
+function saveCrimeCheck(){ wizData.declaration=wizData.declaration||{}; wizData.declaration.noCrime=true; wizNext(); }
 function wizDataForm(){
+  const pets=wizData.pets||[];
   return wizNumLabel(4)+
   '<div class="wiz-card"><h2>Deine Daten</h2>'+
-  '<p class="lead">Bitte fülle alle Felder aus, damit wir dich kontaktieren können.</p>'+
+  '<p class="lead">Bitte fülle alle Felder aus – nur die Motivation ist freiwillig.</p>'+
   '<div class="wiz-form">'+
-    '<div class="form-row"><div><label>Vorname</label><input id="wz_first" value="'+(wizData.first||'')+'"></div>'+
-    '<div><label>Nachname</label><input id="wz_last" value="'+(wizData.last||'')+'"></div></div>'+
-    '<label>Geschlecht</label>'+
+    '<div class="form-row"><div><label>Vorname *</label><input id="wz_first" value="'+(wizData.first||'')+'"></div>'+
+    '<div><label>Nachname *</label><input id="wz_last" value="'+(wizData.last||'')+'"></div></div>'+
+    '<label>Geschlecht *</label>'+
     '<div class="seg" id="wz_gender">'+['männlich','weiblich','divers'].map(g=>'<button data-v="'+g+'" class="'+(wizData.gender===g?'on':'')+'" onclick="segPick(this,\'wz_gender\')">'+g+'</button>').join('')+'</div>'+
     '<div style="height:14px"></div>'+
-    '<label>E-Mail</label><input id="wz_email" type="email" value="'+(wizData.email||'')+'">'+
-    '<label>Telefon</label><input id="wz_phone" value="'+(wizData.phone||'')+'">'+
-    '<label>Gebiet / Wohnort</label><input id="wz_area" value="'+(wizData.area||'')+'" placeholder="z. B. Hannover">'+
-    '<label>Staatsbürgerschaft / Arbeitserlaubnis</label>'+
-    '<select id="wz_citizen"><option value="">Bitte wählen …</option><option>Deutsche Staatsbürgerschaft</option><option>EU-Bürger/in</option><option>Aufenthalts-/Arbeitserlaubnis vorhanden</option></select>'+
-    '<label>Was kannst du übernehmen?</label>'+
+    '<label>E-Mail *</label><input id="wz_email" type="email" value="'+(wizData.email||'')+'">'+
+    '<label>Telefon *</label><input id="wz_phone" value="'+(wizData.phone||'')+'">'+
+    '<label>Gebiet / Wohnort *</label><input id="wz_area" value="'+(wizData.area||'')+'" placeholder="z. B. Hannover">'+
+    '<label>Staatsbürgerschaft / Arbeitserlaubnis *</label>'+
+    '<select id="wz_citizen"><option value="">Bitte wählen …</option><option '+(wizData.citizenship==='Deutsche Staatsbürgerschaft'?'selected':'')+'>Deutsche Staatsbürgerschaft</option><option '+(wizData.citizenship==='EU-Bürger/in'?'selected':'')+'>EU-Bürger/in</option><option '+(wizData.citizenship==='Aufenthalts-/Arbeitserlaubnis vorhanden'?'selected':'')+'>Aufenthalts-/Arbeitserlaubnis vorhanden</option></select>'+
+    '<label>Welche Leistungen kannst du übernehmen? *</label>'+
     '<div class="checks" id="wz_skills">'+SKILLS.map(s=>'<span class="check '+(wizData.skills.includes(s)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+s+'</span>').join('')+'</div>'+
+    '<label>Bist du im Umgang mit Haustieren bereit? *</label>'+
+    '<div class="checks" id="wz_pets">'+['Hunde ok','Katzen ok','Andere Kleintiere ok','Keine Haustiere'].map(pp=>'<span class="check '+(pets.includes(pp)?'on':'')+'" onclick="petPick(this)">'+pp+'</span>').join('')+'</div>'+
     '<label>Kurze Motivation (optional)</label><textarea id="wz_motiv" rows="3" placeholder="Warum möchtest du bei uns arbeiten?">'+(wizData.motivation||'')+'</textarea>'+
   '</div>'+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="saveWizData()">Weiter →</button></div></div>';
+}
+function petPick(el){
+  if(el.textContent==='Keine Haustiere'){ document.querySelectorAll('#wz_pets .check').forEach(x=>{if(x!==el)x.classList.remove('on');}); el.classList.toggle('on'); }
+  else { const none=[...document.querySelectorAll('#wz_pets .check')].find(x=>x.textContent==='Keine Haustiere'); if(none)none.classList.remove('on'); el.classList.toggle('on'); }
 }
 function saveWizData(){
   wizData.first=val('wz_first');wizData.last=val('wz_last');wizData.email=val('wz_email');
@@ -1303,10 +1336,16 @@ function saveWizData(){
   const g=document.querySelector('#wz_gender button.on');wizData.gender=g?g.dataset.v:'';
   wizData.citizenship=document.getElementById('wz_citizen').value;
   wizData.skills=[...document.querySelectorAll('#wz_skills .check.on')].map(e=>e.textContent);
+  wizData.pets=[...document.querySelectorAll('#wz_pets .check.on')].map(e=>e.textContent);
   wizData.motivation=val('wz_motiv');
-  if(!wizData.first||!wizData.last||!wizData.email){toast('Bitte Name und E-Mail ausfüllen',true);return;}
+  if(!wizData.first||!wizData.last){toast('Bitte Vor- und Nachnamen ausfüllen',true);return;}
+  if(!wizData.email||wizData.email.indexOf('@')<1){toast('Bitte gültige E-Mail eingeben',true);return;}
+  if(!wizData.phone){toast('Bitte Telefonnummer eingeben',true);return;}
+  if(!wizData.area){toast('Bitte Wohnort eingeben',true);return;}
   if(!wizData.gender){toast('Bitte Geschlecht wählen',true);return;}
   if(!wizData.citizenship){toast('Bitte Staatsbürgerschaft/Arbeitserlaubnis wählen',true);return;}
+  if(!wizData.skills.length){toast('Bitte mindestens eine Leistung wählen',true);return;}
+  if(!wizData.pets.length){toast('Bitte Angabe zu Haustieren machen',true);return;}
   wizNext();
 }
 
@@ -1324,35 +1363,73 @@ const PFB_QUESTIONS=[
   {key:'employment',label:'Gewünschte Anstellungsart',type:'select',opts:['Minijob','Midijob','Teilzeit','Vollzeit','kurzfristige Beschäftigung']},
   {key:'otherJob',label:'Übst du weitere Beschäftigungen aus?',type:'select',opts:['nein','ja, ein Minijob','ja, Hauptbeschäftigung','ja, Sonstiges']}
 ];
+// --- Validierungs-Helfer ---
+function validTaxId(v){ return /^\d{11}$/.test((v||'').replace(/\s/g,'')); }
+function validKvNr(v){ return /^[A-Za-z]\d{9}$/.test((v||'').replace(/\s/g,'')); }
+function validIban(v){
+  v=(v||'').replace(/\s/g,'').toUpperCase();
+  if(!/^DE\d{20}$/.test(v)) return false;
+  const re=v.slice(4)+v.slice(0,4);
+  const num=re.replace(/[A-Z]/g,c=>c.charCodeAt(0)-55);
+  let rem=0; for(let i=0;i<num.length;i++){ rem=(rem*10+parseInt(num[i],10))%97; }
+  return rem===1;
+}
 let pfbIndex=0;
 function wizQuestionnaire(){
-  // Vorbefüllung: Name/Geschlecht aus vorherigem Schritt ist bereits in wizData
-  const q=PFB_QUESTIONS[pfbIndex];
-  const val0=(wizData.questionnaire&&wizData.questionnaire[q.key])||'';
-  let field='';
-  if(q.type==='select'){
-    field='<select id="pfb_input">'+'<option value="">Bitte wählen …</option>'+q.opts.map(o=>'<option '+(val0===o?'selected':'')+'>'+o+'</option>').join('')+'</select>';
-  }else{
-    field='<input id="pfb_input" type="'+(q.type==='date'?'date':'text')+'" value="'+val0+'" placeholder="'+(q.ph||'')+'">';
-  }
+  const q=wizData.questionnaire||{};
   return wizNumLabel(5)+
   '<div class="wiz-card"><h2>Personalfragebogen</h2>'+
-  '<p class="lead">Frage '+(pfbIndex+1)+' von '+PFB_QUESTIONS.length+' · Diese Angaben werden für deinen Arbeitsvertrag und den Personalfragebogen verwendet.</p>'+
-  '<div style="height:9px;background:#eef3f3;border-radius:6px;margin-bottom:20px;overflow:hidden"><div style="height:100%;width:'+Math.round((pfbIndex+1)/PFB_QUESTIONS.length*100)+'%;background:var(--petrol);border-radius:6px;transition:width .3s"></div></div>'+
-  '<div class="wiz-form"><label>'+q.label+'</label>'+field+'</div>'+
-  '<div class="wiz-nav"><button class="btn-ghost" onclick="pfbBack()">← Zurück</button><button class="btn-primary" onclick="pfbNext()">'+(pfbIndex<PFB_QUESTIONS.length-1?'Weiter →':'Fragebogen abschließen →')+'</button></div></div>';
+  '<p class="lead">Diese Angaben verwenden wir für deinen Arbeitsvertrag. Alle Felder sind Pflicht.</p>'+
+  '<div class="wiz-form">'+
+    '<div class="form-row"><div><label>Vorname *</label><input id="pf_first" value="'+(wizData.first||'')+'"></div>'+
+    '<div><label>Nachname *</label><input id="pf_last" value="'+(wizData.last||'')+'"></div></div>'+
+    '<div class="form-row"><div style="flex:3"><label>Straße *</label><input id="pf_street" value="'+(q.street||'')+'"></div>'+
+    '<div style="flex:1"><label>Hausnr. *</label><input id="pf_houseno" value="'+(q.houseNo||'')+'"></div></div>'+
+    '<div class="form-row"><div style="flex:1"><label>PLZ *</label><input id="pf_plz" value="'+(q.plz||'')+'"></div>'+
+    '<div style="flex:2"><label>Ort *</label><input id="pf_city" value="'+(q.city||'')+'"></div></div>'+
+    '<label>Geburtsdatum *</label><input id="pf_birth" type="date" value="'+(q.birth||'')+'">'+
+    '<label>Steuer-Identifikationsnummer *</label><input id="pf_taxid" value="'+(q.taxId||'')+'" placeholder="11 Ziffern">'+
+    '<label>Krankenversicherungsnummer *</label><input id="pf_kvnr" value="'+(q.kvNr||'')+'" placeholder="1 Buchstabe + 9 Ziffern">'+
+    '<label>Krankenkasse *</label><input id="pf_kasse" value="'+(q.kasse||'')+'" placeholder="z. B. AOK Niedersachsen">'+
+    '<label>IBAN *</label><input id="pf_iban" value="'+(q.iban||'')+'" placeholder="DE..">'+
+    '<label>Beschäftigungsart *</label>'+
+    '<select id="pf_employment"><option value="">Bitte wählen …</option>'+['Minijob','Midijob','Werkstudent','Kurzfristige Beschäftigung'].map(e=>'<option '+(q.employment===e?'selected':'')+'>'+e+'</option>').join('')+'</select>'+
+    '<label>Übst du weitere Beschäftigungen aus? *</label>'+
+    '<select id="pf_otherjob" onchange="pfbOtherJobChange()"><option value="">Bitte wählen …</option>'+['Ja, Student','Ja, Hauptbeschäftigung','Nein'].map(e=>'<option '+(q.otherJob===e?'selected':'')+'>'+e+'</option>').join('')+'</select>'+
+    '<div id="pf_studentbox" style="display:'+(q.otherJob==='Ja, Student'?'block':'none')+';margin-top:14px">'+
+      '<label>Immatrikulationsbescheinigung hochladen *</label>'+
+      '<div class="upload-box '+(wizData.enrollmentFile?'done':'')+'" id="up-enroll" onclick="simEnroll()"><div class="ub-ic">'+(wizData.enrollmentFile?'✓':'🎓')+'</div><div class="ub-t">'+(wizData.enrollmentFile?'Bescheinigung hochgeladen':'Foto aufnehmen oder Datei hochladen')+'</div><div class="ub-s">JPG, PNG oder PDF</div></div>'+
+    '</div>'+
+  '</div>'+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="savePfb()">Weiter →</button></div></div>';
 }
-function pfbNext(){
-  const q=PFB_QUESTIONS[pfbIndex];
-  const v=val('pfb_input');
-  wizData.questionnaire=wizData.questionnaire||{};
-  wizData.questionnaire[q.key]=v;
-  if(pfbIndex<PFB_QUESTIONS.length-1){pfbIndex++;renderWizard();window.scrollTo(0,0);}
-  else {pfbIndex=0;wizNext();}
+function pfbOtherJobChange(){
+  const v=document.getElementById('pf_otherjob').value;
+  document.getElementById('pf_studentbox').style.display=(v==='Ja, Student')?'block':'none';
 }
-function pfbBack(){
-  if(pfbIndex>0){const q=PFB_QUESTIONS[pfbIndex];wizData.questionnaire[q.key]=val('pfb_input');pfbIndex--;renderWizard();window.scrollTo(0,0);}
-  else {pfbIndex=0;wizBack();}
+function simEnroll(){ wizData.enrollmentFile=true; const b=document.getElementById('up-enroll'); b.classList.add('done'); b.querySelector('.ub-ic').textContent='✓'; b.querySelector('.ub-t').textContent='Bescheinigung hochgeladen'; toast('Immatrikulationsbescheinigung hochgeladen'); }
+function savePfb(){
+  const q=wizData.questionnaire||{};
+  q.street=val('pf_street');q.houseNo=val('pf_houseno');q.plz=val('pf_plz');q.city=val('pf_city');
+  q.address=(q.street+' '+q.houseNo+', '+q.plz+' '+q.city).trim();
+  q.birth=val('pf_birth');q.taxId=val('pf_taxid');q.kvNr=val('pf_kvnr');q.kasse=val('pf_kasse');q.iban=val('pf_iban');
+  q.employment=document.getElementById('pf_employment').value;
+  q.otherJob=document.getElementById('pf_otherjob').value;
+  wizData.questionnaire=q;
+  wizData.first=val('pf_first');wizData.last=val('pf_last');
+  // Pflichtprüfung
+  if(!q.street||!q.houseNo||!q.plz||!q.city){toast('Bitte die komplette Anschrift ausfüllen',true);return;}
+  if(!q.birth){toast('Bitte Geburtsdatum angeben',true);return;}
+  if(!validTaxId(q.taxId)){toast('Steuer-ID muss aus genau 11 Ziffern bestehen',true);return;}
+  if(!validKvNr(q.kvNr)){toast('KV-Nummer: 1 Buchstabe gefolgt von 9 Ziffern',true);return;}
+  if(!q.kasse){toast('Bitte Krankenkasse angeben',true);return;}
+  if(!validIban(q.iban)){toast('Bitte eine gültige deutsche IBAN eingeben',true);return;}
+  if(!q.employment){toast('Bitte Beschäftigungsart wählen',true);return;}
+  if(!q.otherJob){toast('Bitte Angabe zu weiterer Beschäftigung machen',true);return;}
+  if(q.otherJob==='Nein'){toast('Eine Bewerbung ist nur mit Studenten- oder Hauptbeschäftigungsstatus möglich.',true);return;}
+  if(q.otherJob==='Ja, Student'&&!wizData.enrollmentFile){toast('Bitte Immatrikulationsbescheinigung hochladen',true);return;}
+  wizData.isStudent=(q.otherJob==='Ja, Student');
+  wizNext();
 }
 function fillContract(text){
   const name=((wizData.first||'')+' '+(wizData.last||'')).trim();
@@ -1383,18 +1460,16 @@ function checkContracts(){
   wizNext();
 }
 
-/* ---- Schritt 7: Erklärung (Führungszeugnis / Erste-Hilfe / Vorstrafen / KV-Karte) ---- */
+/* ---- Schritt 7: Erklärung (Führungszeugnis / Erste-Hilfe) ---- */
 function wizDeclaration(){
   const d=wizData.declaration;
   const chk=(key,label,sub)=>'<div class="confirm-box" style="background:#fff;border-color:var(--line)" onclick="toggleDecl(\''+key+'\')"><input type="checkbox" '+(d[key]?'checked':'')+' onclick="event.stopPropagation();toggleDecl(\''+key+'\')"><label><b>'+label+'</b>'+(sub?'<div style="font-weight:400;color:var(--muted);font-size:12.5px;margin-top:2px">'+sub+'</div>':'')+'</label></div>';
   return wizNumLabel(7)+
-  '<div class="wiz-card"><h2>Erklärung & Nachweise</h2>'+
+  '<div class="wiz-card"><h2>Nachweise & Bonus</h2>'+
   '<p class="lead">Fast geschafft. Bitte bestätige die folgenden Punkte.</p>'+
-  chk('noCrime','Ich versichere, nicht vorbestraft zu sein','und dass keine Verfahren anhängig sind, die der Tätigkeit entgegenstehen.')+
   chk('bringCertificate','Ich reiche innerhalb der ersten 2–3 Monate ein erweitertes Führungszeugnis nach','Pflicht für die Tätigkeit bei schutzbedürftigen Personen.')+
   chk('bringFirstAid','Ich absolviere innerhalb der ersten 2–3 Monate einen Erste-Hilfe-Kurs','Die Kosten werden nach Vorlage erstattet.')+
-  chk('sendKvCard','Ich sende zusätzlich eine Kopie meiner Krankenversichertenkarte (KV-Karte) ein','Wird für die Anmeldung zur Sozialversicherung benötigt.')+
-  '<div class="example-id" style="background:var(--good-soft);border-color:#c4e6d2;margin-top:16px"><div style="font-size:22px">🎁</div><div><b>Bonus:</b> Wer Führungszeugnis und Erste-Hilfe-Nachweis fristgerecht einreicht, erhält einen einmaligen Bonus von 100 €.</div></div>'+
+  '<div class="example-id" style="background:var(--good-soft);border-color:#bbf7d0;margin-top:16px"><div style="font-size:22px">🎁</div><div><b>Bonus:</b> Wer Führungszeugnis und Erste-Hilfe-Nachweis fristgerecht einreicht, erhält einen einmaligen Bonus von 100 €.</div></div>'+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="declNext" onclick="checkDeclaration()">Weiter →</button></div></div>';
 }
 function toggleDecl(key){
@@ -1403,9 +1478,7 @@ function toggleDecl(key){
 }
 function checkDeclaration(){
   const d=wizData.declaration;
-  if(!d.noCrime){toast('Bitte die Vorstrafen-Erklärung bestätigen',true);return;}
   if(!d.bringCertificate||!d.bringFirstAid){toast('Bitte Führungszeugnis und Erste-Hilfe bestätigen',true);return;}
-  if(!d.sendKvCard){toast('Bitte den Versand der KV-Karte bestätigen',true);return;}
   wizNext();
 }
 
@@ -1462,9 +1535,9 @@ function wizIdSelfie(){
   '<div class="wiz-card"><h2>Ausweis & Selfie</h2>'+
   '<p class="lead">Zur Identitätsprüfung benötigen wir Fotos deines Personalausweises und ein Selfie.</p>'+
   '<div class="example-id"><div class="mini-id"></div><div><b>So sollte das Foto aussehen:</b><br>Alle Ecken sichtbar, scharf, gut beleuchtet, Sicherheitsmerkmale erkennbar.</div></div>'+
-  '<div class="upload-box '+(wizData.idFront?'done':'')+'" id="up-idFront" onclick="simUpload(\'idFront\')"><div class="ub-ic">'+(wizData.idFront?'✓':'🪪')+'</div><div class="ub-t">'+(wizData.idFront?'Vorderseite hochgeladen':'Personalausweis – Vorderseite')+'</div><div class="ub-s">Tippen zum Fotografieren / Hochladen</div></div>'+
-  '<div class="upload-box '+(wizData.idBack?'done':'')+'" id="up-idBack" onclick="simUpload(\'idBack\')"><div class="ub-ic">'+(wizData.idBack?'✓':'🪪')+'</div><div class="ub-t">'+(wizData.idBack?'Rückseite hochgeladen':'Personalausweis – Rückseite')+'</div><div class="ub-s">Tippen zum Fotografieren / Hochladen</div></div>'+
-  '<div class="upload-box '+(wizData.selfie?'done':'')+'" id="up-selfie" onclick="simUpload(\'selfie\')"><div class="ub-ic">'+(wizData.selfie?'✓':'🤳')+'</div><div class="ub-t">'+(wizData.selfie?'Selfie hochgeladen':'Selfie')+'</div><div class="ub-s">Tippen zum Aufnehmen</div></div>'+
+  '<div class="upload-box '+(wizData.idFront?'done':'')+'" id="up-idFront" onclick="simUpload(\'idFront\')"><div class="ub-ic">'+(wizData.idFront?'✓':'🪪')+'</div><div class="ub-t">'+(wizData.idFront?'Vorderseite hochgeladen':'Personalausweis – Vorderseite')+'</div><div class="ub-s">📷 Foto aufnehmen · 🖼️ Foto hochladen · 📄 Datei</div></div>'+
+  '<div class="upload-box '+(wizData.idBack?'done':'')+'" id="up-idBack" onclick="simUpload(\'idBack\')"><div class="ub-ic">'+(wizData.idBack?'✓':'🪪')+'</div><div class="ub-t">'+(wizData.idBack?'Rückseite hochgeladen':'Personalausweis – Rückseite')+'</div><div class="ub-s">📷 Foto aufnehmen · 🖼️ Foto hochladen · 📄 Datei</div></div>'+
+  '<div class="upload-box '+(wizData.selfie?'done':'')+'" id="up-selfie" onclick="simUpload(\'selfie\')"><div class="ub-ic">'+(wizData.selfie?'✓':'🤳')+'</div><div class="ub-t">'+(wizData.selfie?'Selfie hochgeladen':'Selfie')+'</div><div class="ub-s">📷 Foto aufnehmen · 🖼️ hochladen</div></div>'+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="checkIds()">Weiter →</button></div></div>';
 }
 function simUpload(which){
@@ -1483,12 +1556,21 @@ function wizAgb(){
   return wizNumLabel(9)+
   '<div class="wiz-card"><h2>AGB & Datenschutz</h2>'+
   '<p class="lead">Zum Abschluss bestätige bitte, dass du unsere Bedingungen gelesen hast.</p>'+
-  '<div class="confirm-box" onclick="document.getElementById(\'agbChk\').click()"><input type="checkbox" id="agbChk" onclick="event.stopPropagation();checkAgb()"><label>Ich habe die <a href="#" onclick="event.preventDefault()">AGB</a> und die <a href="#" onclick="event.preventDefault()">Datenschutzerklärung</a> gelesen und akzeptiere sie.</label></div>'+
+  '<div class="confirm-box" onclick="document.getElementById(\'agbChk\').click()"><input type="checkbox" id="agbChk" onclick="event.stopPropagation();checkAgb()"><label>Ich habe die <a href="#" style="color:var(--blue);font-weight:600" onclick="event.stopPropagation();event.preventDefault();viewLegal(\'agb\')">AGB</a> und die <a href="#" style="color:var(--blue);font-weight:600" onclick="event.stopPropagation();event.preventDefault();viewLegal(\'datenschutz\')">Datenschutzerklärung</a> gelesen und akzeptiere sie.</label></div>'+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="agbNext" disabled onclick="submitApplication()">Bewerbung absenden</button></div></div>';
+}
+function viewLegal(which){
+  const t=which==='agb'
+    ? 'ALLGEMEINE GESCHÄFTSBEDINGUNGEN (DailyDo)\n\n§1 Geltungsbereich\nDiese AGB gelten für die Vermittlung von Alltagshilfe-Dienstleistungen über die Plattform DailyDo.\n\n§2 Leistungen\nDailyDo vermittelt Helfer:innen an hilfesuchende Personen für Haushalt, Einkäufe, Begleitdienste und weitere Alltagsleistungen.\n\n§3 Pflichten der Mitarbeiter\nMitarbeiter verpflichten sich zu zuverlässiger, sorgfältiger Leistungserbringung und zur Einhaltung der vereinbarten Termine.\n\n§4 Vergütung\nDie Abrechnung erfolgt auf Basis der erfassten und vom Kunden bestätigten Stunden.\n\n§5 Haftung\nEs gelten die gesetzlichen Haftungsregelungen.\n\n(Demo-Text – die endgültigen AGB werden vor dem Echtbetrieb juristisch erstellt.)'
+    : 'DATENSCHUTZERKLÄRUNG (DailyDo)\n\n1. Verantwortlicher\nDailyDo, Alltagshilfe Hannover.\n\n2. Verarbeitete Daten\nWir verarbeiten die im Bewerbungs- und Einsatzprozess angegebenen personenbezogenen Daten (Name, Kontaktdaten, Ausweisdaten, Steuer- und Sozialversicherungsdaten) ausschließlich zum Zweck der Beschäftigung und Einsatzvermittlung.\n\n3. Rechtsgrundlage\nArt. 6 Abs. 1 DSGVO sowie § 26 BDSG (Beschäftigtendatenschutz).\n\n4. Speicherung\nDie Daten werden auf Servern in der EU (Frankfurt) gespeichert und nur so lange aufbewahrt, wie es gesetzlich erforderlich ist.\n\n5. Deine Rechte\nDu hast das Recht auf Auskunft, Berichtigung, Löschung und Widerspruch.\n\n(Demo-Text – die endgültige Datenschutzerklärung wird vor dem Echtbetrieb juristisch erstellt.)';
+  document.getElementById('modalTitle').textContent=which==='agb'?'AGB':'Datenschutzerklärung';
+  document.getElementById('modalBody').innerHTML='<div class="doc-text" style="max-height:60vh;white-space:pre-wrap">'+t+'</div>';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  openModal();
 }
 function checkAgb(){document.getElementById('agbNext').disabled=!document.getElementById('agbChk').checked;}
 function submitApplication(){
-  const app={id:nextAppId++,first:wizData.first,last:wizData.last,gender:wizData.gender,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),questionnaire:Object.assign({},wizData.questionnaire||{}),declaration:Object.assign({},wizData.declaration||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true};
+  const app={id:nextAppId++,first:wizData.first,last:wizData.last,gender:wizData.gender,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),questionnaire:Object.assign({},wizData.questionnaire||{}),declaration:Object.assign({},wizData.declaration||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true,isStudent:!!wizData.isStudent,enrollmentFile:!!wizData.enrollmentFile,pets:wizData.pets||[]};
   applications.unshift(app);
   if(CLOUD){ cloudInsert('bewerbungen',appToRow(app)).then(r=>{ if(r)app.id=r.id; }); }
   wizNext();
