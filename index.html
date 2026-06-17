@@ -229,6 +229,7 @@
   .timer-box .tval{font-size:40px;font-weight:700;color:var(--petrol-dark);font-variant-numeric:tabular-nums;letter-spacing:1px}
   .timer-box .tlabel{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:8px}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -375,6 +376,119 @@ let payrolls=[
 ];
 let nextApptId=3, nextTsId=92, nextNoteId=3, nextProofId=1, nextPayrollId=2;
 
+/* ============================================================
+   SUPABASE-ANBINDUNG (Testphase)
+   ============================================================ */
+const SUPABASE_URL='https://kqufqziznvrvodadpmek.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxdWZxeml6bnZydm9kYWRwbWVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0MzU4MzcsImV4cCI6MjA5NzAxMTgzN30.PVZdLj3BANHBR_HUor2F1CFDUR4QzJb4N25DkgzH9eY';
+let sb=null;
+let CLOUD=false; // true sobald Verbindung steht
+
+function initSupabase(){
+  try{
+    if(window.supabase&&SUPABASE_URL.indexOf('http')===0){
+      sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+      return true;
+    }
+  }catch(e){console.warn('Supabase init fehlgeschlagen',e);}
+  return false;
+}
+
+/* ---- Mapping: JS-Objekt -> DB-Zeile (snake_case, time_window) ---- */
+function staffToRow(s){return {
+  first:s.first,last:s.last,role:s.role,status:s.status,skills:s.skills||[],area:s.area,phone:s.phone,email:s.email,gender:s.gender||null,
+  max_hours:s.maxHours||20,days:s.days||[],time_window:s.window||'Flexibel',
+  wage:s.wage||14,bonus_earned:(s.bonus&&s.bonus.earned)||0,bonus_pending:(s.bonus&&s.bonus.pending)||0,bonus_reason:(s.bonus&&s.bonus.reason)||null,
+  days_worked:s.daysWorked||0,color:s.color||'#0f5b63',has_login:!!s.hasLogin,login:s.login||null,
+  birth:(s.intern&&s.intern.birth)||null,address:(s.intern&&s.intern.address)||null,tax_id:(s.intern&&s.intern.taxId)||null,
+  tax_class:(s.intern&&s.intern.taxClass)||null,kv_nr:(s.intern&&s.intern.kvNr)||null,kasse:(s.intern&&s.intern.kasse)||null,
+  employment:(s.intern&&s.intern.employment)||null,citizenship:(s.intern&&s.intern.citizenship)||null,iban:(s.intern&&s.intern.iban)||null
+};}
+function rowToStaff(r){return {
+  id:r.id,first:r.first,last:r.last,role:r.role,status:r.status,skills:r.skills||[],area:r.area,phone:r.phone,email:r.email,gender:r.gender,
+  maxHours:r.max_hours,days:r.days||[],window:r.time_window,wage:Number(r.wage),
+  bonus:{earned:Number(r.bonus_earned),pending:Number(r.bonus_pending),reason:r.bonus_reason},
+  daysWorked:r.days_worked,color:r.color,hasLogin:r.has_login,login:r.login,
+  contracts:[], // werden separat geladen
+  intern:{birth:r.birth,address:r.address,taxId:r.tax_id,taxClass:r.tax_class,kvNr:r.kv_nr,kasse:r.kasse,employment:r.employment,citizenship:r.citizenship,iban:r.iban}
+};}
+function custToRow(c){return {
+  first:c.first,last:c.last,area:c.area,address:c.address,phone:c.phone,need:c.need||[],
+  freq_num:c.freqNum||1,freq_unit:c.freqUnit||'pro Woche',time_window:c.window||null,pet:c.pet,pgrad:c.pgrad,status:c.status,contact:c.contact,notes:c.notes,
+  kv_nr:(c.intern&&c.intern.kvNr)||null,kasse:(c.intern&&c.intern.kasse)||null,budget:(c.intern&&c.intern.budget)||null,budget_used:(c.intern&&c.intern.budgetUsed)||null
+};}
+function rowToCust(r){return {
+  id:r.id,first:r.first,last:r.last,area:r.area,address:r.address,phone:r.phone,need:r.need||[],
+  freqNum:r.freq_num,freqUnit:r.freq_unit,window:r.time_window,pet:r.pet,pgrad:r.pgrad,status:r.status,contact:r.contact,notes:r.notes,
+  intern:{kvNr:r.kv_nr,kasse:r.kasse,budget:r.budget,budgetUsed:r.budget_used}
+};}
+function jobToRow(j){return {customer_id:j.customerId,title:j.title,skills:j.skills||[],status:j.status,assigned_to:j.assignedTo,rejected_by:j.rejectedBy||[],commit_deadline:j.commitDeadline?new Date(j.commitDeadline).toISOString():null};}
+function rowToJob(r){return {id:r.id,customerId:r.customer_id,title:r.title,skills:r.skills||[],status:r.status,assignedTo:r.assigned_to,rejectedBy:r.rejected_by||[],commitDeadline:r.commit_deadline?new Date(r.commit_deadline).getTime():null};}
+function appToRow(a){return {first:a.first,last:a.last,gender:a.gender||null,email:a.email,phone:a.phone,area:a.area,citizenship:a.citizenship,skills:a.skills||[],motivation:a.motivation,status:a.status,docs:a.docs||{},signatures:a.signatures||{},questionnaire:a.questionnaire||{},declaration:a.declaration||{},id_front:!!a.idFront,id_back:!!a.idBack,selfie:!!a.selfie,agb:!!a.agb};}
+function rowToApp(r){return {id:r.id,first:r.first,last:r.last,gender:r.gender,email:r.email,phone:r.phone,area:r.area,citizenship:r.citizenship,skills:r.skills||[],motivation:r.motivation,status:r.status,docs:r.docs||{},signatures:r.signatures||{},questionnaire:r.questionnaire||{},declaration:r.declaration||{},idFront:r.id_front,idBack:r.id_back,selfie:r.selfie,agb:r.agb};}
+
+/* ---- Speicher-Helfer: schreiben einzelne Objekte zurück ---- */
+async function cloudInsert(table,row){ if(!CLOUD)return null; try{const{data,error}=await sb.from(table).insert(row).select().single(); if(error){console.warn('insert',table,error.message);return null;} return data;}catch(e){console.warn(e);return null;} }
+async function cloudUpdate(table,id,row){ if(!CLOUD)return; try{const{error}=await sb.from(table).update(row).eq('id',id); if(error)console.warn('update',table,error.message);}catch(e){console.warn(e);} }
+async function cloudDelete(table,id){ if(!CLOUD)return; try{await sb.from(table).delete().eq('id',id);}catch(e){console.warn(e);} }
+
+/* ---- Erstbefüllung: wenn DB leer, Demo-Daten hochladen ---- */
+async function seedIfEmpty(){
+  const {data:existing}=await sb.from('mitarbeiter').select('id').limit(1);
+  if(existing&&existing.length>0) return false; // schon Daten da
+  // Mitarbeiter
+  for(const s of staff){ const row=staffToRow(s); const d=await cloudInsert('mitarbeiter',row); if(d){ for(const ct of (s.contracts||[])){ await cloudInsert('vertraege',{mitarbeiter_id:d.id,name:ct.name,signed_date:ct.signedDate,signature:ct.signature}); } } }
+  // Kunden
+  for(const c of customers){ await cloudInsert('kunden',custToRow(c)); }
+  return true;
+}
+
+/* ---- Laden aller Kerndaten aus der DB ---- */
+async function loadFromCloud(){
+  const [mRes,kRes,aRes,bRes]=await Promise.all([
+    sb.from('mitarbeiter').select('*').order('id'),
+    sb.from('kunden').select('*').order('id'),
+    sb.from('auftraege').select('*').order('id'),
+    sb.from('bewerbungen').select('*').order('id')
+  ]);
+  if(mRes.data){ staff=mRes.data.map(rowToStaff); }
+  if(kRes.data){ customers=kRes.data.map(rowToCust); }
+  // Verträge den Mitarbeitern zuordnen
+  const {data:vRows}=await sb.from('vertraege').select('*');
+  if(vRows){ vRows.forEach(v=>{const s=staff.find(x=>x.id===v.mitarbeiter_id); if(s)s.contracts.push({name:v.name,signedDate:v.signed_date,signature:v.signature});}); }
+  // Aufträge: falls leer, aus den vorhandenen Kunden erzeugen
+  if(aRes.data&&aRes.data.length){ jobs=aRes.data.map(rowToJob); }
+  else { jobs=[]; for(const c of customers){ if(c.status!=='beendet'){ const row=jobToRow({customerId:c.id,title:(c.need[0]||'Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]}); const d=await cloudInsert('auftraege',row); if(d)jobs.push(rowToJob(d)); } } }
+  if(bRes.data){ applications=bRes.data.map(rowToApp); }
+  // myId auf ersten Mitarbeiter setzen
+  if(staff.length){ myId=staff[0].id; }
+}
+
+async function bootCloud(){
+  if(!initSupabase()){ showCloudBadge('lokal'); return; }
+  try{
+    showCloudBadge('verbinde');
+    await seedIfEmpty();
+    CLOUD=true;
+    await loadFromCloud();
+    showCloudBadge('cloud');
+    // aktuelle Ansicht neu zeichnen
+    if(currentRole==='admin'){ if(typeof renderAdmin==='function') renderAdmin('dashboard'); }
+    else { if(typeof renderStaff==='function') renderStaff('dashboard'); }
+  }catch(e){
+    console.warn('Cloud-Boot fehlgeschlagen, nutze lokale Daten',e);
+    showCloudBadge('lokal');
+  }
+}
+function showCloudBadge(state){
+  let b=document.getElementById('cloudBadge');
+  if(!b){ b=document.createElement('div'); b.id='cloudBadge'; b.style.cssText='position:fixed;bottom:12px;right:12px;z-index:9999;font-size:12px;font-weight:600;padding:6px 11px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.15)'; document.body.appendChild(b); }
+  if(state==='cloud'){ b.style.background='#0f5b63';b.style.color='#fff';b.textContent='● Datenbank verbunden'; }
+  else if(state==='verbinde'){ b.style.background='#e0a93b';b.style.color='#fff';b.textContent='● verbinde …'; }
+  else { b.style.background='#999';b.style.color='#fff';b.textContent='● lokal (ohne Datenbank)'; }
+}
+
+
 function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fmtDate(iso){if(!iso)return '';const p=iso.split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:iso;}
 function diffMinutes(start,end){const a=start.split(':'),b=end.split(':');return (parseInt(b[0])*60+parseInt(b[1]))-(parseInt(a[0])*60+parseInt(a[1]));}
@@ -404,7 +518,8 @@ function doLogin(){
     document.getElementById('avatar').textContent='D';
     renderAdmin('dashboard');
   }else{
-    myId=0;const m=me();
+    if(!staff.find(s=>s.id===myId)){ myId=staff.length?staff[0].id:0; }
+    const m=me();
     document.getElementById('rolePill').textContent='Mitarbeiter';
     document.getElementById('whoName').textContent=m.first+' '+m.last[0]+'.';
     document.getElementById('whoRole').textContent=m.role;
@@ -674,6 +789,7 @@ function gatherStaff(s){
 function saveStaff(){
   if(editingStaffId!==null){
     const s=staff.find(x=>x.id===editingStaffId);gatherStaff(s);
+    if(CLOUD) cloudUpdate('mitarbeiter',s.id,staffToRow(s));
     closeModal();toast('Mitarbeiterdaten gespeichert');
   }else{
     const s={id:nextStaffId++,maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',skills:[],color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,intern:{}};
@@ -681,7 +797,9 @@ function saveStaff(){
     if(!s.first&&!s.last){toast('Bitte Namen eingeben',true);return;}
     const login=val('es_login');const pass=val('es_pass');
     if(login&&pass){s.hasLogin=true;s.login=login;}
-    staff.push(s);closeModal();toast('Mitarbeiter hinzugefügt');
+    staff.push(s);
+    if(CLOUD){ cloudInsert('mitarbeiter',staffToRow(s)).then(r=>{ if(r)s.id=r.id; }); }
+    closeModal();toast('Mitarbeiter hinzugefügt');
   }
   document.getElementById('modalBox').classList.remove('wide');
   renderAdmin('staff');
@@ -691,6 +809,7 @@ function createLogin(id){
   const login=val('es_login')||s.email;const pass=val('es_pass');
   if(!pass){toast('Bitte ein Startpasswort vergeben',true);return;}
   s.hasLogin=true;s.login=login;
+  if(CLOUD) cloudUpdate('mitarbeiter',s.id,staffToRow(s));
   closeModal();document.getElementById('modalBox').classList.remove('wide');
   toast('Login erstellt & an '+s.first+' versendet');
   renderAdmin('staff');
@@ -754,9 +873,20 @@ function createCustomer(){
   if(!c.phone||c.phone==='—') missing.push('Telefon');
   if(!c.need||!c.need.length) missing.push('Leistung');
   if(missing.length){toast('Kunde unvollständig – fehlt: '+missing.join(', '),true);return;}
-  customers.unshift(c);
-  jobs.unshift({id:nextJobId++,customerId:c.id,title:(c.need[0]||'Neuer Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]});
-  toast('Kunde korrekt angelegt & als Auftrag freigegeben');renderAdmin('jobs');
+  const job={id:nextJobId++,customerId:c.id,title:(c.need[0]||'Neuer Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]};
+  if(CLOUD){
+    (async()=>{
+      const cRow=await cloudInsert('kunden',custToRow(c));
+      if(cRow){ c.id=cRow.id; job.customerId=cRow.id;
+        const jRow=await cloudInsert('auftraege',jobToRow(job)); if(jRow)job.id=jRow.id;
+      }
+      customers.unshift(c);jobs.unshift(job);
+      toast('Kunde gespeichert & als Auftrag freigegeben');renderAdmin('jobs');
+    })();
+  }else{
+    customers.unshift(c);jobs.unshift(job);
+    toast('Kunde korrekt angelegt & als Auftrag freigegeben');renderAdmin('jobs');
+  }
 }
 function editCustomer(id){
   const c=custById(id);
@@ -768,6 +898,7 @@ function editCustomer(id){
 }
 function updateCustomer(id){
   const c=custById(id);gatherCustomer(c);
+  if(CLOUD) cloudUpdate('kunden',id,custToRow(c));
   closeModal();document.getElementById('modalBox').classList.remove('wide');
   toast('Kundendaten gespeichert');renderAdmin('customers');
 }
@@ -818,6 +949,7 @@ function statusStepper(status){
 }
 function approveApp(id){
   const a=applications.find(x=>x.id===id);a.status='geprüft';
+  if(CLOUD) cloudUpdate('bewerbungen',id,{status:'geprüft'});
   closeModal();document.getElementById('modalBox').classList.remove('wide');
   toast('Bewerbung genehmigt – wartet auf Zugangsdaten');renderAdmin('applications');
 }
@@ -827,7 +959,12 @@ function sendAppLogin(id){
   // Signierte Verträge für die Mitarbeiter-Akte aufbereiten
   const signedDocs=Object.keys(a.docs||{}).filter(d=>a.docs[d]).map(d=>({name:d,signedDate:todayISO(),signature:(a.signatures&&a.signatures[d])||null}));
   // Bewerber wird zum aktiven Mitarbeiter
-  staff.push({id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,contracts:signedDocs,intern:{birth:(a.questionnaire&&a.questionnaire.birth)||'',address:(a.questionnaire&&a.questionnaire.address)||'',taxId:(a.questionnaire&&a.questionnaire.taxId)||'',taxClass:(a.questionnaire&&a.questionnaire.taxClass)||'I',kvNr:(a.questionnaire&&a.questionnaire.kvNr)||'',kasse:(a.questionnaire&&a.questionnaire.kasse)||'',employment:(a.questionnaire&&a.questionnaire.employment)||'Minijob',citizenship:a.citizenship,iban:(a.questionnaire&&a.questionnaire.iban)||''}});
+  const newStaff={id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,contracts:signedDocs,intern:{birth:(a.questionnaire&&a.questionnaire.birth)||'',address:(a.questionnaire&&a.questionnaire.address)||'',taxId:(a.questionnaire&&a.questionnaire.taxId)||'',taxClass:(a.questionnaire&&a.questionnaire.taxClass)||'I',kvNr:(a.questionnaire&&a.questionnaire.kvNr)||'',kasse:(a.questionnaire&&a.questionnaire.kasse)||'',employment:(a.questionnaire&&a.questionnaire.employment)||'Minijob',citizenship:a.citizenship,iban:(a.questionnaire&&a.questionnaire.iban)||''}};
+  staff.push(newStaff);
+  if(CLOUD){
+    cloudUpdate('bewerbungen',id,{status:'versendet'});
+    (async()=>{ const r=await cloudInsert('mitarbeiter',staffToRow(newStaff)); if(r){ newStaff.id=r.id; for(const ct of signedDocs){ await cloudInsert('vertraege',{mitarbeiter_id:r.id,name:ct.name,signed_date:ct.signedDate,signature:ct.signature}); } } })();
+  }
   closeModal();document.getElementById('modalBox').classList.remove('wide');
   toast('Zugangsdaten an '+a.first+' gesendet – jetzt aktiver Mitarbeiter');renderAdmin('applications');
 }
@@ -1058,7 +1195,8 @@ function confirmAccept(id){
   j.status='assigned';j.assignedTo=myId;
   // 48h-Timer für Terminvereinbarung setzen
   j.commitDeadline=Date.now()+48*3600*1000;
-  const cu=custById(j.customerId);if(cu)cu.status='aktiv';
+  const cu=custById(j.customerId);if(cu){cu.status='aktiv'; if(CLOUD)cloudUpdate('kunden',cu.id,custToRow(cu));}
+  if(CLOUD) cloudUpdate('auftraege',j.id,jobToRow(j));
   closeModal();
   toast('Verbindlich angenommen – Termin innerhalb 48 h vereinbaren');renderStaff('mine');
 }
@@ -1066,12 +1204,14 @@ function acceptJob(id){ askCommit(id); }
 function rejectJob(id){
   const j=jobs.find(x=>x.id===id);if(!j)return;
   if(!j.rejectedBy.includes(myId))j.rejectedBy.push(myId);
+  if(CLOUD) cloudUpdate('auftraege',j.id,jobToRow(j));
   const el=document.getElementById('job-'+id);if(el)el.classList.add('fade');
   setTimeout(()=>{toast('Abgelehnt – das Büro wird informiert',true);renderStaff('board');},200);
 }
 function releaseJob(id){
   const j=jobs.find(x=>x.id===id);if(!j)return;
-  j.status='available';j.assignedTo=null;
+  j.status='available';j.assignedTo=null;j.commitDeadline=null;
+  if(CLOUD) cloudUpdate('auftraege',j.id,jobToRow(j));
   toast('Auftrag zurückgegeben – wieder in der Börse',true);renderStaff('mine');
 }
 /* ============ BEWERBUNGS-WIZARD (öffentlich) ============ */
@@ -1348,7 +1488,9 @@ function wizAgb(){
 }
 function checkAgb(){document.getElementById('agbNext').disabled=!document.getElementById('agbChk').checked;}
 function submitApplication(){
-  applications.unshift({id:nextAppId++,first:wizData.first,last:wizData.last,gender:wizData.gender,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),questionnaire:Object.assign({},wizData.questionnaire||{}),declaration:Object.assign({},wizData.declaration||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true});
+  const app={id:nextAppId++,first:wizData.first,last:wizData.last,gender:wizData.gender,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),questionnaire:Object.assign({},wizData.questionnaire||{}),declaration:Object.assign({},wizData.declaration||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true};
+  applications.unshift(app);
+  if(CLOUD){ cloudInsert('bewerbungen',appToRow(app)).then(r=>{ if(r)app.id=r.id; }); }
   wizNext();
 }
 function wizDone(){
@@ -1517,6 +1659,9 @@ function toast(msg,warn){
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
 }
 document.getElementById('pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+/* Beim Laden: Verbindung zur Datenbank aufbauen */
+window.addEventListener('load',function(){ bootCloud(); });
 </script>
 </body>
 </html>
