@@ -251,6 +251,7 @@
   .timer-box .tlabel{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:8px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -601,19 +602,32 @@ function enterApp(role, user){
     renderAdmin('dashboard');
   }else{
     currentRole='staff';
-    // HINWEIS für Entwickler: Im Echtbetrieb hier den angemeldeten
-    // Supabase-Benutzer (user.email) dem passenden Mitarbeiter-Datensatz
-    // zuordnen, statt einfach den ersten zu nehmen. Beispiel:
-    //   const found = staff.find(s => s.login === user.email || s.email === user.email);
-    //   myId = found ? found.id : (staff[0] && staff[0].id);
-    if(user && user.email){
-      const found=staff.find(s=>s.login===user.email||s.email===user.email);
-      if(found) myId=found.id;
+    // === Sichere Zuordnung: angemeldeter Benutzer -> eigenes Profil ===
+    // Die E-Mail verbindet das Login-Konto (Supabase) mit dem
+    // Mitarbeiter-Datensatz (Tabelle "mitarbeiter"). Jeder sieht NUR
+    // sein eigenes Profil. Wird kein passendes Profil gefunden, wird
+    // KEIN fremdes Profil geöffnet (kein Fallback auf staff[0]).
+    let found=null;
+    if(USE_REAL_AUTH){
+      const mail=(user&&user.email||'').toLowerCase();
+      found=staff.find(s=>(s.login||'').toLowerCase()===mail || (s.email||'').toLowerCase()===mail);
+      if(!found){
+        // Kein eigenes Profil hinterlegt -> nicht in fremdes Profil lassen
+        document.getElementById('appScreen').classList.remove('active');
+        document.getElementById('loginScreen').style.display='grid';
+        toast('Für dieses Konto ist noch kein Mitarbeiterprofil hinterlegt. Bitte wende dich an das Büro.',true);
+        if(USE_REAL_AUTH && sb){ try{ sb.auth.signOut(); }catch(e){} }
+        return;
+      }
+      myId=found.id;
+    }else{
+      // Test-Modus ohne echte Anmeldung: ersten Mitarbeiter nehmen
+      if(!staff.find(s=>s.id===myId)){ myId=staff.length?staff[0].id:0; }
     }
-    if(!staff.find(s=>s.id===myId)){ myId=staff.length?staff[0].id:0; }
     const m=me();
+    if(!m){ toast('Profil konnte nicht geladen werden',true); return; }
     document.getElementById('rolePill').textContent='Mitarbeiter';
-    document.getElementById('whoName').textContent=m.first+' '+m.last[0]+'.';
+    document.getElementById('whoName').textContent=m.first+' '+(m.last?m.last[0]+'.':'');
     document.getElementById('whoRole').textContent=m.role;
     document.getElementById('avatar').textContent=initials(m);
     renderStaff('board');
@@ -878,6 +892,11 @@ function openStaffModal(id){
       '<div><label>Krankenkasse</label><input id="es_kasse" value="'+(it.kasse||'')+'"></div></div>'+
       '<div class="form-row"><div><label>Staatsbürgerschaft / Arbeitserlaubnis</label><input id="es_citizenship" value="'+(it.citizenship||'')+'"></div>'+
       '<div><label>IBAN</label><input id="es_iban" value="'+(it.iban||'')+'"></div></div>'+
+
+      ((id!==null && s.contracts && s.contracts.length)
+        ? '<div class="section-label">Unterschriebene Verträge</div>'+
+          s.contracts.map((ct,i)=>'<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📄 '+ct.name+'</b><div class="li-sub">'+(ct.signedDate?'Unterschrieben am '+fmtDate(ct.signedDate):'')+'</div></div><div style="display:flex;gap:7px;align-items:center">'+(ct.signature?'<img src="'+ct.signature+'" style="height:38px;border:1px solid var(--line);border-radius:6px;background:#fff">':'')+'<button class="btn-ghost btn-sm" onclick="viewContract(\''+ct.name+'\','+id+','+i+')">Lesen</button><button class="btn-primary btn-sm" style="width:auto" onclick="downloadStaffContract('+id+','+i+')">⬇ PDF</button></div></div>').join('')
+        : '')+
 
       '<div class="section-label">Zugangsdaten</div>'+
       (s.hasLogin
@@ -1209,7 +1228,8 @@ function renderStaff(view){
         '<div class="li-main"><b>📄 '+ct.name+'</b><div class="li-sub">Unterschrieben am '+fmtDate(ct.signedDate)+' · <span style="color:var(--good)">✓ signiert</span></div></div>'+
         '<div style="display:flex;gap:8px;align-items:center">'+
           (ct.signature?'<img src="'+ct.signature+'" alt="Unterschrift" style="height:46px;border:1px solid var(--line);border-radius:7px;background:#fff">':'')+
-          '<button class="btn-ghost btn-sm" onclick="viewContract(\''+ct.name+'\')">Lesen</button>'+
+          '<button class="btn-ghost btn-sm" onclick="viewContract(\''+ct.name+'\',\'me\','+i+')">Lesen</button>'+
+          '<button class="btn-primary btn-sm" style="width:auto" onclick="downloadStaffContract('+m.id+','+i+')">⬇ PDF</button>'+
         '</div>'+
       '</div></div>').join('')+'</div>'
       :placeholder('📄','Noch keine Verträge hinterlegt','Sobald du den Bewerbungsprozess abgeschlossen hast, erscheinen deine unterschriebenen Verträge hier.'));
@@ -1809,13 +1829,103 @@ function fmtDateLong(iso){if(!iso)return '';const[y,m,d]=iso.split('-');const da
 
 /* ============ MODAL / HELPERS ============ */
 function openModal(){document.getElementById('modalBg').classList.add('show');}
-function viewContract(name){
+/* ============================================================
+   PDF-ERZEUGUNG für unterschriebene Verträge
+   ------------------------------------------------------------
+   Erzeugt im Browser ein PDF mit Vertragstext + Unterschrift.
+   Speicher-Methode (Testphase): Die Unterschrift und die
+   Vertragsdaten liegen in der Datenbank (Tabelle "vertraege").
+   Das PDF wird bei Bedarf hier neu erzeugt.
+   HINWEIS für Entwickler: Für den Echtbetrieb das fertige PDF
+   zusätzlich in einem geschützten Datei-Speicher (z. B. Supabase
+   Storage mit Zugriffsschutz) ablegen, statt es jedes Mal neu
+   zu erzeugen.
+   ============================================================ */
+function buildContractPdf(opts){
+  // opts: {name, text, signature, person, date}
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast('PDF-Bibliothek noch nicht geladen – bitte kurz warten',true); return null; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:'a4'});
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 48;
+  let y = margin;
+
+  // Kopf
+  doc.setFont('helvetica','bold'); doc.setFontSize(16);
+  doc.text('Alltagshilfe Hannover', margin, y); y+=20;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(110);
+  doc.text('DailyDo – '+opts.name, margin, y); y+=24;
+  doc.setTextColor(0);
+
+  // Titel
+  doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.text(opts.name, margin, y); y+=18;
+
+  // Vertragstext (umbrochen, mehrseitig)
+  doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
+  const lines = doc.splitTextToSize(opts.text||'', pageW - margin*2);
+  const lineH = 14;
+  for(const ln of lines){
+    if(y > pageH - margin - 120){ doc.addPage(); y = margin; }
+    doc.text(ln, margin, y); y += lineH;
+  }
+
+  // Unterschriftsbereich
+  if(y > pageH - margin - 140){ doc.addPage(); y = margin; }
+  y += 24;
+  doc.setDrawColor(180); doc.line(margin, y, pageW-margin, y); y+=22;
+  doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
+  doc.text('Unterschrift', margin, y); y+=6;
+
+  if(opts.signature){
+    try{ doc.addImage(opts.signature, 'PNG', margin, y, 180, 70); }catch(e){}
+  }
+  // Name + Datum rechts
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  doc.text((opts.person||''), margin, y+92);
+  doc.text('Datum: '+(opts.date||todayISO()), pageW-margin-150, y+92);
+
+  return doc;
+}
+function downloadContractPdf(name, text, signature, person, date){
+  const doc = buildContractPdf({name, text, signature, person, date});
+  if(!doc) return;
+  const safe = (name+'_'+(person||'')).replace(/[^a-zA-Z0-9_-]+/g,'_');
+  doc.save(safe+'.pdf');
+}
+function fillContractFor(text,s){
+  let t=text; const name=fullName(s);
+  t=t.replace('[Name und Anschrift Arbeitnehmer]', name+((s.intern&&s.intern.address)?', '+s.intern.address:''));
+  const taetigkeit=(s.skills&&s.skills.length)?s.skills.join(' / '):'Alltagshilfe';
+  t=t.replace('[Tätigkeitsbezeichnung]', taetigkeit);
+  return t;
+}
+function downloadStaffContract(staffId, idx){
+  const s=staff.find(x=>x.id===staffId); if(!s||!s.contracts||!s.contracts[idx])return;
+  const ct=s.contracts[idx];
+  const text=(typeof DOC_TEXTS!=='undefined'&&DOC_TEXTS[ct.name])?fillContractFor(DOC_TEXTS[ct.name],s):ct.name;
+  downloadContractPdf(ct.name, text, ct.signature, fullName(s), ct.signedDate);
+}
+function viewContract(name, who, idx){
   const txt=(typeof DOC_TEXTS!=='undefined'&&DOC_TEXTS[name])?DOC_TEXTS[name]:name;
+  let sig=null, person='', sdate='';
+  if(who==='me'){ const m=me(); if(m&&m.contracts&&m.contracts[idx]){ sig=m.contracts[idx].signature; person=fullName(m); sdate=m.contracts[idx].signedDate; } }
+  else if(who&&typeof who==='number'){ const s=staff.find(x=>x.id===who); if(s&&s.contracts&&s.contracts[idx]){ sig=s.contracts[idx].signature; person=fullName(s); sdate=s.contracts[idx].signedDate; } }
   document.getElementById('modalTitle').textContent=name;
-  document.getElementById('modalBody').innerHTML='<div class="doc-text" style="max-height:60vh;white-space:pre-wrap">'+txt+'</div>';
-  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="doc-text" style="max-height:52vh;white-space:pre-wrap">'+txt+'</div>'+
+    (sig?'<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px"><div style="font-size:12px;color:var(--muted);font-weight:600">Unterschrift'+(person?' – '+person:'')+(sdate?' · '+fmtDate(sdate):'')+'</div><img src="'+sig+'" style="height:60px;margin-top:6px;border:1px solid var(--line);border-radius:7px;background:#fff"></div>':'');
+  let foot='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  if(sig){
+    // PDF-Download über globalen Zwischenspeicher (vermeidet Escaping-Probleme)
+    window.__lastContract={name:name, text:txt, sig:sig, person:person, date:sdate};
+    foot+='<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="downloadContractPdf(window.__lastContract.name, window.__lastContract.text, window.__lastContract.sig, window.__lastContract.person, window.__lastContract.date)">⬇ Als PDF</button>';
+  }
+  document.getElementById('modalFoot').innerHTML=foot;
   openModal();
 }
+
 function closeModal(){document.getElementById('modalBg').classList.remove('show');document.getElementById('modalBox').classList.remove('wide');}
 function segPick(btn,group){document.querySelectorAll('#'+group+' button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
 function head(t,s){return '<div class="page-head"><div><h1>'+t+'</h1><p>'+s+'</p></div></div>';}
