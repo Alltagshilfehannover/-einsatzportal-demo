@@ -266,18 +266,13 @@
   <div class="login-form">
     <div class="form-card">
       <h2>Willkommen zurück 👋</h2>
-      <p class="sub">Melde dich an und leg los.</p>
-      <div class="role-toggle">
-        <button id="roleAdmin" class="active" onclick="setRole('admin')">Büro</button>
-        <button id="roleStaff" onclick="setRole('staff')">Mitarbeiter</button>
-      </div>
-      <div class="field"><label for="user">Benutzername oder E-Mail</label>
-        <input id="user" type="text" placeholder="z. B. daniel@dailydo.de" /></div>
+      <p class="sub">Melde dich mit deinen Zugangsdaten an.</p>
+      <div class="field"><label for="user">E-Mail</label>
+        <input id="user" type="email" autocomplete="username" placeholder="deine@email.de" /></div>
       <div class="field"><label for="pass">Passwort</label>
-        <input id="pass" type="password" placeholder="••••••••" /></div>
+        <input id="pass" type="password" autocomplete="current-password" placeholder="••••••••" /></div>
       <button class="btn-primary" onclick="doLogin()">Anmelden</button>
       <div class="forgot-link"><button onclick="showForgot()">Passwort vergessen?</button></div>
-      <div class="demo-note"><b>Test-Modus:</b> Die Anmeldung akzeptiert jede Eingabe. Der Bereich richtet sich nach der Auswahl oben.</div>
       <div class="apply-big">
         <div class="apply-big-text">Noch kein Teil des Teams?</div>
         <button class="btn-apply" onclick="startWizard()">✨ Jetzt als Mitarbeiter bewerben</button>
@@ -525,28 +520,82 @@ function freqText(c){return c.freqUnit==='nach Bedarf'?'nach Bedarf':(c.freqNum+
 
 /* ============ LOGIN ============ */
 function setRole(r){currentRole=r;
-  document.getElementById('roleAdmin').classList.toggle('active',r==='admin');
-  document.getElementById('roleStaff').classList.toggle('active',r==='staff');
-  document.getElementById('user').placeholder=r==='admin'?'z. B. daniel@dailydo.de':'z. B. ivonne@dailydo.de';
+  const ra=document.getElementById('roleAdmin');
+  const rs=document.getElementById('roleStaff');
+  if(ra) ra.classList.toggle('active',r==='admin');
+  if(rs) rs.classList.toggle('active',r==='staff');
 }
-function showForgot(){
-  const email=prompt('Passwort zurücksetzen\n\nGib deine E-Mail-Adresse ein. Du erhältst dann einen Link zum Zurücksetzen.');
-  if(email&&email.indexOf('@')>0){
-    toast('Wenn ein Konto existiert, wurde ein Reset-Link an '+email+' gesendet.');
-  }else if(email!==null){
-    toast('Bitte eine gültige E-Mail-Adresse eingeben',true);
+/* ============================================================
+   ANMELDUNG / AUTHENTIFIZIERUNG
+   ------------------------------------------------------------
+   Diese App unterstützt zwei Modi:
+
+   1) TEST-MODUS (USE_REAL_AUTH = false):
+      Die Anmeldung akzeptiert jede Eingabe. Nur zum Ausprobieren
+      der Oberfläche. KEINE echte Sicherheit. Niemals mit echten
+      Personendaten verwenden.
+
+   2) ECHTER MODUS (USE_REAL_AUTH = true):
+      Die Anmeldung läuft über Supabase Auth. Passwörter werden
+      NICHT in dieser Datei geprüft, sondern serverseitig bei
+      Supabase. Dort werden sie mit bcrypt gehasht gespeichert
+      (aktueller Sicherheitsstandard). Das Passwort verlässt den
+      Browser nur verschlüsselt (HTTPS) Richtung Supabase und ist
+      im Quelltext dieser Seite nirgends sichtbar.
+
+   Umstellung auf den echten Modus (durch Entwickler):
+   - USE_REAL_AUTH auf true setzen
+   - In Supabase unter Authentication > Providers "Email" aktivieren
+   - Mitarbeiter-/Büro-Konten in Supabase anlegen (oder per Einladung)
+   - Die Rollen (Büro/Mitarbeiter) über eine Profil-Tabelle oder
+     "user_metadata" steuern und per Row Level Security absichern
+   ============================================================ */
+const USE_REAL_AUTH = true;   // <-- Echtbetrieb aktiv: Anmeldung nur mit gültigen Zugangsdaten
+
+async function doLogin(){
+  const email=document.getElementById('user').value.trim();
+  const pass=document.getElementById('pass').value;
+
+  if(USE_REAL_AUTH){
+    // ---- ECHTE ANMELDUNG über Supabase Auth ----
+    if(!sb){ toast('Keine Verbindung zur Datenbank',true); return; }
+    if(!email||!pass){ toast('Bitte E-Mail und Passwort eingeben',true); return; }
+    try{
+      const { data, error } = await sb.auth.signInWithPassword({ email: email, password: pass });
+      if(error){ toast('Anmeldung fehlgeschlagen: '+error.message, true); return; }
+      // Rolle aus den Benutzer-Metadaten lesen (vom Entwickler zu setzen)
+      const role = (data.user && data.user.user_metadata && data.user.user_metadata.role) || 'staff';
+      enterApp(role, data.user);
+    }catch(e){ toast('Anmeldung fehlgeschlagen',true); }
+    return;
   }
+
+  // ---- TEST-MODUS: akzeptiert jede Eingabe ----
+  enterApp(currentRole, null);
 }
-function doLogin(){
+
+/* Öffnet die App nach erfolgreicher Anmeldung und setzt die Rolle */
+function enterApp(role, user){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').classList.add('active');
-  if(currentRole==='admin'){
-    document.getElementById('rolePill').textContent='Admin';
-    document.getElementById('whoName').textContent='Daniel D.';
+  if(role==='admin'){
+    currentRole='admin';
+    document.getElementById('rolePill').textContent='Büro';
+    document.getElementById('whoName').textContent= user? (user.email||'Büro') : 'Daniel D.';
     document.getElementById('whoRole').textContent='Büro / Verwaltung';
     document.getElementById('avatar').textContent='D';
     renderAdmin('dashboard');
   }else{
+    currentRole='staff';
+    // HINWEIS für Entwickler: Im Echtbetrieb hier den angemeldeten
+    // Supabase-Benutzer (user.email) dem passenden Mitarbeiter-Datensatz
+    // zuordnen, statt einfach den ersten zu nehmen. Beispiel:
+    //   const found = staff.find(s => s.login === user.email || s.email === user.email);
+    //   myId = found ? found.id : (staff[0] && staff[0].id);
+    if(user && user.email){
+      const found=staff.find(s=>s.login===user.email||s.email===user.email);
+      if(found) myId=found.id;
+    }
     if(!staff.find(s=>s.id===myId)){ myId=staff.length?staff[0].id:0; }
     const m=me();
     document.getElementById('rolePill').textContent='Mitarbeiter';
@@ -556,11 +605,35 @@ function doLogin(){
     renderStaff('board');
   }
 }
-function logout(){
+
+async function logout(){
+  // Bei echtem Modus die Supabase-Sitzung beenden
+  if(USE_REAL_AUTH && sb){ try{ await sb.auth.signOut(); }catch(e){} }
   document.getElementById('appScreen').classList.remove('active');
   document.getElementById('loginScreen').style.display='grid';
   document.getElementById('user').value='';document.getElementById('pass').value='';
   closeModal();setRole('admin');
+}
+
+async function showForgot(){
+  const email=prompt('Passwort zurücksetzen\n\nGib deine E-Mail-Adresse ein. Du erhältst dann einen Link zum Zurücksetzen.');
+  if(email===null) return;
+  if(!email || email.indexOf('@')<1){ toast('Bitte eine gültige E-Mail-Adresse eingeben',true); return; }
+
+  if(USE_REAL_AUTH && sb){
+    // ---- ECHTER Passwort-Reset über Supabase ----
+    // Supabase verschickt automatisch eine E-Mail mit sicherem Reset-Link.
+    try{
+      const { error } = await sb.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin
+      });
+      if(error){ toast('Fehler: '+error.message, true); return; }
+      toast('Wenn ein Konto existiert, wurde ein Reset-Link an '+email+' gesendet.');
+    }catch(e){ toast('Aktion fehlgeschlagen',true); }
+    return;
+  }
+  // Test-Modus: nur Hinweis
+  toast('Wenn ein Konto existiert, wurde ein Reset-Link an '+email+' gesendet.');
 }
 
 /* ============ NAVIGATION ============ */
