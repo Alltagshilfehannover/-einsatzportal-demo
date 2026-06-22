@@ -49,6 +49,11 @@
   .demo-note{margin-top:18px;font-size:12.5px;color:var(--muted);background:var(--amber-soft);border:1px solid #ffd0e0;padding:11px 13px;border-radius:10px}
   .demo-note b{color:var(--amber)}
   .forgot-link{margin-top:12px;text-align:center}
+  .pass-wrap{position:relative}
+  .pass-wrap input{width:100%;padding-right:46px}
+  .pass-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:8px;font-size:17px;opacity:.65;display:grid;place-items:center;transition:.15s}
+  .pass-toggle:hover{opacity:1;background:var(--petrol-soft)}
+  .pass-toggle.on{opacity:1}
   .forgot-link button{color:var(--muted);font-size:13px;font-weight:600}
   .forgot-link button:hover{color:var(--petrol)}
   .apply-big{margin-top:22px;padding-top:20px;border-top:1px dashed var(--line);text-align:center}
@@ -270,7 +275,10 @@
       <div class="field"><label for="user">E-Mail</label>
         <input id="user" type="email" autocomplete="username" placeholder="deine@email.de" /></div>
       <div class="field"><label for="pass">Passwort</label>
-        <input id="pass" type="password" autocomplete="current-password" placeholder="••••••••" /></div>
+        <div class="pass-wrap">
+          <input id="pass" type="password" autocomplete="current-password" placeholder="••••••••" />
+          <button type="button" class="pass-toggle" id="passToggle" onclick="togglePass()" aria-label="Passwort anzeigen">👁</button>
+        </div></div>
       <button class="btn-primary" onclick="doLogin()">Anmelden</button>
       <div class="forgot-link"><button onclick="showForgot()">Passwort vergessen?</button></div>
       <div class="apply-big">
@@ -524,6 +532,12 @@ function setRole(r){currentRole=r;
   const rs=document.getElementById('roleStaff');
   if(ra) ra.classList.toggle('active',r==='admin');
   if(rs) rs.classList.toggle('active',r==='staff');
+}
+function togglePass(){
+  const inp=document.getElementById('pass');
+  const btn=document.getElementById('passToggle');
+  if(inp.type==='password'){ inp.type='text'; btn.textContent='🙈'; btn.classList.add('on'); btn.setAttribute('aria-label','Passwort verbergen'); }
+  else { inp.type='password'; btn.textContent='👁'; btn.classList.remove('on'); btn.setAttribute('aria-label','Passwort anzeigen'); }
 }
 /* ============================================================
    ANMELDUNG / AUTHENTIFIZIERUNG
