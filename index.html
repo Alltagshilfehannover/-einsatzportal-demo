@@ -826,7 +826,7 @@ function renderAdmin(view){
     '<div class="panel"><div class="panel-body" style="padding-top:16px">'+
     (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Status</th><th>Leistungsnachweis</th><th></th></tr></thead><tbody>'+
       timesheets.map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);return '<tr><td>'+fmtDate(t.date)+'</td><td><b>'+staffName(t.staffId)+'</b></td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+dur+'</td><td>'+(t.status==='freigegeben'?'<span class="tag green">freigegeben</span>':'<span class="tag amber">offen</span>')+'</td>'+
-        '<td>'+(t.signature?'<img src="'+t.signature+'" style="height:28px;border:1px solid var(--line);border-radius:5px;background:#fff;vertical-align:middle"> <button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ PDF</button>':'<span style="color:var(--muted);font-size:12px">nicht unterschrieben</span>')+'</td>'+
+        '<td>'+(t.signature?'<img src="'+t.signature+'" style="height:28px;border:1px solid var(--line);border-radius:5px;background:#fff;vertical-align:middle"> <button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ LN</button>'+(t.hasAbtretung?' <button class="btn-ghost btn-sm" onclick="downloadAbtretung('+t.customerId+')">⬇ Abtretung</button>':'')+'</td>':'<td><span style="color:var(--muted);font-size:12px">nicht unterschrieben</span></td>')+
         '<td>'+(t.status==='offen'?'<button class="btn-primary btn-sm" style="width:auto" onclick="approveTimesheet('+t.id+')">Freigeben</button>':'<span style="color:var(--good)">✓</span>')+'</td></tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">⏱</div><b>Noch keine Stundenzettel</b><p style="margin-top:6px">Sobald Mitarbeiter Einsätze abschließen, erscheinen sie hier.</p></div>')+
     '</div></div>';
@@ -1848,7 +1848,9 @@ function signTermin(){
     function(sig){
       const date=t.date;
       // 1) Stundenzettel-Eintrag mit Unterschrift anlegen (Mitarbeiter + Admin sehen ihn)
-      const ts={id:nextTsId++, staffId:myId, customerId:t.cid, date:date, start:t.start, end:t.end, task:t.task, status:'freigegeben', proof:true, signature:sig, signedAt:date};
+      //    hasAbtretung=true markiert, dass dazu eine Abtretungserklärung gehört
+      //    (wird nur im Admin-Bereich und im Kunden-Ordner angezeigt, NICHT beim Mitarbeiter)
+      const ts={id:nextTsId++, staffId:myId, customerId:t.cid, date:date, start:t.start, end:t.end, task:t.task, status:'freigegeben', proof:true, signature:sig, signedAt:date, hasAbtretung:true};
       timesheets.push(ts);
       if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:t.cid,date:date,start:t.start,ende:t.end,task:t.task,status:'freigegeben',proof:true,signature:sig,signed_at:date}); }
       // 2) Leistungsnachweis-PDF erzeugen (eine Zeile = dieser Einsatz)
@@ -1862,12 +1864,16 @@ function signTermin(){
       // 3) Leistungsnachweis am Kunden hinterlegen (Kunden-Ordner)
       cu.leistungsnachweise=cu.leistungsnachweise||[];
       cu.leistungsnachweise.push({date:date, task:t.task, mins:t.mins, signature:sig, staffId:myId});
-      // 4) PDF zum Download anbieten
+      // 3b) Abtretungserklärung mit derselben Unterschrift erzeugen und am Kunden hinterlegen
+      //     (erscheint NUR im Admin-Stundenzettel und im Kunden-Ordner, nicht beim Mitarbeiter)
+      cu.abtretung={date:date, signature:sig};
+      if(CLOUD){ cloudInsert('abtretungen',{customer_id:cu.id, signed_date:date, signature:sig}); }
+      // 4) Leistungsnachweis-PDF zum Download anbieten
       if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
       // 5) Termin als erledigt entfernen
       if(t.apptId){ appointments=appointments.filter(a=>a.id!==t.apptId); }
       window.__termin=null;
-      toast('Einsatz abgeschlossen & vom Kunden unterschrieben');
+      toast('Einsatz abgeschlossen – Leistungsnachweis & Abtretung erstellt');
       renderStaff('hours');
     }
   );
@@ -2194,6 +2200,14 @@ function openSignatureModal(title, subtitle, callback){
 /* ---- Abtretungserklärung für einen Kunden ---- */
 function startAbtretung(customerId){
   const cu=custById(customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
+  // Wenn bereits eine unterschriebene Abtretung existiert: direkt das fertige PDF laden,
+  // NICHT erneut unterschreiben lassen.
+  if(cu.abtretung && cu.abtretung.signature){
+    downloadAbtretung(customerId);
+    toast('Abtretungserklärung heruntergeladen');
+    return;
+  }
+  // Sonst: neue Unterschrift erfassen
   openSignatureModal(
     'Abtretungserklärung – '+fullName(cu),
     'Das Dokument wird automatisch mit den Daten von '+fullName(cu)+' gefüllt. Bitte unterschreiben lassen.',
