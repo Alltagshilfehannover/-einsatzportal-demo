@@ -439,13 +439,27 @@ function rowToStaff(r){return {
   intern:{birth:r.birth,address:r.address,taxId:r.tax_id,taxClass:r.tax_class,kvNr:r.kv_nr,kasse:r.kasse,employment:r.employment,citizenship:r.citizenship,iban:r.iban}
 };}
 function custToRow(c){return {
-  first:c.first,last:c.last,area:c.area,address:c.address,phone:c.phone,need:c.need||[],
-  freq_num:c.freqNum||1,freq_unit:c.freqUnit||'pro Woche',time_window:c.window||null,pet:c.pet,pgrad:c.pgrad,status:c.status,contact:c.contact,notes:c.notes,
+  first:c.first,last:c.last,area:c.area,address:c.address,
+  street:c.street||null,house_no:c.houseNo||null,plz:c.plz||null,city:c.city||null,
+  phone:c.phone,phone_mobile:c.phoneMobile||null,phone_landline:c.phoneLandline||null,
+  need:c.need||[],
+  freq_num:c.freqNum||1,freq_unit:c.freqUnit||'pro Woche',time_window:c.window||null,
+  pet:c.pet,pets:c.pets||[],pgrad:c.pgrad,status:c.status,
+  contact:c.contact,contact_name:c.contactName||null,contact_phone:c.contactPhone||null,
+  no_contact:!!c.noContact,no_notes:!!c.noNotes,notes:c.notes,
+  insurance_type:c.insuranceType||'gesetzlich',beihilfe_pct:c.beihilfePct||null,
   kv_nr:(c.intern&&c.intern.kvNr)||null,kasse:(c.intern&&c.intern.kasse)||null,budget:(c.intern&&c.intern.budget)||null,budget_used:(c.intern&&c.intern.budgetUsed)||null
 };}
 function rowToCust(r){return {
-  id:r.id,first:r.first,last:r.last,area:r.area,address:r.address,phone:r.phone,need:r.need||[],
-  freqNum:r.freq_num,freqUnit:r.freq_unit,window:r.time_window,pet:r.pet,pgrad:r.pgrad,status:r.status,contact:r.contact,notes:r.notes,
+  id:r.id,first:r.first,last:r.last,area:r.area,address:r.address,
+  street:r.street,houseNo:r.house_no,plz:r.plz,city:r.city,
+  phone:r.phone,phoneMobile:r.phone_mobile,phoneLandline:r.phone_landline,
+  need:r.need||[],
+  freqNum:r.freq_num,freqUnit:r.freq_unit,window:r.time_window,timeWindows:(r.time_window?String(r.time_window).split(', '):[]),
+  pet:r.pet,pets:r.pets||[],pgrad:r.pgrad,status:r.status,
+  contact:r.contact,contactName:r.contact_name,contactPhone:r.contact_phone,
+  noContact:r.no_contact,noNotes:r.no_notes,notes:r.notes,
+  insuranceType:r.insurance_type||'gesetzlich',beihilfePct:r.beihilfe_pct,
   intern:{kvNr:r.kv_nr,kasse:r.kasse,budget:r.budget,budgetUsed:r.budget_used}
 };}
 function jobToRow(j){return {customer_id:j.customerId,title:j.title,skills:j.skills||[],status:j.status,assigned_to:j.assignedTo,rejected_by:j.rejectedBy||[],commit_deadline:j.commitDeadline?new Date(j.commitDeadline).toISOString():null};}
@@ -957,49 +971,105 @@ function createLogin(id){
 /* ============ KUNDEN: FORM + BEARBEITEN ============ */
 function customerFormHTML(c){
   const isNew=!c;
-  c=c||{first:'',last:'',area:'',address:'',phone:'',need:[],freqNum:1,freqUnit:'pro Woche',window:'',pet:'',pgrad:'1',contact:'',notes:'',intern:{kvNr:'',kasse:'',budget:'',budgetUsed:''}};
+  c=c||{first:'',last:'',area:'',street:'',houseNo:'',plz:'',city:'',phoneMobile:'',phoneLandline:'',need:[],freqNum:1,freqUnit:'pro Woche',timeWindows:[],pets:[],pgrad:'1',contactName:'',contactPhone:'',noContact:false,noNotes:false,notes:'',insuranceType:'gesetzlich',beihilfePct:'',intern:{kvNr:'',kasse:'',budget:'',budgetUsed:''}};
   const it=c.intern||{};
+  const tw=c.timeWindows||[];
+  const pets=c.pets||[];
+  const ins=c.insuranceType||'gesetzlich';
   return '<div class="panel"><div class="panel-body content-form" style="padding-top:18px">'+
     '<div class="section-label" style="margin-top:0">Stammdaten</div>'+
-    '<div class="form-row"><div><label>Vorname</label><input id="nc_first" value="'+c.first+'"></div>'+
-    '<div><label>Nachname</label><input id="nc_last" value="'+c.last+'"></div></div>'+
-    '<div class="form-row"><div><label>Gebiet / Stadtteil</label><input id="nc_area" value="'+c.area+'" placeholder="z. B. Hannover-Linden"></div>'+
-    '<div><label>Adresse</label><input id="nc_addr" value="'+c.address+'" placeholder="Straße, PLZ Ort"></div></div>'+
-    '<div class="form-row"><div><label>Telefon</label><input id="nc_phone" value="'+c.phone+'"></div>'+
-    '<div><label>Pflegegrad</label><select id="nc_pgrad">'+['1','2','3','4','5'].map(p=>'<option '+(c.pgrad===p?'selected':'')+'>'+p+'</option>').join('')+'</select></div></div>'+
+    '<div class="form-row"><div><label>Vorname *</label><input id="nc_first" value="'+(c.first||'')+'"></div>'+
+    '<div><label>Nachname *</label><input id="nc_last" value="'+(c.last||'')+'"></div></div>'+
+    '<div class="form-row"><div style="flex:3"><label>Straße *</label><input id="nc_street" value="'+(c.street||'')+'"></div>'+
+    '<div style="flex:1"><label>Hausnr. *</label><input id="nc_houseno" value="'+(c.houseNo||'')+'"></div></div>'+
+    '<div class="form-row"><div style="flex:1"><label>PLZ *</label><input id="nc_plz" value="'+(c.plz||'')+'"></div>'+
+    '<div style="flex:2"><label>Ort *</label><input id="nc_city" value="'+(c.city||'')+'"></div></div>'+
+    '<label>Gebiet / Stadtteil</label><input id="nc_area" value="'+(c.area||'')+'" placeholder="z. B. Hannover-Linden">'+
+    '<div class="form-row"><div><label>Telefon (Mobil)</label><input id="nc_mobile" value="'+(c.phoneMobile||'')+'"></div>'+
+    '<div><label>Telefon (Festnetz)</label><input id="nc_landline" value="'+(c.phoneLandline||'')+'"></div></div>'+
+    '<div class="form-row"><div><label>Pflegegrad</label><select id="nc_pgrad">'+['1','2','3','4','5'].map(p=>'<option '+(c.pgrad===p?'selected':'')+'>'+p+'</option>').join('')+'</select></div>'+
+    '<div><label>Geburtsdatum</label><input id="nc_birth" type="date" value="'+(c.birth||'')+'"></div></div>'+
+
     '<label>Benötigte Leistungen</label>'+
     '<div class="checks" id="nc_skills">'+SKILLS.map(s=>'<span class="check '+(c.need.includes(s)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+s+'</span>').join('')+'</div>'+
     '<label>Häufigkeit</label>'+
-    '<div class="input-with-select"><input id="nc_freqNum" type="number" min="1" value="'+c.freqNum+'" placeholder="Anzahl">'+
+    '<div class="input-with-select"><input id="nc_freqNum" type="number" min="1" value="'+(c.freqNum||1)+'" placeholder="Anzahl">'+
       '<select id="nc_freqUnit">'+FREQ_UNITS.map(u=>'<option '+(c.freqUnit===u?'selected':'')+'>'+u+'</option>').join('')+'</select></div>'+
     '<div style="height:14px"></div>'+
-    '<div class="form-row"><div><label>Zeitfenster</label><input id="nc_window" value="'+c.window+'" placeholder="z. B. Vormittags"></div>'+
-    '<div><label>Haustier</label><input id="nc_pet" value="'+c.pet+'" placeholder="z. B. Hund / keins"></div></div>'+
-    '<label>Kontakt (Angehörige)</label><input id="nc_contact" value="'+c.contact+'" placeholder="z. B. Tochter: ...">'+
-    '<label>Hinweise (Schlüssel, Besonderes)</label><textarea id="nc_notes" rows="2">'+c.notes+'</textarea>'+
+    '<label>Zeitfenster</label>'+
+    '<div class="checks" id="nc_window">'+['Morgens','Mittags','Abends'].map(w=>'<span class="check '+(tw.includes(w)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+w+'</span>').join('')+'</div>'+
+    '<label>Haustiere</label>'+
+    '<div class="checks" id="nc_pets">'+['Hund','Katze','Andere Kleintiere'].map(p=>'<span class="check '+(pets.includes(p)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+p+'</span>').join('')+'</div>'+
 
-    '<div class="section-label">Interne Daten (nur Büro)</div>'+
-    '<div class="form-row"><div><label>KV-Nummer</label><input id="nc_kvNr" value="'+(it.kvNr||'')+'"></div>'+
-    '<div><label>Krankenkasse</label><input id="nc_kasse" value="'+(it.kasse||'')+'"></div></div>'+
-    '<div class="form-row"><div><label>Budget (§45a)</label><input id="nc_budget" value="'+(it.budget||'')+'" placeholder="z. B. §45a – 131 €/Monat"></div>'+
+    '<div class="section-label">Kontaktperson (Angehörige)</div>'+
+    '<div class="confirm-box" style="background:#fff;border-color:var(--line);margin-bottom:10px" onclick="toggleCustChk(\'nc_noContact\')"><input type="checkbox" id="nc_noContact" '+(c.noContact?'checked':'')+' onclick="event.stopPropagation();custNoContact(this.checked)"><label>Keine Kontaktperson vorhanden</label></div>'+
+    '<div id="nc_contactFields" style="display:'+(c.noContact?'none':'block')+'">'+
+      '<div class="form-row"><div><label>Name</label><input id="nc_contactName" value="'+(c.contactName||'')+'"></div>'+
+      '<div><label>Telefonnummer</label><input id="nc_contactPhone" value="'+(c.contactPhone||'')+'"></div></div>'+
+    '</div>'+
+
+    '<div class="section-label">Hinweise</div>'+
+    '<div class="confirm-box" style="background:#fff;border-color:var(--line);margin-bottom:10px" onclick="toggleCustChk(\'nc_noNotes\')"><input type="checkbox" id="nc_noNotes" '+(c.noNotes?'checked':'')+' onclick="event.stopPropagation();custNoNotes(this.checked)"><label>Keine Hinweise</label></div>'+
+    '<div id="nc_notesField" style="display:'+(c.noNotes?'none':'block')+'">'+
+      '<textarea id="nc_notes" rows="2" placeholder="z. B. Schlüssel beim Nachbarn, Besonderheiten">'+(c.notes&&c.notes!=='—'?c.notes:'')+'</textarea>'+
+    '</div>'+
+
+    '<div class="section-label">Krankenversicherung</div>'+
+    '<label>Versicherungsart</label>'+
+    '<div class="seg" id="nc_insType">'+[['gesetzlich','Gesetzlich versichert'],['privat','Privat versichert'],['beihilfe','Beihilfeberechtigt']].map(([v,l])=>'<button data-v="'+v+'" class="'+(ins===v?'on':'')+'" onclick="custInsPick(this)">'+l+'</button>').join('')+'</div>'+
+    '<div style="height:12px"></div>'+
+    '<div id="nc_beihilfeBox" style="display:'+(ins==='beihilfe'?'block':'none')+'"><label>Beihilfe-Anteil (%)</label><input id="nc_beihilfePct" type="number" min="0" max="100" value="'+(c.beihilfePct||'')+'" placeholder="z. B. 50"></div>'+
+    '<div id="nc_kvBox" style="display:'+(ins==='privat'?'none':'block')+'">'+
+      '<div class="form-row"><div><label>KV-Nummer</label><input id="nc_kvNr" value="'+(it.kvNr||'')+'" placeholder="1 Buchstabe + 9 Ziffern"></div>'+
+      '<div><label>Krankenkasse</label><input id="nc_kasse" value="'+(it.kasse||'')+'"></div></div>'+
+    '</div>'+
+    '<div class="form-row"><div><label>Budget (§45b)</label><input id="nc_budget" value="'+(it.budget||'')+'" placeholder="z. B. 131 €/Monat"></div>'+
     '<div><label>Davon genutzt</label><input id="nc_budgetUsed" value="'+(it.budgetUsed||'')+'" placeholder="z. B. 40 €"></div></div>'+
 
     (isNew
-      ? '<button class="btn-primary" style="width:auto;padding:12px 24px" onclick="createCustomer()">Anlegen & als Auftrag freigeben</button>'
-      : '<button class="btn-primary" style="width:auto;padding:12px 24px" onclick="updateCustomer('+c.id+')">Änderungen speichern</button>')+
+      ? '<button class="btn-primary" style="width:auto;padding:12px 24px;margin-top:8px" onclick="createCustomer()">Anlegen & als Auftrag freigeben</button>'
+      : '<button class="btn-primary" style="width:auto;padding:12px 24px;margin-top:8px" onclick="updateCustomer('+c.id+')">Änderungen speichern</button>')+
   '</div></div>';
 }
+function toggleCustChk(id){ const el=document.getElementById(id); el.checked=!el.checked; if(id==='nc_noContact')custNoContact(el.checked); if(id==='nc_noNotes')custNoNotes(el.checked); }
+function custNoContact(checked){ document.getElementById('nc_contactFields').style.display=checked?'none':'block'; }
+function custNoNotes(checked){ document.getElementById('nc_notesField').style.display=checked?'none':'block'; }
+function custInsPick(btn){
+  document.querySelectorAll('#nc_insType button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  const v=btn.dataset.v;
+  document.getElementById('nc_beihilfeBox').style.display=(v==='beihilfe')?'block':'none';
+  document.getElementById('nc_kvBox').style.display=(v==='privat')?'none':'block';
+}
 function gatherCustomer(c){
-  c.first=val('nc_first');c.last=val('nc_last');c.area=val('nc_area')||'—';c.address=val('nc_addr')||'—';
-  c.phone=val('nc_phone')||'—';c.pgrad=document.getElementById('nc_pgrad').value;
+  c.first=val('nc_first');c.last=val('nc_last');
+  c.street=val('nc_street');c.houseNo=val('nc_houseno');c.plz=val('nc_plz');c.city=val('nc_city');
+  c.address=((c.street+' '+c.houseNo).trim()+', '+(c.plz+' '+c.city).trim()).replace(/^, |, $/,'')||'—';
+  c.area=val('nc_area')||c.city||'—';
+  c.phoneMobile=val('nc_mobile');c.phoneLandline=val('nc_landline');
+  c.phone=c.phoneMobile||c.phoneLandline||'—';
+  c.pgrad=document.getElementById('nc_pgrad').value;
+  c.birth=val('nc_birth');
   c.need=[...document.querySelectorAll('#nc_skills .check.on')].map(e=>e.textContent);
   if(!c.need.length)c.need=['Haushaltshilfe'];
   c.freqNum=parseInt(document.getElementById('nc_freqNum').value)||1;
   c.freqUnit=document.getElementById('nc_freqUnit').value;
-  c.window=val('nc_window')||'flexibel';c.pet=val('nc_pet')||'—';
-  c.contact=val('nc_contact')||'—';c.notes=val('nc_notes')||'—';
+  c.timeWindows=[...document.querySelectorAll('#nc_window .check.on')].map(e=>e.textContent);
+  c.window=c.timeWindows.join(', ')||'flexibel';
+  c.pets=[...document.querySelectorAll('#nc_pets .check.on')].map(e=>e.textContent);
+  c.pet=c.pets.join(', ')||'—';
+  c.noContact=document.getElementById('nc_noContact').checked;
+  c.contactName=c.noContact?'':val('nc_contactName');
+  c.contactPhone=c.noContact?'':val('nc_contactPhone');
+  c.contact=c.noContact?'Keine Kontaktperson':((c.contactName||'')+(c.contactPhone?': '+c.contactPhone:''))||'—';
+  c.noNotes=document.getElementById('nc_noNotes').checked;
+  c.notes=c.noNotes?'Keine Hinweise':(val('nc_notes')||'—');
+  const insBtn=document.querySelector('#nc_insType button.on');
+  c.insuranceType=insBtn?insBtn.dataset.v:'gesetzlich';
+  c.beihilfePct=(c.insuranceType==='beihilfe')?val('nc_beihilfePct'):'';
   c.intern=c.intern||{};
-  c.intern.kvNr=val('nc_kvNr');c.intern.kasse=val('nc_kasse');
+  c.intern.kvNr=(c.insuranceType==='privat')?'':val('nc_kvNr');
+  c.intern.kasse=(c.insuranceType==='privat')?'':val('nc_kasse');
   c.intern.budget=val('nc_budget');c.intern.budgetUsed=val('nc_budgetUsed');
 }
 function createCustomer(){
@@ -1043,7 +1113,21 @@ function editCustomer(id){
       docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📄 Leistungsnachweis</b><div class="li-sub">'+fmtDate(ln.date)+' · '+ln.task+' · '+(ln.mins/60).toFixed(2).replace('.',',')+' Std.</div></div><div style="display:flex;gap:7px;align-items:center"><img src="'+ln.signature+'" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-primary btn-sm" style="width:auto" onclick="downloadCustLN('+c.id+','+i+')">⬇ PDF</button></div></div>';
     });
   }
-  if(!c.abtretung && !lns.length){ docsHtml+='<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine Dokumente. Erstelle Abtretung oder Leistungsnachweis über die Kundenliste oder den Einsatz-Abschluss.</p>'; }
+  if(!c.abtretung && !lns.length){ docsHtml+='<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine erstellten Dokumente. Abtretung oder Leistungsnachweis entstehen über den Einsatz-Abschluss.</p>'; }
+
+  // Externe Dokumente (hochgeladen)
+  const ext=c.extDocs||[];
+  docsHtml+='<div class="section-label">📎 Externe Dokumente</div>';
+  if(ext.length){
+    ext.forEach((d,i)=>{
+      const isImg=(d.type||'').indexOf('image')===0;
+      docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>'+(isImg?'🖼️':'📄')+' '+d.name+'</b><div class="li-sub">Hochgeladen am '+fmtDate(d.date)+(d.size?' · '+d.size:'')+'</div></div><div style="display:flex;gap:7px;align-items:center"><button class="btn-ghost btn-sm" onclick="openExtDoc('+c.id+','+i+')">Ansehen</button><button class="btn-danger-ghost btn-sm" style="width:auto" onclick="deleteExtDoc('+c.id+','+i+')">Entfernen</button></div></div>';
+    });
+  }else{
+    docsHtml+='<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine externen Dokumente hochgeladen.</p>';
+  }
+  docsHtml+='<div class="upload-box" style="margin-top:10px" onclick="document.getElementById(\'extFileInput\').click()"><div class="ub-ic">⬆️</div><div class="ub-t">Externes Dokument hochladen</div><div class="ub-s">PDF, JPG oder PNG · z. B. Pflegegrad-Bescheid, Vollmacht</div></div>'+
+    '<input type="file" id="extFileInput" accept="application/pdf,image/*" style="display:none" onchange="uploadExtDoc('+c.id+',this)">';
 
   document.getElementById('modalBody').innerHTML=customerFormHTML(c).replace('<div class="panel"><div class="panel-body content-form" style="padding-top:18px">','<div class="content-form">').replace(/<\/div><\/div>$/,'</div>')+docsHtml;
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
@@ -1060,6 +1144,39 @@ function downloadCustLN(custId, idx){
     signature:ln.signature, ort:(cu.city||cu.area||''), date:ln.date
   });
   if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+ln.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+}
+/* ---- Externe Dokumente im Kunden-Ordner ---- */
+function uploadExtDoc(custId, input){
+  const cu=custById(custId); if(!cu)return;
+  const file=input.files&&input.files[0]; if(!file)return;
+  // Größenbegrenzung (Demo): 4 MB, da als Daten-URL im Browser gehalten
+  if(file.size>4*1024*1024){ toast('Datei zu groß (max. 4 MB in der Demo)',true); input.value=''; return; }
+  const reader=new FileReader();
+  reader.onload=function(e){
+    cu.extDocs=cu.extDocs||[];
+    const kb=Math.round(file.size/1024);
+    cu.extDocs.push({name:file.name, type:file.type, size:(kb>1024?(kb/1024).toFixed(1)+' MB':kb+' KB'), date:todayISO(), data:e.target.result});
+    // HINWEIS für Entwickler: Im Echtbetrieb die Datei in einen geschützten
+    // Datei-Speicher (Supabase Storage) hochladen statt als Daten-URL im Browser.
+    toast('Dokument hochgeladen: '+file.name);
+    editCustomer(custId); // Ansicht aktualisieren
+  };
+  reader.readAsDataURL(file);
+}
+function openExtDoc(custId, idx){
+  const cu=custById(custId); if(!cu||!cu.extDocs||!cu.extDocs[idx])return;
+  const d=cu.extDocs[idx];
+  const w=window.open();
+  if(w){
+    if((d.type||'').indexOf('image')===0){ w.document.write('<title>'+d.name+'</title><body style="margin:0;background:#111"><img src="'+d.data+'" style="max-width:100%;display:block;margin:auto"></body>'); }
+    else { w.document.write('<title>'+d.name+'</title><iframe src="'+d.data+'" style="border:0;width:100vw;height:100vh"></iframe>'); }
+  }
+}
+function deleteExtDoc(custId, idx){
+  const cu=custById(custId); if(!cu||!cu.extDocs)return;
+  cu.extDocs.splice(idx,1);
+  toast('Dokument entfernt');
+  editCustomer(custId);
 }
 function updateCustomer(id){
   const c=custById(id);gatherCustomer(c);
