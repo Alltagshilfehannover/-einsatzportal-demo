@@ -338,6 +338,7 @@ let currentRole='admin';
 const SKILLS=['Haushaltshilfe','Einkaufsservice','Begleitdienste','Organisatorische Hilfe','Digitale Fragen'];
 const WEEKDAYS=['Mo','Di','Mi','Do','Fr','Sa','So'];
 const FREQ_UNITS=['pro Woche','alle 2 Wochen','pro Monat','nach Bedarf'];
+const STUNDENSATZ=40; // Kundensatz in € pro Stunde (zentral änderbar)
 let myId=0;
 
 /* Mitarbeiter: jetzt mit internen Verwaltungsfeldern + Zugangsdaten */
@@ -718,9 +719,9 @@ function renderAdmin(view){
     // Kennzahlen berechnen
     const openTs=timesheets.filter(t=>t.status==='offen').length;
     const plannedAppts=appointments.length;
-    // Umsatz = bestätigte Stunden * Kundensatz (Demo: 28 €/h)
+    // Umsatz = bestätigte Stunden * Kundensatz
     const confirmedMin=timesheets.filter(t=>t.status==='freigegeben').reduce((s,t)=>s+tsMinutes(t),0);
-    const revenue=(confirmedMin/60*28);
+    const revenue=(confirmedMin/60*STUNDENSATZ);
     const bonusDue=staff.reduce((s,m)=>s+((m.bonus&&m.bonus.pending)||0),0);
     // 70-Tage: wer scheidet bald aus (>=60 Tage)
     const leaving=staff.filter(m=>(m.daysWorked||0)>=60);
@@ -792,11 +793,18 @@ function renderAdmin(view){
   }
 
   if(view==='customers'){
-    c.innerHTML=head('Kunden','Auf einen Kunden klicken, um Daten anzusehen und zu bearbeiten.')+
+    c.innerHTML=head('Kunden','Auf einen Kunden klicken, um Daten anzusehen und zu bearbeiten. Über die Knöpfe rechts erstellst du die Dokumente.')+
     '<div class="panel"><div class="panel-head"><h3>Kunden ('+customers.length+')</h3><button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button></div>'+
     '<div class="panel-body" style="padding-top:8px"><table>'+
-      '<thead><tr><th>Name</th><th>Gebiet</th><th>Bedarf</th><th>Häufigkeit</th><th>Status</th></tr></thead><tbody>'+
-      customers.map(c=>'<tr class="clickable" onclick="editCustomer('+c.id+')"><td><b>'+fullName(c)+'</b></td><td>'+c.area+'</td><td>'+c.need.join(', ')+'</td><td>'+freqText(c)+'</td><td>'+(c.status==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag grey">'+c.status+'</span>')+'</td></tr>').join('')+
+      '<thead><tr><th>Name</th><th>Gebiet</th><th>Bedarf</th><th>Status</th><th>Dokumente</th></tr></thead><tbody>'+
+      customers.map(c=>'<tr>'+
+        '<td class="clickable" onclick="editCustomer('+c.id+')"><b>'+fullName(c)+'</b></td>'+
+        '<td class="clickable" onclick="editCustomer('+c.id+')">'+c.area+'</td>'+
+        '<td class="clickable" onclick="editCustomer('+c.id+')">'+c.need.join(', ')+'</td>'+
+        '<td>'+(c.status==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag grey">'+c.status+'</span>')+'</td>'+
+        '<td style="white-space:nowrap"><button class="btn-ghost btn-sm" onclick="event.stopPropagation();startAbtretung('+c.id+')">Abtretung</button> '+
+        '<button class="btn-ghost btn-sm" onclick="event.stopPropagation();startLeistungsnachweis('+c.id+')">Leistungsnachweis</button></td>'+
+      '</tr>').join('')+
       '</tbody></table></div></div>';
   }
 
@@ -1628,7 +1636,9 @@ function initSignPads(){
   });
 }
 function clearSign(i){
-  const pad=document.getElementById('signpad-'+i);const canvas=pad.querySelector('canvas');
+  const pad=(i==='gen')?document.getElementById('genSignPad'):document.getElementById('signpad-'+i);
+  if(!pad)return;
+  const canvas=pad.querySelector('canvas');
   const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);
   canvas.dataset.drawn='';const h=document.getElementById('signhint-'+i);if(h)h.style.display='grid';
 }
@@ -1894,6 +1904,217 @@ function downloadContractPdf(name, text, signature, person, date){
   const safe = (name+'_'+(person||'')).replace(/[^a-zA-Z0-9_-]+/g,'_');
   doc.save(safe+'.pdf');
 }
+
+/* ============================================================
+   PDF: ABTRETUNGSERKLÄRUNG (§45b SGB XI) – nach Vorlage
+   Wird automatisch mit den Daten des gewählten Kunden gefüllt.
+   ============================================================ */
+function buildAbtretungPdf(cu, signature, date){
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
+  const { jsPDF } = window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  const margin=52; let y=margin;
+  // Briefkopf
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(110);
+  doc.text('www.hannoverhilfe.de',margin,y); y+=16;
+  doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(10.5);
+  doc.text('Alltagshilfe Hannover UG (haftungsbeschränkt)',margin,y); y+=14;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(80);
+  doc.text('Bahnhofstraße 85 · 31515 Wunstorf',margin,y); y+=12;
+  doc.text('Tel: 05031 5165899 · email: info@hannoverhilfe.de',margin,y); y+=26;
+  doc.setTextColor(0);
+  // Titel
+  doc.setFont('helvetica','bold');doc.setFontSize(14);
+  doc.text('Abtretungserklärung',pageW/2,y,{align:'center'}); y+=18;
+  doc.setFont('helvetica','normal');doc.setFontSize(10);
+  doc.text('für zusätzliche Betreuungsleistungen (§ 45b SGB XI)',pageW/2,y,{align:'center'}); y+=30;
+  // Datenzeilen (mit Kundendaten gefüllt)
+  const line=(label,value)=>{
+    doc.setFont('helvetica','bold');doc.setFontSize(10.5);
+    doc.text(label,margin,y);
+    const lw=doc.getTextWidth(label+' ');
+    doc.setFont('helvetica','normal');
+    doc.text(String(value||''),margin+lw+4,y);
+    doc.setDrawColor(170);doc.line(margin+lw+4,y+2,pageW-margin,y+2);
+    y+=22;
+  };
+  const it=cu.intern||{};
+  line('Name','  '+fullName(cu));
+  line('Straße','  '+(cu.street?cu.street+' '+(cu.houseNo||''):(cu.address||'')));
+  line('Ort','  '+((cu.plz||'')+' '+(cu.city||cu.area||'')).trim());
+  line('Versicherungsnummer:',(it.kvNr||cu.kvNr||''));
+  line('Kranken/Pflegekasse:',(it.kasse||cu.kasse||''));
+  line('Anschrift:',(cu.address||((cu.street||'')+' '+(cu.houseNo||'')+', '+(cu.plz||'')+' '+(cu.city||'')).trim()));
+  // Pflegegrad / Budget / Geburtstag in einer Zeile
+  doc.setFont('helvetica','bold');doc.setFontSize(10.5);
+  doc.text('Pflegegrad:',margin,y); doc.setFont('helvetica','normal'); doc.text(String(cu.pgrad||''),margin+62,y);
+  doc.setFont('helvetica','bold'); doc.text('Budget:',margin+150,y); doc.setFont('helvetica','normal'); doc.text(String(it.budget||cu.budget||''),margin+196,y);
+  doc.setFont('helvetica','bold'); doc.text('Geburtstag:',margin+300,y); doc.setFont('helvetica','normal'); doc.text(String(cu.birth||it.birth||''),margin+360,y);
+  y+=30;
+  // Abtretungstext
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);
+  doc.text('Hiermit erteile ich eine Abtretungserklärung an',margin,y); y+=18;
+  doc.setFont('helvetica','bold');
+  doc.text('Alltagshilfe Hannover UG',margin,y); y+=14;
+  doc.setFont('helvetica','normal');doc.setFontSize(10);
+  doc.text('Bahnhofstraße 85, 31515 Wunstorf',margin,y); y+=14;
+  doc.text('Institutionskennzeichen (IK) 460 353 369',margin,y); y+=22;
+  const t2=doc.splitTextToSize('Alltagshilfe Hannover UG hat mein Einverständnis, erbrachte Leistungen gemäß § 45b SGB XI direkt mit meiner oben genannten Krankenkasse abzurechnen.',pageW-margin*2);
+  doc.text(t2,margin,y); y+=t2.length*14+26;
+  // Datum + Unterschrift
+  doc.text('Datum: '+(date||todayISO()),margin,y); y+=40;
+  if(signature){ try{ doc.addImage(signature,'PNG',margin,y-30,170,60); }catch(e){} }
+  doc.setDrawColor(120);doc.line(margin,y+34,margin+230,y+34);
+  doc.setFontSize(9.5);doc.setTextColor(90);
+  doc.text('Unterschrift',margin,y+48);
+  return doc;
+}
+
+/* ============================================================
+   PDF: LEISTUNGSNACHWEIS (§45b Abs.1 S.3 Nr.4 SGB XI) – nach Vorlage
+   Name + Versichertennummer + automatisch befüllte Leistungstabelle.
+   ============================================================ */
+function buildLeistungsnachweisPdf(opts){
+  // opts: {name, versNr, rows:[{date,leistung,stunden,preis}], signature, ort, date}
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
+  const { jsPDF } = window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(); const margin=46; let y=margin;
+  doc.setFont('helvetica','bold');doc.setFontSize(11);
+  const head=doc.splitTextToSize('Nachweis von Leistungen der Angebote zur Unterstützung im Alltag nach § 45b Abs. 1 Satz 3 Nr. 4 SGB XI zur Abrechnung des Entlastungsbetrages',pageW-margin*2);
+  doc.text(head,margin,y); y+=head.length*15+14;
+  // Name + Versichertennummer
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);
+  const fld=(label,val)=>{ doc.setFont('helvetica','bold');doc.text(label,margin,y); const lw=doc.getTextWidth(label+' '); doc.setFont('helvetica','normal'); doc.text(String(val||''),margin+lw+4,y); doc.setDrawColor(170); doc.line(margin+lw+4,y+2,pageW-margin,y+2); y+=22; };
+  fld('Name / Vorname des Versicherten:',opts.name);
+  fld('Versichertennummer:',opts.versNr);
+  y+=6;
+  doc.setFont('helvetica','bold');doc.text('Folgende Leistungen wurden erbracht:',margin,y); y+=18;
+  // Tabelle
+  const cols=[margin, margin+70, margin+320, margin+390, margin+460, pageW-margin];
+  const headers=['Datum','Leistung','Std.','€/Std.','Kosten €'];
+  doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setFillColor(240,236,250);
+  doc.rect(margin,y-11,pageW-margin*2,18,'F');
+  doc.text(headers[0],cols[0]+2,y); doc.text(headers[1],cols[1]+2,y); doc.text(headers[2],cols[2]+2,y); doc.text(headers[3],cols[3]+2,y); doc.text(headers[4],cols[4]+2,y);
+  y+=10; doc.setFont('helvetica','normal');
+  let sumStd=0,sumKost=0;
+  (opts.rows||[]).forEach(r=>{
+    const kost=(r.stunden||0)*(r.preis||0); sumStd+=r.stunden||0; sumKost+=kost;
+    doc.setDrawColor(210);doc.line(margin,y+4,pageW-margin,y+4);
+    doc.text(String(r.date||''),cols[0]+2,y);
+    const lz=doc.splitTextToSize(String(r.leistung||''),cols[2]-cols[1]-6);
+    doc.text(lz,cols[1]+2,y);
+    doc.text(String((r.stunden||0).toFixed(2)).replace('.',','),cols[2]+2,y);
+    doc.text(String((r.preis||0).toFixed(2)).replace('.',','),cols[3]+2,y);
+    doc.text(String(kost.toFixed(2)).replace('.',','),cols[4]+2,y);
+    y+=Math.max(16,lz.length*12);
+  });
+  // Summen
+  doc.setDrawColor(120);doc.line(margin,y+2,pageW-margin,y+2); y+=16;
+  doc.setFont('helvetica','bold');
+  doc.text('Anzahl Stunden GESAMT:',cols[1]+2,y); doc.text(String(sumStd.toFixed(2)).replace('.',','),cols[2]+2,y);
+  doc.text('Kosten GESAMT:',cols[3]-40,y); doc.text(String(sumKost.toFixed(2)).replace('.',',')+' €',cols[4]+2,y);
+  y+=28;
+  // Bestätigungstext
+  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('Bestätigung und ggf. Abtretungserklärung:',margin,y); y+=16;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);
+  const bt=doc.splitTextToSize('Ich habe die dokumentierten Leistungen in Anspruch genommen und bestätige die Art und die Menge der erbrachten Leistungen. Ich trete die Ansprüche gegen meine Pflegekasse an den genannten Angebotsträger ab und beauftrage die Pflegekasse, die mir zustehenden Leistungen nach § 45b SGB XI für den o. g. Zeitraum an den im Leistungsnachweis genannten Angebotsträger auszuzahlen.',pageW-margin*2);
+  doc.text(bt,margin,y); y+=bt.length*12+24;
+  // Ort/Datum + Unterschrift
+  doc.text((opts.ort||'')+', '+(opts.date||todayISO()),margin,y);
+  if(opts.signature){ try{ doc.addImage(opts.signature,'PNG',pageW-margin-180,y-30,170,55); }catch(e){} }
+  doc.setDrawColor(120);
+  doc.line(margin,y+8,margin+200,y+8);
+  doc.line(pageW-margin-200,y+8,pageW-margin,y+8);
+  doc.setFontSize(9);doc.setTextColor(90);
+  doc.text('Ort, Datum',margin,y+20);
+  doc.text('Unterschrift der/des Versicherten',pageW-margin-200,y+20);
+  y+=40; doc.setTextColor(0);doc.setFontSize(8.5);
+  const hint=doc.splitTextToSize('Hinweis: Eine Abrechnungseinheit (1 E) entspricht einer Leistungsdauer von 45 Minuten; die Abrechnung erfolgt ausschließlich auf Basis dieser Einheiten. Angefangene Einheiten werden entsprechend der tatsächlich erbrachten Leistungszeit berücksichtigt.',pageW-margin*2);
+  doc.setTextColor(110);doc.text(hint,margin,y);
+  return doc;
+}
+
+/* ============================================================
+   Generischer Unterschrift-Dialog (Canvas im Modal)
+   ============================================================ */
+function openSignatureModal(title, subtitle, callback){
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent=title;
+  document.getElementById('modalBody').innerHTML=
+    (subtitle?'<p style="color:var(--muted);font-size:13.5px;margin-bottom:12px">'+subtitle+'</p>':'')+
+    '<div class="sign-pad" id="genSignPad" data-idx="gen"><canvas></canvas><div class="sign-hint" id="signhint-gen">Hier unterschreiben</div></div>'+
+    '<div class="sign-actions" style="margin-top:8px"><button class="btn-ghost btn-sm" onclick="clearSign(\'gen\')">Löschen</button></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:10px 20px" id="genSignConfirm">Unterschrift bestätigen</button>';
+  openModal();
+  setTimeout(initSignPads,40);
+  document.getElementById('genSignConfirm').onclick=function(){
+    const canvas=document.querySelector('#genSignPad canvas');
+    if(!canvas||!canvas.dataset.drawn){ toast('Bitte zuerst unterschreiben',true); return; }
+    const data=canvas.toDataURL('image/png');
+    closeModal();
+    callback(data);
+  };
+}
+
+/* ---- Abtretungserklärung für einen Kunden ---- */
+function startAbtretung(customerId){
+  const cu=custById(customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
+  openSignatureModal(
+    'Abtretungserklärung – '+fullName(cu),
+    'Das Dokument wird automatisch mit den Daten von '+fullName(cu)+' gefüllt. Bitte unterschreiben lassen.',
+    function(sig){
+      const date=todayISO();
+      if(CLOUD){ cloudInsert('abtretungen',{customer_id:cu.id, signed_date:date, signature:sig}); }
+      cu.abtretung={date:date, signature:sig};
+      const doc=buildAbtretungPdf(cu, sig, date);
+      if(doc) doc.save(('Abtretung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+      toast('Abtretungserklärung unterschrieben & gespeichert');
+      if(currentRole==='admin') renderAdmin('customers');
+    }
+  );
+}
+function downloadAbtretung(customerId){
+  const cu=custById(customerId); if(!cu||!cu.abtretung){toast('Noch keine Abtretung vorhanden',true);return;}
+  const doc=buildAbtretungPdf(cu, cu.abtretung.signature, cu.abtretung.date);
+  if(doc) doc.save(('Abtretung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+}
+
+/* ---- Leistungsnachweis: sammelt automatisch die Einsätze des Kunden ---- */
+function buildLNRowsForCustomer(customerId){
+  const rows=[];
+  timesheets.filter(t=>t.customerId===customerId).forEach(t=>{
+    const std=tsMinutes(t)/60;
+    rows.push({date:fmtDate(t.date), leistung:(t.task||'Betreuung'), stunden:std, preis:STUNDENSATZ});
+  });
+  return rows;
+}
+function startLeistungsnachweis(customerId){
+  const cu=custById(customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
+  const rows=buildLNRowsForCustomer(customerId);
+  if(!rows.length){ toast('Für diesen Kunden sind noch keine Einsätze erfasst',true); return; }
+  openSignatureModal(
+    'Leistungsnachweis – '+fullName(cu),
+    'Name und Versichertennummer werden übernommen, die Einsätze sind automatisch eingetragen. Bitte vom Kunden unterschreiben lassen.',
+    function(sig){
+      const date=todayISO();
+      const doc=buildLeistungsnachweisPdf({
+        name:fullName(cu),
+        versNr:(cu.intern&&cu.intern.kvNr)||cu.kvNr||'',
+        rows:rows, signature:sig,
+        ort:(cu.city||cu.area||''), date:date
+      });
+      if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+      cu.lnLast={date:date, signature:sig};
+      toast('Leistungsnachweis erstellt & unterschrieben');
+      if(currentRole==='admin') renderAdmin('customers');
+    }
+  );
+}
+
 function fillContractFor(text,s){
   let t=text; const name=fullName(s);
   t=t.replace('[Name und Anschrift Arbeitnehmer]', name+((s.intern&&s.intern.address)?', '+s.intern.address:''));
