@@ -94,6 +94,13 @@
   .stat.click{cursor:pointer;transition:.12s}.stat.click:hover{border-color:var(--petrol);box-shadow:0 4px 14px rgba(15,91,99,.12)}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
   .panel-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .list-toolbar{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fbfaff}
+  .search-input{flex:1;min-width:220px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;font-size:14px;background:#fff}
+  .search-input:focus{outline:none;border-color:var(--petrol);box-shadow:0 0 0 3px var(--petrol-soft)}
+  .filter-chips{display:flex;gap:7px;flex-wrap:wrap}
+  .chip{padding:7px 13px;border-radius:20px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:.15s;user-select:none}
+  .chip:hover{border-color:var(--petrol)}
+  .chip.on{background:var(--petrol);color:#fff;border-color:var(--petrol)}
   .panel-head h3{font-size:16px}.panel-body{padding:8px 20px 18px}
   table{width:100%;border-collapse:collapse}
   th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:12px 8px;border-bottom:1px solid var(--line)}
@@ -335,6 +342,7 @@
 <script>
 /* ============ DEMO-DATEN ============ */
 let currentRole='admin';
+let custSearch='', custFilter='alle', staffSearch='', staffFilter='alle';
 const SKILLS=['Haushaltshilfe','Einkaufsservice','Begleitdienste','Organisatorische Hilfe','Digitale Fragen'];
 const WEEKDAYS=['Mo','Di','Mi','Do','Fr','Sa','So'];
 const FREQ_UNITS=['pro Woche','alle 2 Wochen','pro Monat','nach Bedarf'];
@@ -784,11 +792,22 @@ function renderAdmin(view){
   }
 
   if(view==='staff'){
+    const q=(staffSearch||'').toLowerCase();
+    const filtered=staff.filter(s=>{
+      if(staffFilter==='aktiv'&&s.status!=='aktiv')return false;
+      if(staffFilter==='login'&&!s.hasLogin)return false;
+      if(staffFilter==='nologin'&&s.hasLogin)return false;
+      if(!q)return true;
+      return (fullName(s)+' '+(s.role||'')+' '+(s.area||'')+' '+(s.skills||[]).join(' ')).toLowerCase().includes(q);
+    });
     c.innerHTML=head('Mitarbeiter','Auf einen Mitarbeiter klicken, um alle Daten anzusehen und zu bearbeiten.')+
-    '<div class="panel"><div class="panel-head"><h3>Team ('+staff.length+')</h3><button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Team ('+filtered.length+(filtered.length!==staff.length?' von '+staff.length:'')+')</h3><button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button></div>'+
+    '<div class="list-toolbar"><input class="search-input" id="staffSearchInput" placeholder="🔍 Mitarbeiter suchen (Name, Funktion, Gebiet)…" value="'+(staffSearch||'').replace(/"/g,'&quot;')+'" oninput="staffSearch=this.value;renderAdmin(\'staff\');setTimeout(()=>{const e=document.getElementById(\'staffSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
+      '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['login','Mit Login'],['nologin','Ohne Login']].map(([v,l])=>'<span class="chip '+(staffFilter===v?'on':'')+'" onclick="staffFilter=\''+v+'\';renderAdmin(\'staff\')">'+l+'</span>').join('')+'</div>'+
+    '</div>'+
     '<div class="panel-body" style="padding-top:8px"><table>'+
       '<thead><tr><th>Name</th><th>Funktion</th><th>Gebiet</th><th>Login</th><th>Status</th></tr></thead><tbody>'+
-      staff.map(s=>'<tr class="clickable" onclick="editStaff('+s.id+')"><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:'+(s.color||'#0f5b63')+';margin-right:7px"></span><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td><td>'+statusTag(s.status)+'</td></tr>').join('')+
+      (filtered.length?filtered.map(s=>'<tr class="clickable" onclick="editStaff('+s.id+')"><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:'+(s.color||'#6d28d9')+';margin-right:7px"></span><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td><td>'+statusTag(s.status)+'</td></tr>').join(''):'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Keine Mitarbeiter gefunden.</td></tr>')+
       '</tbody></table></div></div>';
   }
 
@@ -807,18 +826,29 @@ function renderAdmin(view){
   }
 
   if(view==='customers'){
+    const q=(custSearch||'').toLowerCase();
+    const filtered=customers.filter(c=>{
+      if(custFilter==='aktiv'&&c.status!=='aktiv')return false;
+      if(custFilter==='pg3'&&!(parseInt(c.pgrad)>=3))return false;
+      if(custFilter==='ohneabtretung'&&c.abtretung)return false;
+      if(!q)return true;
+      return (fullName(c)+' '+(c.area||'')+' '+(c.city||'')+' '+(c.need||[]).join(' ')).toLowerCase().includes(q);
+    });
     c.innerHTML=head('Kunden','Auf einen Kunden klicken, um Daten anzusehen und zu bearbeiten. Über die Knöpfe rechts erstellst du die Dokumente.')+
-    '<div class="panel"><div class="panel-head"><h3>Kunden ('+customers.length+')</h3><button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Kunden ('+filtered.length+(filtered.length!==customers.length?' von '+customers.length:'')+')</h3><button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button></div>'+
+    '<div class="list-toolbar"><input class="search-input" id="custSearchInput" placeholder="🔍 Kunde suchen (Name, Gebiet, Bedarf)…" value="'+(custSearch||'').replace(/"/g,'&quot;')+'" oninput="custSearch=this.value;renderAdmin(\'customers\');setTimeout(()=>{const e=document.getElementById(\'custSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
+      '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['pg3','Pflegegrad 3+'],['ohneabtretung','Ohne Abtretung']].map(([v,l])=>'<span class="chip '+(custFilter===v?'on':'')+'" onclick="custFilter=\''+v+'\';renderAdmin(\'customers\')">'+l+'</span>').join('')+'</div>'+
+    '</div>'+
     '<div class="panel-body" style="padding-top:8px"><table>'+
       '<thead><tr><th>Name</th><th>Gebiet</th><th>Bedarf</th><th>Status</th><th>Dokumente</th></tr></thead><tbody>'+
-      customers.map(c=>'<tr>'+
+      (filtered.length?filtered.map(c=>'<tr>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')"><b>'+fullName(c)+'</b></td>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')">'+c.area+'</td>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')">'+c.need.join(', ')+'</td>'+
         '<td>'+(c.status==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag grey">'+c.status+'</span>')+'</td>'+
         '<td style="white-space:nowrap"><button class="btn-ghost btn-sm" onclick="event.stopPropagation();startAbtretung('+c.id+')">Abtretung</button> '+
         '<button class="btn-ghost btn-sm" onclick="event.stopPropagation();startLeistungsnachweis('+c.id+')">Leistungsnachweis</button></td>'+
-      '</tr>').join('')+
+      '</tr>').join(''):'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Keine Kunden gefunden.</td></tr>')+
       '</tbody></table></div></div>';
   }
 
