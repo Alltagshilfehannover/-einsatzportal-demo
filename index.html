@@ -990,6 +990,13 @@ function openStaffModal(id){
           s.contracts.map((ct,i)=>'<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📄 '+ct.name+'</b><div class="li-sub">'+(ct.signedDate?'Unterschrieben am '+fmtDate(ct.signedDate):'')+'</div></div><div style="display:flex;gap:7px;align-items:center">'+(ct.signature?'<img src="'+ct.signature+'" style="height:38px;border:1px solid var(--line);border-radius:6px;background:#fff">':'')+'<button class="btn-ghost btn-sm" onclick="viewContract(\''+ct.name+'\','+id+','+i+')">Lesen</button><button class="btn-primary btn-sm" style="width:auto" onclick="downloadStaffContract('+id+','+i+')">⬇ PDF</button></div></div>').join('')
         : '')+
 
+      ((id!==null && s.docImages && (s.docImages.idFront||s.docImages.idBack||s.docImages.selfie||s.docImages.enrollment))
+        ? '<div class="section-label">Eingereichte Dokumente <span style="font-weight:400;color:var(--muted);font-size:12px">(nur intern sichtbar)</span></div>'+
+          [['idFront','Personalausweis – Vorderseite','🪪'],['idBack','Personalausweis – Rückseite','🪪'],['selfie','Selfie','🤳'],['enrollment','Immatrikulationsbescheinigung','🎓']]
+            .filter(([k])=>s.docImages[k])
+            .map(([k,label,ic])=>'<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>'+ic+' '+label+'</b></div><div style="display:flex;gap:7px;align-items:center"><img src="'+s.docImages[k]+'" style="height:40px;border:1px solid var(--line);border-radius:6px;background:#fff" onerror="this.style.display=\'none\'"><button class="btn-ghost btn-sm" style="width:auto" onclick="viewStaffDoc('+id+',\''+k+'\',\''+label.replace(/'/g,'')+'\')">Ansehen</button></div></div>').join('')
+        : '')+
+
       '<div class="section-label">Zugangsdaten</div>'+
       (s.hasLogin
         ? '<p style="font-size:13.5px;color:var(--good);margin-bottom:12px">✓ Login aktiv: <b>'+(s.login||s.email)+'</b></p><label>Passwort zurücksetzen</label><input id="es_pass" type="password" placeholder="Neues Passwort (optional)">'
@@ -1263,9 +1270,16 @@ function showApplication(id){
   const a=applications.find(x=>x.id===id);
   document.getElementById('modalBox').classList.add('wide');
   document.getElementById('modalTitle').textContent='Bewerbung: '+fullName(a);
-  const docRow=(name)=>'<div class="reveal-row"><span class="k">'+name+'</span><span class="v">'+(a.docs[name]?'<span class="tag green">✓ signiert</span>':'<span class="tag red">offen</span>')+'</span></div>';
-  const fileRow=(label,ok)=>'<div class="reveal-row"><span class="k">'+label+'</span><span class="v">'+(ok?'<span class="tag green">✓ hochgeladen</span>':'<span class="tag red">fehlt</span>')+'</span></div>';
+  const di=a.docImages||{};
+  const fileRow=(label,ok,imgKey)=>{
+    const hasImg=imgKey&&di[imgKey];
+    return '<div class="reveal-row"><span class="k">'+label+'</span><span class="v" style="display:flex;align-items:center;gap:8px;justify-content:flex-end">'+(ok?'<span class="tag green">✓ hochgeladen</span>':'<span class="tag red">fehlt</span>')+(hasImg?'<button class="btn-ghost btn-sm" style="width:auto" onclick="viewDocImage(\''+imgKey+'\','+a.id+',\''+label.replace(/'/g,'')+'\')">Ansehen</button>':'')+'</span></div>';
+  };
   const declRow=(label,ok)=>'<div class="reveal-row"><span class="k">'+label+'</span><span class="v">'+(ok?'<span class="tag green">✓ bestätigt</span>':'<span class="tag grey">—</span>')+'</span></div>';
+  const contractRow=(name)=>{
+    const sig=(a.signatures&&a.signatures[name])||null;
+    return '<div class="reveal-row"><span class="k">'+name+'</span><span class="v" style="display:flex;align-items:center;gap:8px;justify-content:flex-end">'+(a.docs[name]?'<span class="tag green">✓ signiert</span>':'<span class="tag red">offen</span>')+(a.docs[name]?'<button class="btn-ghost btn-sm" style="width:auto" onclick="viewAppContract('+a.id+',\''+name.replace(/'/g,'')+'\')">Ansehen</button>':'')+'</span></div>';
+  };
   const PFB_LABELS={birth:'Geburtsdatum',birthplace:'Geburtsort',address:'Anschrift',maritalStatus:'Familienstand',taxId:'Steuer-ID',taxClass:'Steuerklasse',kvNr:'KV-Nummer',kasse:'Krankenkasse',iban:'IBAN',employment:'Anstellungsart',otherJob:'Weitere Beschäftigung'};
   const q=a.questionnaire||{};const decl=a.declaration||{};
   const pfbRows=Object.keys(PFB_LABELS).filter(k=>q[k]).map(k=>'<div class="reveal-row"><span class="k">'+PFB_LABELS[k]+'</span><span class="v">'+q[k]+'</span></div>').join('')||'<div style="color:var(--muted);font-size:13px;padding:4px 0">Keine Angaben.</div>';
@@ -1283,15 +1297,49 @@ function showApplication(id){
     '<div class="section-label">Personalfragebogen</div>'+pfbRows+
     '<div class="section-label">Erklärung & Nachweise</div>'+
     declRow('Keine Vorstrafen',decl.noCrime)+declRow('Führungszeugnis wird nachgereicht',decl.bringCertificate)+declRow('Erste-Hilfe-Kurs wird absolviert',decl.bringFirstAid)+declRow('KV-Karte wird eingesendet',decl.sendKvCard)+
-    '<div class="section-label">Signierte Verträge</div>'+docRow('Arbeitsvertrag')+docRow('Datenschutzvertrag')+docRow('NDA')+docRow('Haftungserklärung')+
+    '<div class="section-label">Signierte Verträge</div>'+contractRow('Arbeitsvertrag')+contractRow('Datenschutzvertrag')+contractRow('NDA')+contractRow('Haftungserklärung')+
     '<div class="section-label">Identität & Bestätigungen</div>'+
-    fileRow('Personalausweis Vorderseite',a.idFront)+fileRow('Personalausweis Rückseite',a.idBack)+fileRow('Selfie',a.selfie)+
+    fileRow('Personalausweis Vorderseite',a.idFront,'idFront')+fileRow('Personalausweis Rückseite',a.idBack,'idBack')+fileRow('Selfie',a.selfie,'selfie')+
+    (a.isStudent?fileRow('Immatrikulationsbescheinigung',a.enrollmentFile,'enrollment'):'')+
     '<div class="reveal-row"><span class="k">AGB & Datenschutz gelesen</span><span class="v">'+(a.agb?'<span class="tag green">✓ bestätigt</span>':'<span class="tag red">offen</span>')+'</span></div>';
   let foot='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
   if(a.status==='neu') foot+='<button class="btn-primary" style="width:auto;padding:11px 18px" onclick="approveApp('+id+')">✓ Genehmigen</button>';
   if(a.status==='geprüft') foot+='<button class="btn-primary" style="width:auto;padding:11px 18px;background:var(--blue)" onclick="sendAppLogin('+id+')">🔑 Zugangsdaten erstellen & senden</button>';
   if(a.status==='versendet') foot+='<span style="font-size:13.5px;color:var(--good);align-self:center">✓ Mitarbeiter ist aktiv – kann sich anmelden</span>';
   document.getElementById('modalFoot').innerHTML=foot;
+  openModal();
+}
+function viewStaffDoc(staffId, key, label){
+  const s=staff.find(x=>x.id===staffId); if(!s||!s.docImages||!s.docImages[key])return;
+  const data=s.docImages[key];
+  const isPdf=(data||'').indexOf('data:application/pdf')===0;
+  document.getElementById('modalTitle').textContent=label;
+  document.getElementById('modalBody').innerHTML= isPdf
+    ? '<iframe src="'+data+'" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px"></iframe>'
+    : '<img src="'+data+'" style="width:100%;max-height:72vh;object-fit:contain;border-radius:8px;background:#f3f0fb">';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="editStaff('+staffId+')">← Zurück zum Profil</button>';
+  openModal();
+}
+function viewDocImage(imgKey, appId, label){
+  const a=applications.find(x=>x.id===appId); if(!a||!a.docImages||!a.docImages[imgKey])return;
+  const data=a.docImages[imgKey];
+  const isPdf=(data||'').indexOf('application/pdf')>-1 || (data||'').indexOf('data:application/pdf')===0;
+  document.getElementById('modalTitle').textContent=label;
+  document.getElementById('modalBody').innerHTML= isPdf
+    ? '<iframe src="'+data+'" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px"></iframe>'
+    : '<img src="'+data+'" style="width:100%;max-height:72vh;object-fit:contain;border-radius:8px;background:#f3f0fb">';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="showApplication('+appId+')">← Zurück zur Bewerbung</button>';
+  openModal();
+}
+function viewAppContract(appId, name){
+  const a=applications.find(x=>x.id===appId); if(!a)return;
+  const sig=(a.signatures&&a.signatures[name])||null;
+  const txt=(typeof DOC_TEXTS!=='undefined'&&DOC_TEXTS[name])?DOC_TEXTS[name]:name;
+  document.getElementById('modalTitle').textContent=name;
+  document.getElementById('modalBody').innerHTML=
+    '<div class="doc-text" style="max-height:52vh;white-space:pre-wrap">'+txt+'</div>'+
+    (sig?'<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px"><div style="font-size:12px;color:var(--muted);font-weight:600">Unterschrift – '+fullName(a)+'</div><img src="'+sig+'" style="height:60px;margin-top:6px;border:1px solid var(--line);border-radius:7px;background:#fff"></div>':'<p style="color:var(--muted);font-size:13px;margin-top:10px">Keine Unterschrift hinterlegt.</p>');
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="showApplication('+appId+')">← Zurück zur Bewerbung</button>';
   openModal();
 }
 function statusStepper(status){
@@ -1315,7 +1363,10 @@ function sendAppLogin(id){
   // Signierte Verträge für die Mitarbeiter-Akte aufbereiten
   const signedDocs=Object.keys(a.docs||{}).filter(d=>a.docs[d]).map(d=>({name:d,signedDate:todayISO(),signature:(a.signatures&&a.signatures[d])||null}));
   // Bewerber wird zum aktiven Mitarbeiter
-  const newStaff={id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,contracts:signedDocs,intern:{birth:(a.questionnaire&&a.questionnaire.birth)||'',address:(a.questionnaire&&a.questionnaire.address)||'',taxId:(a.questionnaire&&a.questionnaire.taxId)||'',taxClass:(a.questionnaire&&a.questionnaire.taxClass)||'I',kvNr:(a.questionnaire&&a.questionnaire.kvNr)||'',kasse:(a.questionnaire&&a.questionnaire.kasse)||'',employment:(a.questionnaire&&a.questionnaire.employment)||'Minijob',citizenship:a.citizenship,iban:(a.questionnaire&&a.questionnaire.iban)||''}};
+  const newStaff={id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,contracts:signedDocs,
+    // Eingereichte Dokumente (nur im Büro/Admin sichtbar)
+    docImages:Object.assign({}, a.docImages||{}), isStudent:!!a.isStudent,
+    intern:{birth:(a.questionnaire&&a.questionnaire.birth)||'',address:(a.questionnaire&&a.questionnaire.address)||'',taxId:(a.questionnaire&&a.questionnaire.taxId)||'',taxClass:(a.questionnaire&&a.questionnaire.taxClass)||'I',kvNr:(a.questionnaire&&a.questionnaire.kvNr)||'',kasse:(a.questionnaire&&a.questionnaire.kasse)||'',employment:(a.questionnaire&&a.questionnaire.employment)||'Minijob',citizenship:a.citizenship,iban:(a.questionnaire&&a.questionnaire.iban)||''}};
   staff.push(newStaff);
   if(CLOUD){
     cloudUpdate('bewerbungen',id,{status:'versendet'});
@@ -1734,7 +1785,14 @@ function wizQuestionnaire(){
     '<select id="pf_otherjob" onchange="pfbOtherJobChange()"><option value="">Bitte wählen …</option>'+['Ja, Student','Ja, Hauptbeschäftigung','Nein'].map(e=>'<option '+(q.otherJob===e?'selected':'')+'>'+e+'</option>').join('')+'</select>'+
     '<div id="pf_studentbox" style="display:'+(q.otherJob==='Ja, Student'?'block':'none')+';margin-top:14px">'+
       '<label>Immatrikulationsbescheinigung hochladen *</label>'+
-      '<div class="upload-box '+(wizData.enrollmentFile?'done':'')+'" id="up-enroll" onclick="simEnroll()"><div class="ub-ic">'+(wizData.enrollmentFile?'✓':'🎓')+'</div><div class="ub-t">'+(wizData.enrollmentFile?'Bescheinigung hochgeladen':'Foto aufnehmen oder Datei hochladen')+'</div><div class="ub-s">JPG, PNG oder PDF</div></div>'+
+      '<div class="upload-box2 '+(wizData.enrollmentImg?'done':'')+'" id="up-enroll">'+
+        (wizData.enrollmentImg?'<img src="'+wizData.enrollmentImg+'" style="width:100%;max-height:170px;object-fit:contain;border-radius:10px;margin-bottom:10px;background:#f3f0fb">':'')+
+        '<div class="ub2-head"><span class="ub2-ic">'+(wizData.enrollmentImg?'✓':'🎓')+'</span><span class="ub2-title">'+(wizData.enrollmentImg?'Bescheinigung hochgeladen':'Immatrikulationsbescheinigung')+'</span></div>'+
+        '<div class="ub2-actions">'+
+          '<label class="ub2-btn">📷 Foto aufnehmen<input type="file" accept="image/*" capture="environment" style="display:none" onchange="handleEnrollFile(this)"></label>'+
+          '<label class="ub2-btn">🖼️ Aus Dateien<input type="file" accept="image/*,application/pdf" style="display:none" onchange="handleEnrollFile(this)"></label>'+
+        '</div>'+
+      '</div>'+
     '</div>'+
   '</div>'+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="savePfb()">Weiter →</button></div></div>';
@@ -1743,7 +1801,18 @@ function pfbOtherJobChange(){
   const v=document.getElementById('pf_otherjob').value;
   document.getElementById('pf_studentbox').style.display=(v==='Ja, Student')?'block':'none';
 }
-function simEnroll(){ wizData.enrollmentFile=true; const b=document.getElementById('up-enroll'); b.classList.add('done'); b.querySelector('.ub-ic').textContent='✓'; b.querySelector('.ub-t').textContent='Bescheinigung hochgeladen'; toast('Immatrikulationsbescheinigung hochgeladen'); }
+function handleEnrollFile(input){
+  const file=input.files&&input.files[0]; if(!file)return;
+  if(file.size>6*1024*1024){ toast('Datei zu groß (max. 6 MB)',true); input.value=''; return; }
+  const reader=new FileReader();
+  reader.onload=function(e){
+    wizData.enrollmentFile=true;
+    wizData.enrollmentImg=e.target.result;
+    renderWizard();
+    toast('Immatrikulationsbescheinigung hochgeladen');
+  };
+  reader.readAsDataURL(file);
+}
 function savePfb(){
   const q=wizData.questionnaire||{};
   q.street=val('pf_street');q.houseNo=val('pf_houseno');q.plz=val('pf_plz');q.city=val('pf_city');
@@ -1927,7 +1996,9 @@ function viewLegal(which){
 }
 function checkAgb(){document.getElementById('agbNext').disabled=!document.getElementById('agbChk').checked;}
 function submitApplication(){
-  const app={id:nextAppId++,first:wizData.first,last:wizData.last,gender:wizData.gender,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),questionnaire:Object.assign({},wizData.questionnaire||{}),declaration:Object.assign({},wizData.declaration||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true,isStudent:!!wizData.isStudent,enrollmentFile:!!wizData.enrollmentFile,pets:wizData.pets||[]};
+  const app={id:nextAppId++,first:wizData.first,last:wizData.last,gender:wizData.gender,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),questionnaire:Object.assign({},wizData.questionnaire||{}),declaration:Object.assign({},wizData.declaration||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true,isStudent:!!wizData.isStudent,enrollmentFile:!!wizData.enrollmentFile,pets:wizData.pets||[],
+    // Bilddaten der eingereichten Dokumente (zur Prüfung im Büro)
+    docImages:{idFront:wizData.idFrontImg||null, idBack:wizData.idBackImg||null, selfie:wizData.selfieImg||null, enrollment:wizData.enrollmentImg||null}};
   applications.unshift(app);
   if(CLOUD){ cloudInsert('bewerbungen',appToRow(app)).then(r=>{ if(r)app.id=r.id; }); }
   wizNext();
