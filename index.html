@@ -635,6 +635,36 @@ function togglePass(){
    ============================================================ */
 const USE_REAL_AUTH = true;   // <-- Echtbetrieb aktiv: Anmeldung nur mit gültigen Zugangsdaten
 
+/* ============================================================
+   AUTOMATISCHE KONTO-ERSTELLUNG über Supabase Edge Function
+   ------------------------------------------------------------
+   Wenn USE_EDGE_FUNCTION = true ist, ruft "Zugangsdaten erstellen"
+   die serverseitige Edge Function "create-staff-account" auf.
+   Diese legt das echte Login-Konto an (mit service_role-Key, der
+   NUR auf dem Server liegt) und verschickt eine Einladungs-E-Mail.
+
+   Voraussetzung (vom Entwickler/dir einzurichten):
+   1. Edge Function "create-staff-account" in Supabase deployen
+   2. E-Mail-Einladungen in Supabase aktivieren
+   Solange false, läuft der bisherige Weg (Profil lokal + Hinweis).
+   ============================================================ */
+const USE_EDGE_FUNCTION = true;  // <-- Aktiv: automatische Konto-Erstellung über Edge Function
+
+async function callCreateStaffAccount(payload){
+  // Ruft die Edge Function sicher auf. Es wird NUR die E-Mail + Profildaten
+  // übertragen – niemals ein geheimer Schlüssel.
+  const url = SUPABASE_URL + '/functions/v1/create-staff-account';
+  const res = await fetch(url, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+SUPABASE_KEY },
+    body: JSON.stringify(payload)
+  });
+  let data={};
+  try{ data=await res.json(); }catch(e){}
+  if(!res.ok || data.error){ throw new Error(data.error || ('HTTP '+res.status)); }
+  return data;
+}
+
 async function doLogin(){
   const email=document.getElementById('user').value.trim();
   const pass=document.getElementById('pass').value;
@@ -1360,21 +1390,43 @@ function approveApp(id){
 }
 function sendAppLogin(id){
   const a=applications.find(x=>x.id===id);
-  a.status='versendet';
   // Signierte Verträge für die Mitarbeiter-Akte aufbereiten
   const signedDocs=Object.keys(a.docs||{}).filter(d=>a.docs[d]).map(d=>({name:d,signedDate:todayISO(),signature:(a.signatures&&a.signatures[d])||null}));
   // Bewerber wird zum aktiven Mitarbeiter
   const newStaff={id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,contracts:signedDocs,
-    // Eingereichte Dokumente (nur im Büro/Admin sichtbar)
     docImages:Object.assign({}, a.docImages||{}), isStudent:!!a.isStudent,
     intern:{birth:(a.questionnaire&&a.questionnaire.birth)||'',address:(a.questionnaire&&a.questionnaire.address)||'',taxId:(a.questionnaire&&a.questionnaire.taxId)||'',taxClass:(a.questionnaire&&a.questionnaire.taxClass)||'I',kvNr:(a.questionnaire&&a.questionnaire.kvNr)||'',kasse:(a.questionnaire&&a.questionnaire.kasse)||'',employment:(a.questionnaire&&a.questionnaire.employment)||'Minijob',citizenship:a.citizenship,iban:(a.questionnaire&&a.questionnaire.iban)||''}};
+
+  if(USE_EDGE_FUNCTION){
+    // ---- ECHTE automatische Konto-Erstellung über die Edge Function ----
+    toast('Erstelle Login-Konto für '+a.first+' …');
+    callCreateStaffAccount({
+      email:a.email, first:a.first, last:a.last, role:'staff',
+      mitarbeiter: staffToRow(newStaff)
+    }).then(resp=>{
+      a.status='versendet';
+      if(resp.mitarbeiter_id) newStaff.id=resp.mitarbeiter_id;
+      staff.push(newStaff);
+      if(CLOUD){ cloudUpdate('bewerbungen',id,{status:'versendet'});
+        (async()=>{ for(const ct of signedDocs){ await cloudInsert('vertraege',{mitarbeiter_id:newStaff.id,name:ct.name,signed_date:ct.signedDate,signature:ct.signature}); } })();
+      }
+      closeModal();document.getElementById('modalBox').classList.remove('wide');
+      toast('Login-Konto erstellt – Einladung an '+a.email+' gesendet');renderAdmin('applications');
+    }).catch(err=>{
+      toast('Fehler bei der Konto-Erstellung: '+err.message,true);
+    });
+    return;
+  }
+
+  // ---- TEST-Weg (ohne Edge Function): Profil lokal anlegen ----
+  a.status='versendet';
   staff.push(newStaff);
   if(CLOUD){
     cloudUpdate('bewerbungen',id,{status:'versendet'});
     (async()=>{ const r=await cloudInsert('mitarbeiter',staffToRow(newStaff)); if(r){ newStaff.id=r.id; for(const ct of signedDocs){ await cloudInsert('vertraege',{mitarbeiter_id:r.id,name:ct.name,signed_date:ct.signedDate,signature:ct.signature}); } } })();
   }
   closeModal();document.getElementById('modalBox').classList.remove('wide');
-  toast('Zugangsdaten an '+a.first+' gesendet – jetzt aktiver Mitarbeiter');renderAdmin('applications');
+  toast('Profil angelegt. Login-Konto in Supabase mit dieser E-Mail anlegen: '+a.email);renderAdmin('applications');
 }
 /* ============ MITARBEITER VIEWS ============ */
 function renderStaff(view){
