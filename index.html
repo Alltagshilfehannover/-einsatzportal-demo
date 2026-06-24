@@ -2641,7 +2641,61 @@ function toast(msg,warn){
 document.getElementById('pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 
 /* Beim Laden: Verbindung zur Datenbank aufbauen */
-window.addEventListener('load',function(){ bootCloud(); });
+window.addEventListener('load',function(){ bootCloud(); checkInviteLink(); });
+
+/* ============================================================
+   EINLADUNGS-/PASSWORT-SETZEN-ABLAUF
+   ------------------------------------------------------------
+   Wenn jemand über den Einladungs- oder Passwort-Reset-Link von
+   Supabase auf die Seite kommt, steht ein Token in der Adresse
+   (nach dem #). Die App erkennt das und zeigt einen Dialog zum
+   Festlegen des eigenen Passworts.
+   ============================================================ */
+async function checkInviteLink(){
+  const hash = window.location.hash || '';
+  // Supabase hängt z. B. #access_token=...&type=invite (oder recovery) an
+  if(hash.indexOf('access_token')===-1) return;
+  const params = new URLSearchParams(hash.replace(/^#/,''));
+  const type = params.get('type'); // invite | recovery | signup
+  // Supabase-Client muss bereit sein
+  let tries=0;
+  while(!sb && tries<20){ await new Promise(r=>setTimeout(r,150)); tries++; }
+  if(!sb){ return; }
+  // Die Sitzung aus dem Link aktiviert sich automatisch über den Client.
+  showSetPasswordDialog(type);
+}
+function showSetPasswordDialog(type){
+  // Login-Bereich ausblenden, App-Bereich aus
+  const ls=document.getElementById('loginScreen'); if(ls) ls.style.display='none';
+  const as=document.getElementById('appScreen'); if(as) as.classList.remove('active');
+  const w=document.getElementById('wizard'); if(w) w.classList.remove('active');
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent = (type==='recovery')?'Neues Passwort festlegen':'Willkommen – Passwort festlegen';
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:14px;margin-bottom:14px">Lege jetzt dein persönliches Passwort fest. Danach kannst du dich damit anmelden.</p>'+
+    '<div class="field"><label>Neues Passwort</label><input id="setpw1" type="password" placeholder="mindestens 8 Zeichen"></div>'+
+    '<div class="field" style="margin-top:10px"><label>Passwort wiederholen</label><input id="setpw2" type="password" placeholder="nochmals eingeben"></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-primary" style="width:auto;padding:11px 22px" onclick="saveNewPassword()">Passwort speichern</button>';
+  openModal();
+}
+async function saveNewPassword(){
+  const p1=document.getElementById('setpw1').value;
+  const p2=document.getElementById('setpw2').value;
+  if(!p1||p1.length<8){ toast('Bitte mindestens 8 Zeichen',true); return; }
+  if(p1!==p2){ toast('Die Passwörter stimmen nicht überein',true); return; }
+  if(!sb){ toast('Keine Verbindung zur Datenbank',true); return; }
+  try{
+    const { error } = await sb.auth.updateUser({ password: p1 });
+    if(error){ toast('Fehler: '+error.message, true); return; }
+    closeModal();
+    // Token aus der Adresse entfernen und zur normalen Anmeldung
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    await sb.auth.signOut();
+    const ls=document.getElementById('loginScreen'); if(ls) ls.style.display='grid';
+    toast('Passwort gespeichert – du kannst dich jetzt anmelden');
+  }catch(e){ toast('Aktion fehlgeschlagen',true); }
+}
 </script>
 </body>
 </html>
