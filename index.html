@@ -536,23 +536,47 @@ async function seedIfEmpty(){
   return true;
 }
 
-/* ---- Laden aller Kerndaten aus der DB ---- */
+/* ---- Laden aller Kerndaten aus der DB ----
+   Jeder Schritt ist einzeln abgesichert: Schlägt eine Tabelle fehl,
+   bricht NICHT das ganze Laden ab. Fehler werden in der Konsole
+   protokolliert, damit man sieht, welche Tabelle/Spalte hakt. */
 async function loadFromCloud(){
-  const [mRes,kRes,aRes,bRes]=await Promise.all([
-    sb.from('mitarbeiter').select('*').order('id'),
-    sb.from('kunden').select('*').order('id'),
-    sb.from('auftraege').select('*').order('id'),
-    sb.from('bewerbungen').select('*').order('id')
-  ]);
-  if(mRes.data){ staff=mRes.data.map(rowToStaff); }
-  if(kRes.data){ customers=kRes.data.map(rowToCust); }
+  // Mitarbeiter
+  try{
+    const {data,error}=await sb.from('mitarbeiter').select('*').order('id');
+    if(error) throw error;
+    if(data) staff=data.map(rowToStaff);
+  }catch(e){ console.error('Laden mitarbeiter fehlgeschlagen:', e.message||e); }
+
+  // Kunden
+  try{
+    const {data,error}=await sb.from('kunden').select('*').order('id');
+    if(error) throw error;
+    if(data) customers=data.map(rowToCust);
+  }catch(e){ console.error('Laden kunden fehlgeschlagen:', e.message||e); }
+
   // Verträge den Mitarbeitern zuordnen
-  const {data:vRows}=await sb.from('vertraege').select('*');
-  if(vRows){ vRows.forEach(v=>{const s=staff.find(x=>x.id===v.mitarbeiter_id); if(s)s.contracts.push({name:v.name,signedDate:v.signed_date,signature:v.signature});}); }
-  // Aufträge: falls leer, aus den vorhandenen Kunden erzeugen
-  if(aRes.data&&aRes.data.length){ jobs=aRes.data.map(rowToJob); }
-  else { jobs=[]; for(const c of customers){ if(c.status!=='beendet'){ const row=jobToRow({customerId:c.id,title:(c.need[0]||'Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]}); const d=await cloudInsert('auftraege',row); if(d)jobs.push(rowToJob(d)); } } }
-  if(bRes.data){ applications=bRes.data.map(rowToApp); }
+  try{
+    const {data:vRows,error}=await sb.from('vertraege').select('*');
+    if(error) throw error;
+    if(vRows){ vRows.forEach(v=>{const s=staff.find(x=>x.id===v.mitarbeiter_id); if(s){ s.contracts=s.contracts||[]; s.contracts.push({name:v.name,signedDate:v.signed_date,signature:v.signature}); }}); }
+  }catch(e){ console.error('Laden vertraege fehlgeschlagen:', e.message||e); }
+
+  // Aufträge
+  try{
+    const {data:aData,error}=await sb.from('auftraege').select('*').order('id');
+    if(error) throw error;
+    if(aData&&aData.length){ jobs=aData.map(rowToJob); }
+    else { jobs=[]; for(const c of customers){ if(c.status!=='beendet'){ const row=jobToRow({customerId:c.id,title:(c.need[0]||'Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]}); const d=await cloudInsert('auftraege',row); if(d)jobs.push(rowToJob(d)); } } }
+  }catch(e){ console.error('Laden auftraege fehlgeschlagen:', e.message||e); }
+
+  // Bewerbungen
+  try{
+    const {data,error}=await sb.from('bewerbungen').select('*').order('id');
+    if(error) throw error;
+    if(data) applications=data.map(rowToApp);
+  }catch(e){ console.error('Laden bewerbungen fehlgeschlagen:', e.message||e); }
+
   // myId auf ersten Mitarbeiter setzen
   if(staff.length){ myId=staff[0].id; }
 }
@@ -563,14 +587,17 @@ async function bootCloud(){
     showCloudBadge('verbinde');
     await seedIfEmpty();
     CLOUD=true;
-    await loadFromCloud();
+    await loadFromCloud();   // einzelne Fehler werden intern abgefangen
     showCloudBadge('cloud');
     // aktuelle Ansicht neu zeichnen
     if(currentRole==='admin'){ if(typeof renderAdmin==='function') renderAdmin('dashboard'); }
     else { if(typeof renderStaff==='function') renderStaff('dashboard'); }
   }catch(e){
-    console.warn('Cloud-Boot fehlgeschlagen, nutze lokale Daten',e);
-    showCloudBadge('lokal');
+    // Selbst wenn der Start hakt: Wenn die Verbindung grundsätzlich steht,
+    // bleiben wir im Cloud-Modus, damit gespeicherte Daten nicht ignoriert werden.
+    console.error('Cloud-Boot Problem:', e&&(e.message||e));
+    if(CLOUD){ showCloudBadge('cloud'); }
+    else { showCloudBadge('lokal'); }
   }
 }
 function showCloudBadge(state){
