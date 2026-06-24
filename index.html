@@ -182,6 +182,7 @@
   .wiz-logo img{width:130px;height:auto}
   .wiz-photo{width:100%;max-width:420px;margin:4px auto 18px;border-radius:14px;display:block;box-shadow:var(--shadow)}
   .info-box{background:var(--petrol-soft);border-radius:12px;padding:14px 16px;font-size:13px;color:#4a4060;line-height:1.55;margin-bottom:6px}
+  .info-note{background:var(--amber-soft);border:1px solid #ffd0e0;border-radius:10px;padding:12px 14px;font-size:13px;color:#7a3b52;line-height:1.5}
   .wiz-card h2{font-size:23px;margin-bottom:10px}
   .wiz-card p.lead{color:var(--muted);margin-bottom:20px}
   .team-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}
@@ -1784,15 +1785,7 @@ function wizQuestionnaire(){
     '<label>Übst du weitere Beschäftigungen aus? *</label>'+
     '<select id="pf_otherjob" onchange="pfbOtherJobChange()"><option value="">Bitte wählen …</option>'+['Ja, Student','Ja, Hauptbeschäftigung','Nein'].map(e=>'<option '+(q.otherJob===e?'selected':'')+'>'+e+'</option>').join('')+'</select>'+
     '<div id="pf_studentbox" style="display:'+(q.otherJob==='Ja, Student'?'block':'none')+';margin-top:14px">'+
-      '<label>Immatrikulationsbescheinigung hochladen *</label>'+
-      '<div class="upload-box2 '+(wizData.enrollmentImg?'done':'')+'" id="up-enroll">'+
-        (wizData.enrollmentImg?'<img src="'+wizData.enrollmentImg+'" style="width:100%;max-height:170px;object-fit:contain;border-radius:10px;margin-bottom:10px;background:#f3f0fb">':'')+
-        '<div class="ub2-head"><span class="ub2-ic">'+(wizData.enrollmentImg?'✓':'🎓')+'</span><span class="ub2-title">'+(wizData.enrollmentImg?'Bescheinigung hochgeladen':'Immatrikulationsbescheinigung')+'</span></div>'+
-        '<div class="ub2-actions">'+
-          '<label class="ub2-btn">📷 Foto aufnehmen<input type="file" accept="image/*" capture="environment" style="display:none" onchange="handleEnrollFile(this)"></label>'+
-          '<label class="ub2-btn">🖼️ Aus Dateien<input type="file" accept="image/*,application/pdf" style="display:none" onchange="handleEnrollFile(this)"></label>'+
-        '</div>'+
-      '</div>'+
+      '<div class="info-note">🎓 <b>Hinweis:</b> Als Student benötigen wir später eine Immatrikulationsbescheinigung. Du lädst sie im Schritt „Ausweis & Selfie" hoch.</div>'+
     '</div>'+
   '</div>'+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="savePfb()">Weiter →</button></div></div>';
@@ -1832,8 +1825,10 @@ function savePfb(){
   if(!q.employment){toast('Bitte Beschäftigungsart wählen',true);return;}
   if(!q.otherJob){toast('Bitte Angabe zu weiterer Beschäftigung machen',true);return;}
   if(q.otherJob==='Nein'){toast('Eine Bewerbung ist nur mit Studenten- oder Hauptbeschäftigungsstatus möglich.',true);return;}
-  if(q.otherJob==='Ja, Student'&&!wizData.enrollmentFile){toast('Bitte Immatrikulationsbescheinigung hochladen',true);return;}
   wizData.isStudent=(q.otherJob==='Ja, Student');
+  if(wizData.isStudent){
+    toast('Hinweis: Im Schritt „Ausweis & Selfie" benötigen wir noch deine Immatrikulationsbescheinigung.');
+  }
   wizNext();
 }
 function fillContract(text){
@@ -1957,18 +1952,18 @@ function wizIdSelfie(){
   box('idFront','🪪','Personalausweis – Vorderseite','Vorderseite hochgeladen',true,false)+
   box('idBack','🪪','Personalausweis – Rückseite','Rückseite hochgeladen',true,false)+
   box('selfie','🤳','Selfie','Selfie hochgeladen',true,true)+
+  (wizData.isStudent?'<div class="section-label" style="margin-top:6px">Als Student erforderlich</div>'+box('enrollment','🎓','Immatrikulationsbescheinigung','Bescheinigung hochgeladen',true,false):'')+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="checkIds()">Weiter →</button></div></div>';
 }
 function handleIdFile(which, input){
   const file=input.files&&input.files[0]; if(!file)return;
   if(file.size>6*1024*1024){ toast('Datei zu groß (max. 6 MB)',true); input.value=''; return; }
-  const labels={idFront:'Vorderseite',idBack:'Rückseite',selfie:'Selfie'};
+  const labels={idFront:'Vorderseite',idBack:'Rückseite',selfie:'Selfie',enrollment:'Immatrikulationsbescheinigung'};
   const reader=new FileReader();
   reader.onload=function(e){
     wizData[which]=true;
-    wizData[which+'Img']=e.target.result; // Vorschau / Daten-URL
-    // HINWEIS für Entwickler: Im Echtbetrieb die Datei in geschützten
-    // Speicher (Supabase Storage) hochladen, nicht als Daten-URL halten.
+    wizData[which+'Img']=e.target.result;
+    if(which==='enrollment'){ wizData.enrollmentFile=true; }
     renderWizard();
     toast(labels[which]+' hochgeladen');
   };
@@ -1976,6 +1971,7 @@ function handleIdFile(which, input){
 }
 function checkIds(){
   if(!wizData.idFront||!wizData.idBack||!wizData.selfie){toast('Bitte Vorderseite, Rückseite und Selfie hochladen',true);return;}
+  if(wizData.isStudent && !wizData.enrollmentImg){toast('Als Student bitte die Immatrikulationsbescheinigung hochladen',true);return;}
   wizNext();
 }
 function wizAgb(){
