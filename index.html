@@ -466,7 +466,14 @@ let CLOUD=false; // true sobald Verbindung steht
 function initSupabase(){
   try{
     if(window.supabase&&SUPABASE_URL.indexOf('http')===0){
-      sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+      sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{
+        auth:{
+          persistSession:true,        // Sitzung im Browser speichern
+          autoRefreshToken:true,      // Token automatisch erneuern
+          detectSessionInUrl:true,    // Einladungs-/Reset-Token aus der URL erkennen
+          storageKey:'dailydo-auth'
+        }
+      });
       return true;
     }
   }catch(e){console.warn('Supabase init fehlgeschlagen',e);}
@@ -724,7 +731,8 @@ function enterApp(role, user){
     document.getElementById('whoName').textContent= user? (user.email||'Büro') : 'Daniel D.';
     document.getElementById('whoRole').textContent='Büro / Verwaltung';
     document.getElementById('avatar').textContent='D';
-    renderAdmin('dashboard');
+    try{ renderAdmin('dashboard'); }
+    catch(e){ console.error('Dashboard-Render Problem:', e&&(e.message||e)); }
   }else{
     currentRole='staff';
     // === Sichere Zuordnung: angemeldeter Benutzer -> eigenes Profil ===
@@ -878,7 +886,7 @@ function renderAdmin(view){
     '<div class="panel"><div class="panel-head"><h3>Zuletzt freigegebene Aufträge</h3>'+
       '<button class="btn-ghost btn-sm" onclick="renderAdmin(\'jobs\')">Alle ansehen</button></div>'+
       '<div class="panel-body"><table><thead><tr><th>Auftrag</th><th>Kunde</th><th>Gebiet</th><th>Status</th></tr></thead><tbody>'+
-      jobs.map(j=>{const cu=custById(j.customerId);return '<tr><td><b>'+j.title+'</b></td><td>'+(j.status==='available'?'<span style="color:var(--muted)">verdeckt</span>':fullName(cu))+'</td><td>'+cu.area+'</td><td>'+jobStatusTag(j)+'</td></tr>';}).join('')+
+      jobs.map(j=>{const cu=custById(j.customerId);return '<tr><td><b>'+j.title+'</b></td><td>'+(j.status==='available'?'<span style="color:var(--muted)">verdeckt</span>':(cu?fullName(cu):'—'))+'</td><td>'+(cu?cu.area:'—')+'</td><td>'+jobStatusTag(j)+'</td></tr>';}).join('')+
       '</tbody></table></div></div>';
   }
 
@@ -886,8 +894,8 @@ function renderAdmin(view){
     c.innerHTML=head('Aufträge','Freigegebene Aufträge, wer angenommen hat und wer abgelehnt hat. Klick auf eine Zeile für die Kunden-Zusammenfassung.')+
     '<div class="panel"><div class="panel-body" style="padding-top:16px"><table>'+
       '<thead><tr><th>Auftrag</th><th>Gebiet</th><th>Status</th><th>Angenommen von</th><th>Abgelehnt von</th></tr></thead><tbody>'+
-      jobs.map(j=>{const cu=custById(j.customerId);return '<tr class="clickable" onclick="showJobSummary('+j.id+')"><td><b>'+j.title+'</b><div style="color:var(--muted);font-size:12.5px">'+freqText(cu)+'</div></td>'+
-        '<td>'+cu.area+'</td><td>'+jobStatusTag(j)+'</td>'+
+      jobs.map(j=>{const cu=custById(j.customerId);return '<tr class="clickable" onclick="showJobSummary('+j.id+')"><td><b>'+j.title+'</b><div style="color:var(--muted);font-size:12.5px">'+(cu?freqText(cu):'')+'</div></td>'+
+        '<td>'+(cu?cu.area:'—')+'</td><td>'+jobStatusTag(j)+'</td>'+
         '<td>'+(j.status==='assigned'?'<b>'+staffName(j.assignedTo)+'</b>':'<span style="color:var(--muted)">noch frei</span>')+'</td>'+
         '<td>'+(j.rejectedBy.length?j.rejectedBy.map(id=>'<span class="reject-chip">✕ '+staffName(id)+'</span>').join(''):'<span style="color:var(--muted)">—</span>')+'</td></tr>';}).join('')+
       '</tbody></table></div></div>';
@@ -2668,7 +2676,37 @@ function toast(msg,warn){
 document.getElementById('pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 
 /* Beim Laden: Verbindung zur Datenbank aufbauen */
-window.addEventListener('load',function(){ bootCloud(); checkInviteLink(); });
+window.addEventListener('load',function(){ startApp(); });
+
+async function startApp(){
+  await bootCloud();        // Daten aus Supabase laden (Badge setzen)
+  await checkInviteLink();  // Einladungs-/Reset-Link behandeln
+  await restoreSession();   // bestehende Anmeldung wiederherstellen
+}
+
+/* ============================================================
+   ANMELDUNG NACH NEULADEN WIEDERHERSTELLEN
+   ------------------------------------------------------------
+   Prüft beim Start, ob noch eine gültige Supabase-Sitzung besteht.
+   Wenn ja, wird der Nutzer automatisch wieder in die App gelassen
+   (kein erneutes Anmelden nötig nach Seiten-Neuladen).
+   ============================================================ */
+async function restoreSession(){
+  if(!USE_REAL_AUTH) return;
+  // Wenn gerade ein Einladungs-/Reset-Link offen ist, NICHT automatisch einloggen
+  if((window.location.hash||'').indexOf('access_token')>-1) return;
+  // Warten bis der Client bereit ist
+  let tries=0; while(!sb && tries<30){ await new Promise(r=>setTimeout(r,150)); tries++; }
+  if(!sb) return;
+  try{
+    const { data } = await sb.auth.getSession();
+    if(data && data.session && data.session.user){
+      const user=data.session.user;
+      const role=(user.user_metadata && user.user_metadata.role) || 'staff';
+      enterApp(role, user);
+    }
+  }catch(e){ console.error('Sitzung wiederherstellen fehlgeschlagen:', e&&(e.message||e)); }
+}
 
 /* ============================================================
    EINLADUNGS-/PASSWORT-SETZEN-ABLAUF
