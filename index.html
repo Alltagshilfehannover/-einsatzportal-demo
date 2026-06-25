@@ -2680,19 +2680,26 @@ window.addEventListener('load',function(){ bootCloud(); checkInviteLink(); });
    ============================================================ */
 async function checkInviteLink(){
   const hash = window.location.hash || '';
-  // Supabase hängt z. B. #access_token=...&type=invite (oder recovery) an
+  // Supabase hängt z. B. #access_token=...&refresh_token=...&type=invite an
   if(hash.indexOf('access_token')===-1) return;
   const params = new URLSearchParams(hash.replace(/^#/,''));
   const type = params.get('type'); // invite | recovery | signup
+  const access_token = params.get('access_token');
+  const refresh_token = params.get('refresh_token');
   // Supabase-Client muss bereit sein
   let tries=0;
-  while(!sb && tries<20){ await new Promise(r=>setTimeout(r,150)); tries++; }
-  if(!sb){ return; }
-  // Die Sitzung aus dem Link aktiviert sich automatisch über den Client.
+  while(!sb && tries<30){ await new Promise(r=>setTimeout(r,150)); tries++; }
+  if(!sb){ alert('Verbindung zur Datenbank noch nicht bereit – bitte Seite neu laden.'); return; }
+  // Sitzung AUSDRÜCKLICH aus den Token des Links aktivieren
+  try{
+    if(access_token && refresh_token){
+      const { error } = await sb.auth.setSession({ access_token, refresh_token });
+      if(error){ console.error('setSession Fehler:', error.message); }
+    }
+  }catch(e){ console.error('setSession Ausnahme:', e&&(e.message||e)); }
   showSetPasswordDialog(type);
 }
 function showSetPasswordDialog(type){
-  // Login-Bereich ausblenden, App-Bereich aus
   const ls=document.getElementById('loginScreen'); if(ls) ls.style.display='none';
   const as=document.getElementById('appScreen'); if(as) as.classList.remove('active');
   const w=document.getElementById('wizard'); if(w) w.classList.remove('active');
@@ -2712,16 +2719,26 @@ async function saveNewPassword(){
   if(!p1||p1.length<8){ toast('Bitte mindestens 8 Zeichen',true); return; }
   if(p1!==p2){ toast('Die Passwörter stimmen nicht überein',true); return; }
   if(!sb){ toast('Keine Verbindung zur Datenbank',true); return; }
+  // Sicherstellen, dass wirklich eine Sitzung aus dem Einladungslink aktiv ist
+  let sessionOk=false;
   try{
-    const { error } = await sb.auth.updateUser({ password: p1 });
+    const { data } = await sb.auth.getSession();
+    sessionOk = !!(data && data.session);
+  }catch(e){}
+  if(!sessionOk){
+    toast('Sitzung abgelaufen. Bitte den Link aus der E-Mail erneut öffnen.',true);
+    return;
+  }
+  try{
+    const { data, error } = await sb.auth.updateUser({ password: p1 });
     if(error){ toast('Fehler: '+error.message, true); return; }
+    if(!data || !data.user){ toast('Passwort konnte nicht gesetzt werden – bitte Link erneut öffnen.',true); return; }
     closeModal();
-    // Token aus der Adresse entfernen und zur normalen Anmeldung
     history.replaceState(null, '', window.location.pathname + window.location.search);
     await sb.auth.signOut();
     const ls=document.getElementById('loginScreen'); if(ls) ls.style.display='grid';
     toast('Passwort gespeichert – du kannst dich jetzt anmelden');
-  }catch(e){ toast('Aktion fehlgeschlagen',true); }
+  }catch(e){ toast('Aktion fehlgeschlagen: '+(e&&(e.message||e)),true); }
 }
 </script>
 </body>
