@@ -2707,10 +2707,16 @@ document.getElementById('pass').addEventListener('keydown',e=>{if(e.key==='Enter
 /* Beim Laden: Verbindung zur Datenbank aufbauen */
 window.addEventListener('load',function(){ startApp(); });
 
+// Einladungs-/Reset-Token GANZ FRÜH sichern, bevor Supabase die URL aufräumt
+var INVITE_HASH = (typeof window!=='undefined' && window.location && window.location.hash) ? window.location.hash : '';
+var INVITE_PENDING = INVITE_HASH.indexOf('access_token')>-1 && (INVITE_HASH.indexOf('type=invite')>-1 || INVITE_HASH.indexOf('type=recovery')>-1 || INVITE_HASH.indexOf('type=signup')>-1);
+
 async function startApp(){
   await bootCloud();        // Daten aus Supabase laden (Badge setzen)
-  await checkInviteLink();  // Einladungs-/Reset-Link behandeln
-  await restoreSession();   // bestehende Anmeldung wiederherstellen
+  await checkInviteLink();  // Einladungs-/Reset-Link behandeln (zeigt Passwort-Dialog)
+  if(!INVITE_PENDING){      // Nur wenn KEIN Einladungslink offen ist, automatisch anmelden
+    await restoreSession();
+  }
 }
 
 /* ============================================================
@@ -2746,8 +2752,8 @@ async function restoreSession(){
    Festlegen des eigenen Passworts.
    ============================================================ */
 async function checkInviteLink(){
-  const hash = window.location.hash || '';
-  // Supabase hängt z. B. #access_token=...&refresh_token=...&type=invite an
+  // Den FRÜH gesicherten Hash verwenden (Supabase könnte die URL schon geleert haben)
+  const hash = INVITE_HASH || window.location.hash || '';
   if(hash.indexOf('access_token')===-1) return;
   const params = new URLSearchParams(hash.replace(/^#/,''));
   const type = params.get('type'); // invite | recovery | signup
@@ -2762,8 +2768,13 @@ async function checkInviteLink(){
     if(access_token && refresh_token){
       const { error } = await sb.auth.setSession({ access_token, refresh_token });
       if(error){ console.error('setSession Fehler:', error.message); }
+    } else {
+      // Falls Supabase die Sitzung schon selbst aktiviert hat (detectSessionInUrl)
+      // ist das ok – die Sitzung besteht dann bereits.
     }
   }catch(e){ console.error('setSession Ausnahme:', e&&(e.message||e)); }
+  // URL aufräumen, damit der Token nicht sichtbar bleibt
+  try{ history.replaceState(null, '', window.location.pathname + window.location.search); }catch(e){}
   showSetPasswordDialog(type);
 }
 function showSetPasswordDialog(type){
@@ -2802,9 +2813,14 @@ async function saveNewPassword(){
     if(!data || !data.user){ toast('Passwort konnte nicht gesetzt werden – bitte Link erneut öffnen.',true); return; }
     closeModal();
     history.replaceState(null, '', window.location.pathname + window.location.search);
-    await sb.auth.signOut();
-    const ls=document.getElementById('loginScreen'); if(ls) ls.style.display='grid';
-    toast('Passwort gespeichert – du kannst dich jetzt anmelden');
+    INVITE_PENDING=false; INVITE_HASH='';
+    // Frische Daten laden (falls das Mitarbeiterprofil gerade erst angelegt wurde)
+    try{ await loadFromCloud(); }catch(e){}
+    // DIREKT einloggen mit der bereits aktiven Sitzung -> ins eigene Profil
+    const user=data.user;
+    const role=(user.user_metadata && user.user_metadata.role) || 'staff';
+    toast('Passwort gespeichert – willkommen!');
+    enterApp(role, user);
   }catch(e){ toast('Aktion fehlgeschlagen: '+(e&&(e.message||e)),true); }
 }
 </script>
