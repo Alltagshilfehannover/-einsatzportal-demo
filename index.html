@@ -600,6 +600,14 @@ async function loadFromCloud(){
     DIAG.push('bewerbungen: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER bewerbungen: '+(e.message||e)); console.error('Laden bewerbungen fehlgeschlagen:', e.message||e); }
 
+  // Termine
+  try{
+    const {data,error}=await sb.from('termine').select('*').order('id');
+    if(error) throw error;
+    if(data) appointments=data.map(rowToAppt);
+    DIAG.push('termine: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER termine: '+(e.message||e)); console.error('Laden termine fehlgeschlagen:', e.message||e); }
+
   // myId auf ersten Mitarbeiter setzen
   if(staff.length){ myId=staff[0].id; }
 }
@@ -2152,9 +2160,20 @@ function addAppointment(customerId){
 function saveAppointment(customerId){
   const date=val('ap_date'),time=val('ap_time');
   if(!date||!time){toast('Bitte Datum und Uhrzeit angeben',true);return;}
-  appointments.push({id:nextApptId++,staffId:myId,customerId,date,time,duration:parseInt(val('ap_dur'))||60,note:val('ap_note')});
+  const appt={id:nextApptId++,staffId:myId,customerId,date,time,duration:parseInt(val('ap_dur'))||60,note:val('ap_note')};
+  appointments.push(appt);
+  // Auch in der Datenbank speichern, damit der Termin nach Neuladen erhalten bleibt
+  if(CLOUD){
+    cloudInsert('termine', apptToRow(appt)).then(r=>{ if(r&&r.id){ appt.id=r.id; } });
+  }
   closeModal();toast('Termin gespeichert – unter „Meine Termine“ sichtbar');
   renderStaff('calendar');
+}
+function apptToRow(a){
+  return { mitarbeiter_id:a.staffId, customer_id:a.customerId, date:a.date, time_window:a.time, duration:a.duration||60, note:a.note||null };
+}
+function rowToAppt(r){
+  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, time:r.time_window, duration:r.duration||60, note:r.note||'' };
 }
 function showAppt(id){
   const a=appointments.find(x=>x.id===id);const cu=custById(a.customerId);
@@ -2263,8 +2282,8 @@ function signTermin(){
       if(CLOUD){ cloudInsert('abtretungen',{customer_id:cu.id, signed_date:date, signature:sig}); }
       // 4) Leistungsnachweis-PDF zum Download anbieten
       if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
-      // 5) Termin als erledigt entfernen
-      if(t.apptId){ appointments=appointments.filter(a=>a.id!==t.apptId); }
+      // 5) Termin als erledigt entfernen (lokal + Datenbank)
+      if(t.apptId){ appointments=appointments.filter(a=>a.id!==t.apptId); if(CLOUD) cloudDelete('termine',t.apptId); }
       window.__termin=null;
       toast('Einsatz abgeschlossen – Leistungsnachweis & Abtretung erstellt');
       renderStaff('hours');
@@ -2286,6 +2305,7 @@ function downloadTsLN(tsId){
 }
 function deleteAppt(id){
   appointments=appointments.filter(a=>a.id!==id);
+  if(CLOUD) cloudDelete('termine',id);
   closeModal();toast('Termin abgesagt',true);renderStaff('calendar');
 }
 
