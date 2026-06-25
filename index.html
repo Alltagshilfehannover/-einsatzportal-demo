@@ -534,13 +534,22 @@ async function cloudDelete(table,id){ if(!CLOUD)return; try{await sb.from(table)
 
 /* ---- Erstbefüllung: wenn DB leer, Demo-Daten hochladen ---- */
 async function seedIfEmpty(){
-  const {data:existing}=await sb.from('mitarbeiter').select('id').limit(1);
-  if(existing&&existing.length>0) return false; // schon Daten da
-  // Mitarbeiter
-  for(const s of staff){ const row=staffToRow(s); const d=await cloudInsert('mitarbeiter',row); if(d){ for(const ct of (s.contracts||[])){ await cloudInsert('vertraege',{mitarbeiter_id:d.id,name:ct.name,signed_date:ct.signedDate,signature:ct.signature}); } } }
-  // Kunden
-  for(const c of customers){ await cloudInsert('kunden',custToRow(c)); }
-  return true;
+  try{
+    // Prüfen, ob in mitarbeiter ODER kunden schon Daten sind
+    const [{data:mEx},{data:kEx}] = await Promise.all([
+      sb.from('mitarbeiter').select('id').limit(1),
+      sb.from('kunden').select('id').limit(1)
+    ]);
+    const hasData = (mEx&&mEx.length>0) || (kEx&&kEx.length>0);
+    if(hasData) return false; // schon echte Daten vorhanden -> NICHT säen
+    // Datenbank ist wirklich leer -> einmalig Demo-Daten einsetzen
+    for(const s of staff){ const row=staffToRow(s); const d=await cloudInsert('mitarbeiter',row); if(d){ for(const ct of (s.contracts||[])){ await cloudInsert('vertraege',{mitarbeiter_id:d.id,name:ct.name,signed_date:ct.signedDate,signature:ct.signature}); } } }
+    for(const c of customers){ await cloudInsert('kunden',custToRow(c)); }
+    return true;
+  }catch(e){
+    console.error('seedIfEmpty Problem (übersprungen):', e&&(e.message||e));
+    return false;
+  }
 }
 
 /* ---- Laden aller Kerndaten aus der DB ----
@@ -596,12 +605,9 @@ async function bootCloud(){
     CLOUD=true;
     await loadFromCloud();   // einzelne Fehler werden intern abgefangen
     showCloudBadge('cloud');
-    // aktuelle Ansicht neu zeichnen
-    if(currentRole==='admin'){ if(typeof renderAdmin==='function') renderAdmin('dashboard'); }
-    else { if(typeof renderStaff==='function') renderStaff('dashboard'); }
+    // Hinweis: Das Neuzeichnen der Ansicht passiert NACH dem (Wieder-)Anmelden
+    // in enterApp/restoreSession – nicht hier, damit keine leere Ansicht entsteht.
   }catch(e){
-    // Selbst wenn der Start hakt: Wenn die Verbindung grundsätzlich steht,
-    // bleiben wir im Cloud-Modus, damit gespeicherte Daten nicht ignoriert werden.
     console.error('Cloud-Boot Problem:', e&&(e.message||e));
     if(CLOUD){ showCloudBadge('cloud'); }
     else { showCloudBadge('lokal'); }
