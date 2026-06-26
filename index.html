@@ -675,7 +675,7 @@ async function loadFromCloud(){
   if(staff.length){ myId=staff[0].id; }
 }
 function rowToTimesheet(r){
-  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, start:r.start, end:r.ende, task:r.task, status:r.status||'freigegeben', proof:r.proof, signature:r.signature, signedAt:r.signed_at, hasAbtretung:!!r.signature };
+  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, start:r.start, end:r.ende, task:r.task, status:r.status||'offen', proof:r.proof, signature:r.signature, signedAt:r.signed_at, hasAbtretung:!!r.signature };
 }
 // Sichtbarer Diagnose-Kasten (per Klick auf das Status-Badge aufrufbar)
 function showDiag(){
@@ -1081,10 +1081,22 @@ function renderAdmin(view){
   if(view==='hours'){
     c.innerHTML=head('Stundenzettel','Alle von Mitarbeitern erfassten Einsatzzeiten. Vom Kunden unterschriebene Einsätze enthalten einen Leistungsnachweis.')+
     '<div class="panel"><div class="panel-body" style="padding-top:16px">'+
-    (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Status</th><th>Leistungsnachweis</th><th></th></tr></thead><tbody>'+
-      timesheets.map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);return '<tr><td>'+fmtDate(t.date)+'</td><td><b>'+staffName(t.staffId)+'</b></td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+dur+'</td><td>'+(t.status==='freigegeben'?'<span class="tag green">freigegeben</span>':'<span class="tag amber">offen</span>')+'</td>'+
-        '<td>'+(t.signature?'<img src="'+t.signature+'" style="height:28px;border:1px solid var(--line);border-radius:5px;background:#fff;vertical-align:middle"> <button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ LN</button>'+(t.hasAbtretung?' <button class="btn-ghost btn-sm" onclick="downloadAbtretung('+t.customerId+')">⬇ Abtretung</button>':'')+'</td>':'<td><span style="color:var(--muted);font-size:12px">nicht unterschrieben</span></td>')+
-        '<td>'+(t.status==='offen'?'<button class="btn-primary btn-sm" style="width:auto" onclick="approveTimesheet('+t.id+')">Freigeben</button>':'<span style="color:var(--good)">✓</span>')+'</td></tr>';}).join('')+
+    (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Leistungsnachweis</th><th></th></tr></thead><tbody>'+
+      timesheets.map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);
+        const sigOk=signatureLooksValid(t.signature);
+        const statusTag = t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
+                        : t.status==='abgelehnt'?'<span class="tag red">abgelehnt</span>'
+                        : '<span class="tag amber">zu prüfen</span>';
+        const sigCell = t.signature
+          ? '<img src="'+t.signature+'" style="height:30px;border:1px solid var(--line);border-radius:5px;background:#fff;vertical-align:middle"> '+(sigOk?'<span class="tag green" style="font-size:10px">vorhanden</span>':'<span class="tag amber" style="font-size:10px">prüfen</span>')
+          : '<span style="color:var(--muted);font-size:12px">keine</span>';
+        return '<tr><td>'+fmtDate(t.date)+'</td><td><b>'+staffName(t.staffId)+'</b></td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+dur+'</td>'+
+        '<td>'+sigCell+'</td>'+
+        '<td>'+statusTag+'</td>'+
+        '<td>'+(t.signature?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ LN</button>'+(t.hasAbtretung?' <button class="btn-ghost btn-sm" onclick="downloadAbtretung('+t.customerId+')">⬇ Abtretung</button>':''):'<span style="color:var(--muted);font-size:12px">—</span>')+'</td>'+
+        '<td>'+(t.status==='offen'
+            ? '<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn-danger-ghost btn-sm" onclick="rejectTimesheet('+t.id+')">Ablehnen</button><button class="btn-primary btn-sm" style="width:auto" onclick="approveTimesheet('+t.id+')">Freigeben</button></div>'
+            : (t.status==='freigegeben'?'<span style="color:var(--good)">✓ freigegeben</span>':'<span style="color:#c0392b">✕ abgelehnt</span>'))+'</td></tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">⏱</div><b>Noch keine Stundenzettel</b><p style="margin-top:6px">Sobald Mitarbeiter Einsätze abschließen, erscheinen sie hier.</p></div>')+
     '</div></div>';
   }
@@ -1647,7 +1659,11 @@ function renderStaff(view){
     '<div class="panel"><div class="panel-head"><h3>Meine Zeiten</h3><button class="btn-primary btn-sm" style="width:auto" onclick="addTimesheet()">+ Zeit erfassen</button></div>'+
     '<div class="panel-body" style="padding-top:8px">'+
     (mine.length?'<table><thead><tr><th>Datum</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Status</th><th>Leistungsnachweis</th></tr></thead><tbody>'+
-      mine.map(t=>{const cu=custById(t.customerId);return '<tr><td>'+fmtDate(t.date)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+tsDuration(t)+'</td><td>'+(t.status==='freigegeben'?'<span class="tag green">freigegeben</span>':'<span class="tag amber">offen</span>')+'</td><td>'+
+      mine.map(t=>{const cu=custById(t.customerId);
+        const st = t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
+                 : t.status==='abgelehnt'?'<span class="tag red">abgelehnt</span>'
+                 : '<span class="tag amber">wartet auf Freigabe</span>';
+        return '<tr><td>'+fmtDate(t.date)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+tsDuration(t)+'</td><td>'+st+'</td><td>'+
         (t.signature?'<img src="'+t.signature+'" style="height:30px;border:1px solid var(--line);border-radius:5px;background:#fff;vertical-align:middle"> <button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ PDF</button>':'<span style="color:var(--muted);font-size:12.5px">—</span>')+
       '</td></tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">⏱</div><b>Noch keine Zeiten erfasst</b><p style="margin-top:6px">Starte einen Termin unter „Meine Termine“ oder tippe auf „Zeit erfassen“.</p></div>')+
@@ -2475,9 +2491,9 @@ function signTermin(){
       // 1) Stundenzettel-Eintrag mit Unterschrift anlegen (Mitarbeiter + Admin sehen ihn)
       //    hasAbtretung=true markiert, dass dazu eine Abtretungserklärung gehört
       //    (wird nur im Admin-Bereich und im Kunden-Ordner angezeigt, NICHT beim Mitarbeiter)
-      const ts={id:nextTsId++, staffId:myId, customerId:t.cid, date:date, start:t.start, end:t.end, task:t.task, status:'freigegeben', proof:true, signature:sig, signedAt:date, hasAbtretung:true};
+      const ts={id:nextTsId++, staffId:myId, customerId:t.cid, date:date, start:t.start, end:t.end, task:t.task, status:'offen', proof:true, signature:sig, signedAt:date, hasAbtretung:true};
       timesheets.push(ts);
-      if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:t.cid,date:date,start:t.start,ende:t.end,task:t.task,status:'freigegeben',proof:true,signature:sig,signed_at:date}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
+      if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:t.cid,date:date,start:t.start,ende:t.end,task:t.task,status:'offen',proof:true,signature:sig,signed_at:date}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
       // 2) Leistungsnachweis-PDF erzeugen (eine Zeile = dieser Einsatz)
       const rows=[{date:fmtDate(date), leistung:t.task, stunden:t.mins/60, preis:STUNDENSATZ}];
       const doc=buildLeistungsnachweisPdf({
@@ -2586,10 +2602,31 @@ function saveTimesheet(){
   renderStaff('hours');
 }
 function approveTimesheet(id){
-  const t=timesheets.find(x=>x.id===id);t.status='freigegeben';t.proof=true;
+  const t=timesheets.find(x=>x.id===id); if(!t)return;
+  t.status='freigegeben'; t.proof=true;
+  // Statusänderung dauerhaft in der Datenbank speichern
+  if(CLOUD){ cloudUpdate('stundenzettel', id, { status:'freigegeben', proof:true }); }
   // echten Leistungsnachweis erzeugen
   proofs.push({id:nextProofId++,timesheetId:t.id,staffId:t.staffId,customerId:t.customerId,date:t.date,task:t.task,minutes:tsMinutes(t),signed:false});
   toast('Stundenzettel freigegeben – Leistungsnachweis erstellt');renderAdmin('hours');
+}
+function rejectTimesheet(id){
+  const t=timesheets.find(x=>x.id===id); if(!t)return;
+  if(!confirm('Diesen Stundenzettel ablehnen? Er wird als abgelehnt markiert und zählt nicht zur Abrechnung.'))return;
+  t.status='abgelehnt';
+  if(CLOUD){ cloudUpdate('stundenzettel', id, { status:'abgelehnt' }); }
+  toast('Stundenzettel abgelehnt',true); renderAdmin('hours');
+}
+/* Plausibilitäts-Check der Unterschrift (kein forensischer Vergleich!):
+   Prüft nur, ob überhaupt eine inhaltlich gefüllte Unterschrift vorliegt –
+   nicht, ob sie von einer bestimmten Person stammt. Die echte Prüfung
+   bleibt Aufgabe des Büros. */
+function signatureLooksValid(sig){
+  if(!sig || typeof sig!=='string') return false;
+  if(sig.indexOf('data:image')!==0) return false;
+  // Sehr kleine Daten-URLs deuten auf eine (fast) leere Unterschrift hin
+  if(sig.length < 1500) return false;
+  return true;
 }
 function signProof(id){
   const p=proofs.find(x=>x.id===id);if(!p)return;
