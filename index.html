@@ -654,8 +654,19 @@ async function loadFromCloud(){
     DIAG.push('termine: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER termine: '+(e.message||e)); console.error('Laden termine fehlgeschlagen:', e.message||e); }
 
+  // Stundenzettel (inkl. abgeschlossene Einsätze mit Unterschrift)
+  try{
+    const {data,error}=await sb.from('stundenzettel').select('*').order('id');
+    if(error) throw error;
+    if(data) timesheets=data.map(rowToTimesheet);
+    DIAG.push('stundenzettel: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER stundenzettel: '+(e.message||e)); console.error('Laden stundenzettel fehlgeschlagen:', e.message||e); }
+
   // myId auf ersten Mitarbeiter setzen
   if(staff.length){ myId=staff[0].id; }
+}
+function rowToTimesheet(r){
+  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, start:r.start, end:r.ende, task:r.task, status:r.status||'freigegeben', proof:r.proof, signature:r.signature, signedAt:r.signed_at, hasAbtretung:!!r.signature };
 }
 // Sichtbarer Diagnose-Kasten (per Klick auf das Status-Badge aufrufbar)
 function showDiag(){
@@ -2423,7 +2434,7 @@ function signTermin(){
       //    (wird nur im Admin-Bereich und im Kunden-Ordner angezeigt, NICHT beim Mitarbeiter)
       const ts={id:nextTsId++, staffId:myId, customerId:t.cid, date:date, start:t.start, end:t.end, task:t.task, status:'freigegeben', proof:true, signature:sig, signedAt:date, hasAbtretung:true};
       timesheets.push(ts);
-      if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:t.cid,date:date,start:t.start,ende:t.end,task:t.task,status:'freigegeben',proof:true,signature:sig,signed_at:date}); }
+      if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:t.cid,date:date,start:t.start,ende:t.end,task:t.task,status:'freigegeben',proof:true,signature:sig,signed_at:date}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
       // 2) Leistungsnachweis-PDF erzeugen (eine Zeile = dieser Einsatz)
       const rows=[{date:fmtDate(date), leistung:t.task, stunden:t.mins/60, preis:STUNDENSATZ}];
       const doc=buildLeistungsnachweisPdf({
