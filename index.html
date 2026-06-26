@@ -290,6 +290,52 @@
   .cal-ev{margin-top:4px;background:var(--petrol-soft);color:var(--petrol-dark);border-radius:5px;padding:2px 5px;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cal-nav{display:flex;align-items:center;gap:12px}
   .cal-nav b{font-size:15px;min-width:150px;text-align:center}
+  /* ===== Voller Kalender (Monat/Woche/Tag) ===== */
+  .cal-wrap{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .cal-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .cal-toolbar .cal-title{font-size:17px;font-weight:800;color:var(--ink)}
+  .cal-seg{display:inline-flex;background:#f1eefb;border-radius:9px;padding:3px}
+  .cal-seg button{border:0;background:transparent;padding:7px 14px;border-radius:7px;font-weight:700;font-size:13px;color:var(--muted);cursor:pointer}
+  .cal-seg button.on{background:#fff;color:var(--petrol);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .cal-arrows{display:inline-flex;gap:6px;align-items:center}
+  .cal-arrows button{width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:#fff;font-size:16px;cursor:pointer;color:var(--ink)}
+  .cal-arrows button:hover{border-color:var(--petrol);color:var(--petrol)}
+  .cal-today-btn{padding:7px 13px;border-radius:8px;border:1px solid var(--line);background:#fff;font-weight:700;font-size:13px;cursor:pointer;color:var(--ink)}
+  /* Monat */
+  .cm-grid{display:grid;grid-template-columns:repeat(7,1fr)}
+  .cm-dow{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);text-align:center;padding:8px 0;border-bottom:1px solid var(--line)}
+  .cm-cell{min-height:92px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:5px;cursor:pointer;transition:.1s;display:flex;flex-direction:column;gap:3px}
+  .cm-cell:nth-child(7n){border-right:0}
+  .cm-cell:hover{background:#faf8ff}
+  .cm-cell.other{background:#fafafa;color:#bbb}
+  .cm-num{font-size:12.5px;font-weight:700;align-self:flex-start;width:24px;height:24px;display:grid;place-items:center;border-radius:50%}
+  .cm-cell.today .cm-num{background:var(--petrol);color:#fff}
+  .cm-ev{background:var(--petrol-soft);color:var(--petrol-dark);border-radius:5px;padding:2px 6px;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+  .cm-more{font-size:10.5px;color:var(--muted);font-weight:600;padding-left:4px}
+  /* Woche + Tag (Zeitachse) */
+  .ct-scroll{overflow-y:auto;max-height:62vh}
+  .ct-grid{display:grid;position:relative}
+  .ct-corner{border-bottom:1px solid var(--line);border-right:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:3}
+  .ct-dayhead{text-align:center;padding:8px 2px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:3}
+  .ct-dayhead .dn{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted)}
+  .ct-dayhead .dd{font-size:17px;font-weight:800;margin-top:2px;width:32px;height:32px;line-height:32px;border-radius:50%;display:inline-block}
+  .ct-dayhead.today .dd{background:var(--petrol);color:#fff}
+  .ct-hour{font-size:11px;color:var(--muted);text-align:right;padding:0 8px;border-right:1px solid var(--line);height:48px;position:relative;top:-7px}
+  .ct-timecol{display:flex;flex-direction:column}
+  .ct-col{position:relative;border-right:1px solid var(--line)}
+  .ct-col:last-child{border-right:0}
+  .ct-slot{border-bottom:1px solid #f0eefb;border-right:1px solid var(--line);height:48px;cursor:pointer}
+  .ct-slot:hover{background:#faf8ff}
+  .ct-col{position:relative}
+  .ct-ev{position:absolute;left:3px;right:3px;background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff;border-radius:7px;padding:4px 7px;font-size:11.5px;font-weight:600;overflow:hidden;cursor:pointer;box-shadow:0 2px 6px rgba(124,58,237,.3);z-index:2}
+  .ct-ev .et{font-weight:700}
+  .ct-ev .es{opacity:.92;font-size:10.5px}
+  @media(max-width:600px){
+    .cal-toolbar .cal-title{font-size:15px;width:100%;order:-1}
+    .cal-seg button{padding:6px 10px;font-size:12px}
+    .cm-cell{min-height:64px}
+    .ct-ev{font-size:10px;padding:3px 5px}
+  }
   .list-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid #eef3f3;flex-wrap:wrap}
   .list-row:last-child{border-bottom:none}
   .list-row .li-main b{font-size:14.5px}
@@ -2132,17 +2178,130 @@ function wizDone(){
 }
 
 /* ============ KALENDER ============ */
+/* ============================================================
+   KALENDER (Apple/Google-Stil): Monat / Woche / Tag
+   ============================================================ */
+let calView='month';           // 'month' | 'week' | 'day'
+let calCursor=new Date();      // aktuell angezeigter Zeitraum
+let calStaffFilter=null;       // null = alle (Admin), sonst staffId
+
 function calendarHTML(staffFilter){
-  let list=appointments.slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
-  if(staffFilter!==null) list=list.filter(a=>a.staffId===staffFilter);
-  // gruppiert nach Datum
-  const byDate={};list.forEach(a=>{(byDate[a.date]=byDate[a.date]||[]).push(a);});
-  const dates=Object.keys(byDate);
-  if(!dates.length) return placeholder('▦','Noch keine Termine',staffFilter!==null?'Vereinbare bei „Meine Kunden“ einen Termin – er erscheint dann hier.':'Sobald Mitarbeiter Termine vereinbaren, erscheinen sie hier.');
-  return '<div class="cards">'+dates.map(d=>
-    '<div class="panel"><div class="panel-head"><h3>'+fmtDateLong(d)+'</h3></div><div class="panel-body" style="padding-top:8px"><table><tbody>'+
-    byDate[d].map(a=>{const cu=custById(a.customerId);const sf=staff.find(s=>s.id===a.staffId);const col=sf&&sf.color?sf.color:'#0f5b63';return '<tr class="clickable" onclick="showAppt('+a.id+')"><td style="width:70px"><b>'+a.time+'</b></td><td><b>'+(cu?fullName(cu):'—')+'</b><div style="color:var(--muted);font-size:12.5px">'+(a.note||'')+'</div></td><td style="text-align:right;color:var(--muted)">'+a.duration+' Min.'+(staffFilter===null?'<br><span style="font-size:12px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+col+';margin-right:4px"></span>'+staffName(a.staffId)+'</span>':'')+'</td></tr>';}).join('')+
-    '</tbody></table></div></div>').join('')+'</div>';
+  calStaffFilter=staffFilter;
+  return '<div id="calHost">'+renderCalendar()+'</div>';
+}
+function setCalView(v){ calView=v; refreshCal(); }
+function calMove(dir){
+  const d=new Date(calCursor);
+  if(calView==='month') d.setMonth(d.getMonth()+dir);
+  else if(calView==='week') d.setDate(d.getDate()+dir*7);
+  else d.setDate(d.getDate()+dir);
+  calCursor=d; refreshCal();
+}
+function calToday(){ calCursor=new Date(); refreshCal(); }
+function refreshCal(){ const h=document.getElementById('calHost'); if(h) h.innerHTML=renderCalendar(); }
+
+function calEvents(){
+  let list=appointments.slice();
+  if(calStaffFilter!==null) list=list.filter(a=>a.staffId===calStaffFilter);
+  return list;
+}
+function pad2(n){return String(n).padStart(2,'0');}
+function dateKey(d){return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());}
+function sameDay(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();}
+
+function renderCalendar(){
+  const title = calView==='month' ? monthTitle(calCursor)
+              : calView==='week'  ? weekTitle(calCursor)
+              : dayTitle(calCursor);
+  const seg = ['month','week','day'].map(v=>'<button class="'+(calView===v?'on':'')+'" onclick="setCalView(\''+v+'\')">'+(v==='month'?'Monat':v==='week'?'Woche':'Tag')+'</button>').join('');
+  const toolbar=
+    '<div class="cal-toolbar">'+
+      '<div class="cal-title">'+title+'</div>'+
+      '<div class="cal-seg">'+seg+'</div>'+
+      '<div class="cal-arrows"><button onclick="calMove(-1)">‹</button><button class="cal-today-btn" onclick="calToday()">Heute</button><button onclick="calMove(1)">›</button></div>'+
+    '</div>';
+  const body = calView==='month' ? monthView() : calView==='week' ? timeView(7) : timeView(1);
+  return '<div class="cal-wrap">'+toolbar+body+'</div>';
+}
+
+function monthTitle(d){ const m=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']; return m[d.getMonth()]+' '+d.getFullYear(); }
+function weekTitle(d){ const s=weekStart(d); const e=new Date(s); e.setDate(e.getDate()+6); const m=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez']; return s.getDate()+'. '+m[s.getMonth()]+' – '+e.getDate()+'. '+m[e.getMonth()]+' '+e.getFullYear(); }
+function dayTitle(d){ const w=['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag']; const m=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']; return w[d.getDay()]+', '+d.getDate()+'. '+m[d.getMonth()]+' '+d.getFullYear(); }
+function weekStart(d){ const s=new Date(d); const day=(s.getDay()+6)%7; s.setDate(s.getDate()-day); s.setHours(0,0,0,0); return s; } // Montag
+
+function monthView(){
+  const dow=['Mo','Di','Mi','Do','Fr','Sa','So'];
+  const first=new Date(calCursor.getFullYear(),calCursor.getMonth(),1);
+  const start=weekStart(first);
+  const evs=calEvents();
+  const today=new Date();
+  let cells='';
+  for(let i=0;i<42;i++){
+    const d=new Date(start); d.setDate(start.getDate()+i);
+    const other=d.getMonth()!==calCursor.getMonth();
+    const dayEvs=evs.filter(e=>e.date===dateKey(d)).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+    const shown=dayEvs.slice(0,3).map(e=>{const cu=custById(e.customerId);return '<div class="cm-ev" onclick="event.stopPropagation();showAppt('+e.id+')">'+(e.time||'')+' '+(cu?cu.last:'Termin')+'</div>';}).join('');
+    const more=dayEvs.length>3?'<div class="cm-more">+'+(dayEvs.length-3)+' mehr</div>':'';
+    cells+='<div class="cm-cell'+(other?' other':'')+(sameDay(d,today)?' today':'')+'" onclick="openDay(\''+dateKey(d)+'\')"><span class="cm-num">'+d.getDate()+'</span>'+shown+more+'</div>';
+  }
+  return '<div class="cm-grid">'+dow.map(x=>'<div class="cm-dow">'+x+'</div>').join('')+cells+'</div>';
+}
+
+function timeView(days){
+  const startHour=6, endHour=22;
+  const hours=[]; for(let h=startHour;h<=endHour;h++) hours.push(h);
+  const base = days===7 ? weekStart(calCursor) : new Date(calCursor.getFullYear(),calCursor.getMonth(),calCursor.getDate());
+  const today=new Date();
+  const evs=calEvents();
+  const dowLabels=['Mo','Di','Mi','Do','Fr','Sa','So'];
+  const slotH=48;
+  const totalH=hours.length*slotH;
+
+  const cols=[];
+  for(let i=0;i<days;i++){ const d=new Date(base); d.setDate(base.getDate()+i); cols.push(d); }
+
+  // Kopfzeile: leere Ecke + Tage
+  let head='<div class="ct-corner"></div>';
+  cols.forEach((d,i)=>{
+    const dn = days===7 ? dowLabels[i] : ['So','Mo','Di','Mi','Do','Fr','Sa'][d.getDay()];
+    head+='<div class="ct-dayhead'+(sameDay(d,today)?' today':'')+'"><div class="dn">'+dn+'</div><div class="dd">'+d.getDate()+'</div></div>';
+  });
+
+  // Zeitspalte
+  let timeCol='';
+  hours.forEach(h=>{ timeCol+='<div class="ct-hour">'+pad2(h)+':00</div>'; });
+
+  // Tagesspalten
+  let dayCols='';
+  cols.forEach(d=>{
+    let slots='';
+    hours.forEach(()=>{ slots+='<div class="ct-slot"></div>'; });
+    let evLayer='';
+    evs.filter(e=>e.date===dateKey(d)).forEach(e=>{
+      const [hh,mm]=(e.time||'09:00').split(':').map(Number);
+      let top=((hh-startHour)*60+mm)/60*slotH; if(top<0)top=0;
+      const height=Math.max(22,(e.duration||60)/60*slotH-3);
+      const cu=custById(e.customerId);
+      evLayer+='<div class="ct-ev" style="top:'+top+'px;height:'+height+'px" onclick="showAppt('+e.id+')"><div class="et">'+(e.time||'')+' '+(cu?fullName(cu):'Termin')+'</div>'+(height>34?'<div class="es">'+(e.note||(cu?cu.area:''))+'</div>':'')+'</div>';
+    });
+    dayCols+='<div class="ct-col" style="height:'+totalH+'px">'+slots+evLayer+'</div>';
+  });
+
+  const gridCols='60px repeat('+days+',1fr)';
+  return '<div class="ct-scroll"><div style="display:grid;grid-template-columns:'+gridCols+'">'+
+    head+
+    '<div class="ct-timecol">'+timeCol+'</div>'+
+    dayCols+
+    '</div></div>';
+}
+
+function openDay(dateStr){
+  // Tagesansicht öffnen
+  const parts=dateStr.split('-'); calCursor=new Date(+parts[0],+parts[1]-1,+parts[2]);
+  calView='day'; refreshCal();
+}
+function quickAddInfo(){
+  toast('Tipp: Termine legst du über „Meine Kunden“ → Kunde → Termin vereinbaren an');
 }
 function addAppointment(customerId){
   const cu=custById(customerId);
@@ -2170,10 +2329,10 @@ function saveAppointment(customerId){
   renderStaff('calendar');
 }
 function apptToRow(a){
-  return { mitarbeiter_id:a.staffId, customer_id:a.customerId, date:a.date, time_window:a.time, duration:a.duration||60, note:a.note||null };
+  return { mitarbeiter_id:a.staffId, customer_id:a.customerId, date:a.date, time:a.time, duration:a.duration||60, note:a.note||null };
 }
 function rowToAppt(r){
-  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, time:r.time_window, duration:r.duration||60, note:r.note||'' };
+  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, time:r.time, duration:r.duration||60, note:r.note||'' };
 }
 function showAppt(id){
   const a=appointments.find(x=>x.id===id);const cu=custById(a.customerId);
