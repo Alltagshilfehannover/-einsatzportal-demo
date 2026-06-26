@@ -324,6 +324,15 @@
   .ct-timecol{display:flex;flex-direction:column}
   .ct-col{position:relative;border-right:1px solid var(--line)}
   .ct-col:last-child{border-right:0}
+  /* Absage-Dialog + abgesagte Termine */
+  .cancel-reasons{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+  .cancel-opt{display:flex;align-items:center;gap:9px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;font-size:14px;cursor:pointer;transition:.12s}
+  .cancel-opt:hover{border-color:var(--petrol);background:var(--petrol-soft)}
+  .cancel-opt input{accent-color:var(--petrol);width:17px;height:17px}
+  .cancel-banner{background:#fdecef;border:1px solid #f5c2cc;color:#b3243b;font-weight:700;font-size:13.5px;padding:11px 14px;border-radius:10px;margin-bottom:12px}
+  .cm-ev-cancel{background:#fdecef!important;color:#b3243b!important;text-decoration:line-through;opacity:.85}
+  .ct-ev-cancel{background:repeating-linear-gradient(135deg,#e9657f,#e9657f 6px,#d94f6b 6px,#d94f6b 12px)!important;opacity:.92}
+  .ct-ev-cancel .et{text-decoration:line-through}
   .ct-slot{border-bottom:1px solid #f0eefb;border-right:1px solid var(--line);height:48px;cursor:pointer}
   .ct-slot:hover{background:#faf8ff}
   .ct-col{position:relative}
@@ -2213,7 +2222,11 @@ function refreshCal(){ const h=document.getElementById('calHost'); if(h) h.inner
 
 function calEvents(){
   let list=appointments.slice();
-  if(calStaffFilter!==null) list=list.filter(a=>a.staffId===calStaffFilter);
+  if(calStaffFilter!==null){
+    // Mitarbeiter-Ansicht: nur eigene UND abgesagte ausblenden
+    list=list.filter(a=>a.staffId===calStaffFilter && a.status!=='abgesagt');
+  }
+  // Admin-Ansicht (calStaffFilter===null): alle, auch abgesagte
   return list;
 }
 function pad2(n){return String(n).padStart(2,'0');}
@@ -2251,7 +2264,7 @@ function monthView(){
     const d=new Date(start); d.setDate(start.getDate()+i);
     const other=d.getMonth()!==calCursor.getMonth();
     const dayEvs=evs.filter(e=>e.date===dateKey(d)).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
-    const shown=dayEvs.slice(0,3).map(e=>{const cu=custById(e.customerId);return '<div class="cm-ev" onclick="event.stopPropagation();showAppt('+e.id+')">'+(e.time||'')+' '+(cu?cu.last:'Termin')+'</div>';}).join('');
+    const shown=dayEvs.slice(0,3).map(e=>{const cu=custById(e.customerId);const cl=e.status==='abgesagt'?' cm-ev-cancel':'';return '<div class="cm-ev'+cl+'" onclick="event.stopPropagation();showAppt('+e.id+')">'+(e.status==='abgesagt'?'✕ ':'')+(e.time||'')+' '+(cu?cu.last:'Termin')+'</div>';}).join('');
     const more=dayEvs.length>3?'<div class="cm-more">+'+(dayEvs.length-3)+' mehr</div>':'';
     cells+='<div class="cm-cell'+(other?' other':'')+(sameDay(d,today)?' today':'')+'" onclick="openDay(\''+dateKey(d)+'\')"><span class="cm-num">'+d.getDate()+'</span>'+shown+more+'</div>';
   }
@@ -2293,7 +2306,8 @@ function timeView(days){
       let top=((hh-startHour)*60+mm)/60*slotH; if(top<0)top=0;
       const height=Math.max(22,(e.duration||60)/60*slotH-3);
       const cu=custById(e.customerId);
-      evLayer+='<div class="ct-ev" style="top:'+top+'px;height:'+height+'px" onclick="showAppt('+e.id+')"><div class="et">'+(e.time||'')+' '+(cu?fullName(cu):'Termin')+'</div>'+(height>34?'<div class="es">'+(e.note||(cu?cu.area:''))+'</div>':'')+'</div>';
+      const cancCl=e.status==='abgesagt'?' ct-ev-cancel':'';
+      evLayer+='<div class="ct-ev'+cancCl+'" style="top:'+top+'px;height:'+height+'px" onclick="showAppt('+e.id+')"><div class="et">'+(e.status==='abgesagt'?'✕ ':'')+(e.time||'')+' '+(cu?fullName(cu):'Termin')+'</div>'+(height>34?'<div class="es">'+(e.status==='abgesagt'?'Abgesagt: '+(e.cancelReason||''):(e.note||(cu?cu.area:'')))+'</div>':'')+'</div>';
     });
     dayCols+='<div class="ct-col" style="height:'+totalH+'px">'+slots+evLayer+'</div>';
   });
@@ -2340,28 +2354,45 @@ function saveAppointment(customerId){
   renderStaff('calendar');
 }
 function apptToRow(a){
-  return { mitarbeiter_id:a.staffId, customer_id:a.customerId, date:a.date, time:a.time, duration:a.duration||60, note:a.note||null };
+  return { mitarbeiter_id:a.staffId, customer_id:a.customerId, date:a.date, time:a.time, duration:a.duration||60, note:a.note||null, status:a.status||'geplant', cancel_reason:a.cancelReason||null, cancel_detail:a.cancelDetail||null };
 }
 function rowToAppt(r){
-  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, time:r.time, duration:r.duration||60, note:r.note||'' };
+  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, time:r.time, duration:r.duration||60, note:r.note||'', status:r.status||'geplant', cancelReason:r.cancel_reason||'', cancelDetail:r.cancel_detail||'' };
 }
 function showAppt(id){
   const a=appointments.find(x=>x.id===id);const cu=custById(a.customerId);
-  document.getElementById('modalTitle').textContent='Termin-Details';
+  const cancelled=a.status==='abgesagt';
+  document.getElementById('modalTitle').textContent= cancelled?'Termin (abgesagt)':'Termin-Details';
   document.getElementById('modalBody').innerHTML=
+    (cancelled?'<div class="cancel-banner">✕ Dieser Termin wurde abgesagt</div>':'')+
     '<div class="reveal-row"><span class="k">Kunde</span><span class="v">'+(cu?fullName(cu):'—')+'</span></div>'+
     '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+(cu?cu.address:'—')+'</span></div>'+
     '<div class="reveal-row"><span class="k">Datum</span><span class="v">'+fmtDateLong(a.date)+'</span></div>'+
     '<div class="reveal-row"><span class="k">Uhrzeit</span><span class="v">'+a.time+' ('+a.duration+' Min.)</span></div>'+
     '<div class="reveal-row"><span class="k">Mitarbeiter</span><span class="v">'+staffName(a.staffId)+'</span></div>'+
-    (a.note?'<div style="margin-top:10px;font-size:14px"><b>Notiz:</b> '+a.note+'</div>':'');
+    (a.note?'<div style="margin-top:10px;font-size:14px"><b>Aufgabe:</b> '+a.note+'</div>':'')+
+    (cancelled?
+      '<div class="reveal-row" style="margin-top:8px"><span class="k">Absagegrund</span><span class="v">'+(a.cancelReason||'—')+'</span></div>'+
+      (a.cancelDetail?'<div style="margin-top:8px;font-size:14px"><b>Anmerkung:</b> '+a.cancelDetail+'</div>':'')
+    :'');
   let foot='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
-  if(currentRole==='staff'&&a.staffId===myId){
+  // Aktionen nur für den eigenen Mitarbeiter UND nur wenn nicht abgesagt
+  if(currentRole==='staff'&&a.staffId===myId&&!cancelled){
     foot+='<button class="btn-danger-ghost" onclick="deleteAppt('+id+')">Absagen</button>';
     foot+='<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="startTermin('+id+')">▶ Termin starten</button>';
   }
+  // Admin darf einen abgesagten Termin endgültig aus dem Kalender entfernen
+  if(currentRole==='admin'&&cancelled){
+    foot+='<button class="btn-danger-ghost" onclick="removeCancelledAppt('+id+')">Endgültig entfernen</button>';
+  }
   document.getElementById('modalFoot').innerHTML=foot;
   openModal();
+}
+function removeCancelledAppt(id){
+  appointments=appointments.filter(a=>a.id!==id);
+  if(CLOUD) cloudDelete('termine',id);
+  closeModal(); toast('Abgesagter Termin entfernt'); 
+  if(typeof renderAdmin==='function') renderAdmin('calendar');
 }
 
 /* ---- Termin starten: Kunde + geplante Dauer vorausgefüllt, Zeit bearbeitbar ---- */
@@ -2474,9 +2505,46 @@ function downloadTsLN(tsId){
   if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+t.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
 }
 function deleteAppt(id){
-  appointments=appointments.filter(a=>a.id!==id);
-  if(CLOUD) cloudDelete('termine',id);
-  closeModal();toast('Termin abgesagt',true);renderStaff('calendar');
+  // Absage-Dialog mit Grund-Auswahl öffnen
+  const a=appointments.find(x=>x.id===id); if(!a)return;
+  const cu=custById(a.customerId);
+  document.getElementById('modalTitle').textContent='Termin absagen';
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:14px;margin-bottom:14px">Termin mit <b>'+(cu?fullName(cu):'—')+'</b> am '+fmtDateLong(a.date)+' um '+a.time+' Uhr absagen.</p>'+
+    '<label>Grund der Absage *</label>'+
+    '<div class="cancel-reasons">'+
+      ['Krankheitsbedingt','Versehentlich angenommen','Absage durch Kunde','Sonstiges'].map((r,i)=>
+        '<label class="cancel-opt"><input type="radio" name="cancelReason" value="'+r+'"'+(i===0?' checked':'')+' onchange="toggleCancelDetail()"> '+r+'</label>'
+      ).join('')+
+    '</div>'+
+    '<div id="cancelDetailWrap" style="margin-top:12px"><label>Anmerkung (optional)</label><textarea id="cancelDetail" rows="2" placeholder="Zusätzliche Information zur Absage"></textarea></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Zurück</button>'+
+    '<button class="btn-danger-ghost" style="width:auto;padding:11px 20px" onclick="confirmCancelAppt('+id+')">Termin absagen</button>';
+  openModal();
+}
+function toggleCancelDetail(){
+  // Bei "Sonstiges" Anmerkung als Pflicht hervorheben
+  const sel=document.querySelector('input[name="cancelReason"]:checked');
+  const lbl=document.querySelector('#cancelDetailWrap label');
+  if(sel&&lbl){ lbl.textContent = sel.value==='Sonstiges' ? 'Bitte Grund angeben *' : 'Anmerkung (optional)'; }
+}
+function confirmCancelAppt(id){
+  const a=appointments.find(x=>x.id===id); if(!a)return;
+  const sel=document.querySelector('input[name="cancelReason"]:checked');
+  const reason=sel?sel.value:'Sonstiges';
+  const detail=(document.getElementById('cancelDetail')||{}).value||'';
+  if(reason==='Sonstiges' && !detail.trim()){ toast('Bitte einen Grund angeben',true); return; }
+  // Termin NICHT löschen, sondern als abgesagt markieren (für den Admin sichtbar)
+  a.status='abgesagt';
+  a.cancelReason=reason;
+  a.cancelDetail=detail.trim();
+  a.cancelledBy=myId;
+  a.cancelledAt=todayISO();
+  if(CLOUD){ cloudUpdate('termine', id, { status:'abgesagt', cancel_reason:reason, cancel_detail:detail.trim() }); }
+  closeModal();
+  toast('Termin abgesagt – das Büro wird informiert',true);
+  renderStaff('calendar');
 }
 
 /* ============ STUNDENZETTEL (Mitarbeiter erfasst) ============ */
