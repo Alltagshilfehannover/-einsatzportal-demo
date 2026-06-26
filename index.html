@@ -518,6 +518,72 @@ const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 let sb=null;
 let CLOUD=false; // true sobald Verbindung steht
 
+
+/* ============================================================
+   SECURITY HELPERS (Frontend-Härtung)
+   Ziel: Benutzereingaben und DB-Daten entschärfen, bevor sie in
+   innerHTML/Attribute oder zurück in die DB gelangen.
+   Hinweis: Das ersetzt NICHT Supabase RLS/Storage Policies.
+   ============================================================ */
+const SECURITY_MAX_TEXT = 2000;
+const SECURITY_MAX_FILE = 6 * 1024 * 1024;
+const SECURITY_ALLOWED_FILE_TYPES = ['image/jpeg','image/png','image/webp','application/pdf'];
+const SECURITY_ALLOWED_IMAGE_TYPES = ['image/jpeg','image/png','image/webp'];
+
+function cleanInput(v, maxLen=SECURITY_MAX_TEXT){
+  if(v===null || v===undefined) return '';
+  return String(v)
+    .replace(/[\u0000-\u001f\u007f]/g,' ')
+    .replace(/[<>"'`]/g,'')
+    .replace(/\s+/g,' ')
+    .trim()
+    .slice(0,maxLen);
+}
+function safeDbString(v){
+  if(v===null || v===undefined) return v;
+  const str=String(v);
+  // Daten-URLs für Unterschriften/Dokumentvorschau nicht kaputt machen, aber nur bekannte Typen erlauben.
+  if(/^data:(image\/(png|jpeg|webp)|application\/pdf);base64,[a-z0-9+/=\r\n]+$/i.test(str)) return str;
+  return cleanInput(str, SECURITY_MAX_TEXT);
+}
+function sanitizeDeep(v){
+  if(Array.isArray(v)) return v.map(sanitizeDeep);
+  if(v && typeof v==='object'){
+    const out={};
+    Object.keys(v).forEach(k=>{ out[k]=sanitizeDeep(v[k]); });
+    return out;
+  }
+  return typeof v==='string' ? safeDbString(v) : v;
+}
+function sanitizeAllLocalData(){
+  staff=sanitizeDeep(staff); customers=sanitizeDeep(customers); jobs=sanitizeDeep(jobs);
+  applications=sanitizeDeep(applications); appointments=sanitizeDeep(appointments);
+  timesheets=sanitizeDeep(timesheets); notes=sanitizeDeep(notes); proofs=sanitizeDeep(proofs); payrolls=sanitizeDeep(payrolls);
+}
+function isValidEmail(v){ return /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(String(v||'').trim()); }
+function isValidPhone(v){ return !v || /^[0-9+()\/ .-]{6,30}$/.test(String(v||'').trim()); }
+function validateUploadFile(file, opts={}){
+  if(!file) return false;
+  const max=opts.maxSize || SECURITY_MAX_FILE;
+  const allowed=opts.imagesOnly ? SECURITY_ALLOWED_IMAGE_TYPES : SECURITY_ALLOWED_FILE_TYPES;
+  if(file.size > max){ toast('Datei zu groß (max. '+Math.round(max/1024/1024)+' MB)', true); return false; }
+  if(!allowed.includes(file.type)){ toast('Dateityp nicht erlaubt. Erlaubt: JPG, PNG, WebP'+(opts.imagesOnly?'':' oder PDF'), true); return false; }
+  if(/[<>"'`]/.test(file.name)){ toast('Dateiname enthält ungültige Zeichen', true); return false; }
+  return true;
+}
+function safeDataUrl(url, imagesOnly=false){
+  const rx = imagesOnly ? /^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=\r\n]+$/i : /^data:(image\/(png|jpeg|webp)|application\/pdf);base64,[a-z0-9+/=\r\n]+$/i;
+  return rx.test(String(url||'')) ? url : '';
+}
+function requireAdminAction(){
+  if(currentRole!=='admin'){ toast('Keine Berechtigung für diese Aktion', true); return false; }
+  return true;
+}
+function requireStaffAction(){
+  if(currentRole!=='staff'){ toast('Keine Berechtigung für diese Aktion', true); return false; }
+  return true;
+}
+
 function initSupabase(){
   try{
     if(window.supabase&&SUPABASE_URL.indexOf('http')===0){
@@ -583,8 +649,8 @@ function appToRow(a){const q=a.questionnaire||{};return {first:a.first,last:a.la
 function rowToApp(r){return {id:r.id,first:r.first,last:r.last,gender:r.gender,email:r.email,phone:r.phone,area:r.area,citizenship:r.citizenship,skills:r.skills||[],motivation:r.motivation,status:r.status,docs:r.docs||{},signatures:r.signatures||{},questionnaire:r.questionnaire||{},declaration:r.declaration||{},idFront:r.id_front,idBack:r.id_back,selfie:r.selfie,agb:r.agb,isStudent:r.is_student,enrollmentFile:r.enrollment_file,pets:r.pets||[]};}
 
 /* ---- Speicher-Helfer: schreiben einzelne Objekte zurück ---- */
-async function cloudInsert(table,row){ if(!CLOUD)return null; try{const{data,error}=await sb.from(table).insert(row).select().single(); if(error){console.warn('insert',table,error.message);return null;} return data;}catch(e){console.warn(e);return null;} }
-async function cloudUpdate(table,id,row){ if(!CLOUD)return; try{const{error}=await sb.from(table).update(row).eq('id',id); if(error)console.warn('update',table,error.message);}catch(e){console.warn(e);} }
+async function cloudInsert(table,row){ if(!CLOUD)return null; row=sanitizeDeep(row); try{const{data,error}=await sb.from(table).insert(row).select().single(); if(error){console.warn('insert',table,error.message);return null;} return data;}catch(e){console.warn(e);return null;} }
+async function cloudUpdate(table,id,row){ if(!CLOUD)return; row=sanitizeDeep(row); try{const{error}=await sb.from(table).update(row).eq('id',id); if(error)console.warn('update',table,error.message);}catch(e){console.warn(e);} }
 async function cloudDelete(table,id){ if(!CLOUD)return; try{await sb.from(table).delete().eq('id',id);}catch(e){console.warn(e);} }
 
 /* ---- Erstbefüllung: wenn DB leer, Demo-Daten hochladen ---- */
@@ -671,6 +737,8 @@ async function loadFromCloud(){
     DIAG.push('stundenzettel: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER stundenzettel: '+(e.message||e)); console.error('Laden stundenzettel fehlgeschlagen:', e.message||e); }
 
+  // Geladene Inhalte entschärfen, bevor sie per innerHTML gerendert werden
+  sanitizeAllLocalData();
   // myId auf ersten Mitarbeiter setzen
   if(staff.length){ myId=staff[0].id; }
 }
@@ -726,8 +794,8 @@ function minToH(min){if(min<0)min=0;const h=Math.floor(min/60),m=min%60;return h
 
 function me(){return staff.find(s=>s.id===myId);}
 function staffName(id){const s=staff.find(x=>x.id===id);return s?s.first+' '+s.last[0]+'.':'—';}
-function fullName(o){return o.first+' '+o.last;}
-function initials(o){return (o.first[0]||'')+(o.last[0]||'');}
+function fullName(o){return cleanInput((o&&o.first||'')+' '+(o&&o.last||''),120);}
+function initials(o){const f=cleanInput(o&&o.first||'',40),l=cleanInput(o&&o.last||'',40);return (f[0]||'')+(l[0]||'');}
 function custById(id){return customers.find(c=>c.id===id);}
 function availableForMe(){return jobs.filter(j=>j.status==='available'&&!j.rejectedBy.includes(myId));}
 function freqText(c){return c.freqUnit==='nach Bedarf'?'nach Bedarf':(c.freqNum+'× '+c.freqUnit);}
@@ -788,13 +856,16 @@ const USE_REAL_AUTH = true;   // <-- Echtbetrieb aktiv: Anmeldung nur mit gülti
 const USE_EDGE_FUNCTION = true;  // <-- Aktiv: automatische Konto-Erstellung über Edge Function
 
 async function callCreateStaffAccount(payload){
-  // Ruft die Edge Function sicher auf. Es wird NUR die E-Mail + Profildaten
-  // übertragen – niemals ein geheimer Schlüssel.
+  // Ruft die Edge Function mit der aktuellen Supabase-Session auf.
+  // Wichtig: Die Edge Function muss serverseitig prüfen, ob der User admin ist.
+  const { data:sessionData } = await sb.auth.getSession();
+  const accessToken = sessionData && sessionData.session && sessionData.session.access_token;
+  if(!accessToken) throw new Error('Keine gültige Admin-Sitzung');
   const url = SUPABASE_URL + '/functions/v1/create-staff-account';
   const res = await fetch(url, {
     method:'POST',
-    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+SUPABASE_KEY },
-    body: JSON.stringify(payload)
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+accessToken },
+    body: JSON.stringify(sanitizeDeep(payload))
   });
   let data={};
   try{ data=await res.json(); }catch(e){}
@@ -810,6 +881,7 @@ async function doLogin(){
     // ---- ECHTE ANMELDUNG über Supabase Auth ----
     if(!sb){ toast('Keine Verbindung zur Datenbank',true); return; }
     if(!email||!pass){ toast('Bitte E-Mail und Passwort eingeben',true); return; }
+    if(!isValidEmail(email)){ toast('Bitte gültige E-Mail-Adresse eingeben',true); return; }
     try{
       const { data, error } = await sb.auth.signInWithPassword({ email: email, password: pass });
       if(error){ toast('Anmeldung fehlgeschlagen: '+error.message, true); return; }
@@ -882,7 +954,7 @@ async function logout(){
 async function showForgot(){
   const email=prompt('Passwort zurücksetzen\n\nGib deine E-Mail-Adresse ein. Du erhältst dann einen Link zum Zurücksetzen.');
   if(email===null) return;
-  if(!email || email.indexOf('@')<1){ toast('Bitte eine gültige E-Mail-Adresse eingeben',true); return; }
+  if(!isValidEmail(email)){ toast('Bitte eine gültige E-Mail-Adresse eingeben',true); return; }
 
   if(USE_REAL_AUTH && sb){
     // ---- ECHTER Passwort-Reset über Supabase ----
@@ -1207,16 +1279,21 @@ function gatherStaff(s){
   s.intern.citizenship=val('es_citizenship');s.intern.iban=val('es_iban');
 }
 function saveStaff(){
+  if(!requireAdminAction()) return;
   if(editingStaffId!==null){
     const s=staff.find(x=>x.id===editingStaffId);gatherStaff(s);
+    if(s.email && !isValidEmail(s.email)){toast('Bitte gültige E-Mail-Adresse eingeben',true);return;}
+    if(!isValidPhone(s.phone)){toast('Bitte gültige Telefonnummer eingeben',true);return;}
     if(CLOUD) cloudUpdate('mitarbeiter',s.id,staffToRow(s));
     closeModal();toast('Mitarbeiterdaten gespeichert');
   }else{
     const s={id:nextStaffId++,maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',skills:[],color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,intern:{}};
     gatherStaff(s);
+    if(s.email && !isValidEmail(s.email)){toast('Bitte gültige E-Mail-Adresse eingeben',true);return;}
+    if(!isValidPhone(s.phone)){toast('Bitte gültige Telefonnummer eingeben',true);return;}
     if(!s.first&&!s.last){toast('Bitte Namen eingeben',true);return;}
     const login=val('es_login');const pass=val('es_pass');
-    if(login&&pass){s.hasLogin=true;s.login=login;}
+    if(login){ if(!isValidEmail(login)){toast('Bitte gültige Login-E-Mail eingeben',true);return;} if(pass&&pass.length<8){toast('Startpasswort mindestens 8 Zeichen',true);return;} if(pass){s.hasLogin=true;s.login=login;} }
     staff.push(s);
     if(CLOUD){ cloudInsert('mitarbeiter',staffToRow(s)).then(r=>{ if(r)s.id=r.id; }); }
     closeModal();toast('Mitarbeiter hinzugefügt');
@@ -1225,9 +1302,11 @@ function saveStaff(){
   renderAdmin('staff');
 }
 function createLogin(id){
+  if(!requireAdminAction()) return;
   const s=staff.find(x=>x.id===id);
   const login=val('es_login')||s.email;const pass=val('es_pass');
-  if(!pass){toast('Bitte ein Startpasswort vergeben',true);return;}
+  if(!isValidEmail(login)){toast('Bitte gültige Login-E-Mail eingeben',true);return;}
+  if(!pass || pass.length<8){toast('Bitte ein Startpasswort mit mindestens 8 Zeichen vergeben',true);return;}
   s.hasLogin=true;s.login=login;
   if(CLOUD) cloudUpdate('mitarbeiter',s.id,staffToRow(s));
   closeModal();document.getElementById('modalBox').classList.remove('wide');
@@ -1340,11 +1419,13 @@ function gatherCustomer(c){
   c.intern.budget=val('nc_budget');c.intern.budgetUsed=val('nc_budgetUsed');
 }
 function createCustomer(){
+  if(!requireAdminAction()) return;
   const c={id:nextCustomerId++,status:'Interessent',intern:{}};
   gatherCustomer(c);
   // Sicherheitsmechanismus: Pflichtfelder prüfen, sonst keine Freigabe
   const missing=[];
   if(!c.first||!c.last) missing.push('Name');
+  if(!isValidPhone(c.phoneMobile) || !isValidPhone(c.phoneLandline) || !isValidPhone(c.contactPhone)) missing.push('gültige Telefonnummer');
   if(!c.address||c.address==='—') missing.push('Adresse');
   if(!c.phone||c.phone==='—') missing.push('Telefon');
   if(!c.need||!c.need.length) missing.push('Leistung');
@@ -1365,6 +1446,7 @@ function createCustomer(){
   }
 }
 function editCustomer(id){
+  if(!requireAdminAction()) return;
   const c=custById(id);
   document.getElementById('modalBox').classList.add('wide');
   document.getElementById('modalTitle').textContent='Kunde bearbeiten';
@@ -1417,15 +1499,15 @@ function uploadExtDoc(custId, input){
   const cu=custById(custId); if(!cu)return;
   const file=input.files&&input.files[0]; if(!file)return;
   // Größenbegrenzung (Demo): 4 MB, da als Daten-URL im Browser gehalten
-  if(file.size>4*1024*1024){ toast('Datei zu groß (max. 4 MB in der Demo)',true); input.value=''; return; }
+  if(!validateUploadFile(file,{maxSize:4*1024*1024})){ input.value=''; return; }
   const reader=new FileReader();
   reader.onload=function(e){
     cu.extDocs=cu.extDocs||[];
     const kb=Math.round(file.size/1024);
-    cu.extDocs.push({name:file.name, type:file.type, size:(kb>1024?(kb/1024).toFixed(1)+' MB':kb+' KB'), date:todayISO(), data:e.target.result});
+    cu.extDocs.push({name:cleanInput(file.name,180), type:file.type, size:(kb>1024?(kb/1024).toFixed(1)+' MB':kb+' KB'), date:todayISO(), data:safeDataUrl(e.target.result)});
     // HINWEIS für Entwickler: Im Echtbetrieb die Datei in einen geschützten
     // Datei-Speicher (Supabase Storage) hochladen statt als Daten-URL im Browser.
-    toast('Dokument hochgeladen: '+file.name);
+    toast('Dokument hochgeladen: '+cleanInput(file.name,180));
     editCustomer(custId); // Ansicht aktualisieren
   };
   reader.readAsDataURL(file);
@@ -2007,11 +2089,11 @@ function pfbOtherJobChange(){
 }
 function handleEnrollFile(input){
   const file=input.files&&input.files[0]; if(!file)return;
-  if(file.size>6*1024*1024){ toast('Datei zu groß (max. 6 MB)',true); input.value=''; return; }
+  if(!validateUploadFile(file,{maxSize:SECURITY_MAX_FILE})){ input.value=''; return; }
   const reader=new FileReader();
   reader.onload=function(e){
     wizData.enrollmentFile=true;
-    wizData.enrollmentImg=e.target.result;
+    wizData.enrollmentImg=safeDataUrl(e.target.result);
     renderWizard();
     toast('Immatrikulationsbescheinigung hochgeladen');
   };
@@ -2175,12 +2257,12 @@ function wizIdSelfie(){
 }
 function handleIdFile(which, input){
   const file=input.files&&input.files[0]; if(!file)return;
-  if(file.size>6*1024*1024){ toast('Datei zu groß (max. 6 MB)',true); input.value=''; return; }
+  if(!validateUploadFile(file,{maxSize:SECURITY_MAX_FILE, imagesOnly:(which==='selfie'||which==='idFront'||which==='idBack')})){ input.value=''; return; }
   const labels={idFront:'Vorderseite',idBack:'Rückseite',selfie:'Selfie',enrollment:'Immatrikulationsbescheinigung'};
   const reader=new FileReader();
   reader.onload=function(e){
     wizData[which]=true;
-    wizData[which+'Img']=e.target.result;
+    wizData[which+'Img']=safeDataUrl(e.target.result, (which==='selfie'||which==='idFront'||which==='idBack'));
     if(which==='enrollment'){ wizData.enrollmentFile=true; }
     renderWizard();
     toast(labels[which]+' hochgeladen');
@@ -2213,8 +2295,9 @@ function submitApplication(){
   const app={id:nextAppId++,first:wizData.first,last:wizData.last,gender:wizData.gender,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),questionnaire:Object.assign({},wizData.questionnaire||{}),declaration:Object.assign({},wizData.declaration||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true,isStudent:!!wizData.isStudent,enrollmentFile:!!wizData.enrollmentFile,pets:wizData.pets||[],
     // Bilddaten der eingereichten Dokumente (zur Prüfung im Büro)
     docImages:{idFront:wizData.idFrontImg||null, idBack:wizData.idBackImg||null, selfie:wizData.selfieImg||null, enrollment:wizData.enrollmentImg||null}};
-  applications.unshift(app);
-  if(CLOUD){ cloudInsert('bewerbungen',appToRow(app)).then(r=>{ if(r)app.id=r.id; }); }
+  const safeApp=sanitizeDeep(app);
+  applications.unshift(safeApp);
+  if(CLOUD){ cloudInsert('bewerbungen',appToRow(safeApp)).then(r=>{ if(r)app.id=r.id; }); }
   wizNext();
 }
 function wizDone(){
@@ -2370,6 +2453,7 @@ function addAppointment(customerId){
   openModal();
 }
 function saveAppointment(customerId){
+  if(!requireStaffAction()) return;
   const date=val('ap_date'),time=val('ap_time');
   if(!date||!time){toast('Bitte Datum und Uhrzeit angeben',true);return;}
   const appt={id:nextApptId++,staffId:myId,customerId,date,time,duration:parseInt(val('ap_dur'))||60,note:val('ap_note')};
@@ -2593,6 +2677,7 @@ function addTimesheet(){
   openModal();
 }
 function saveTimesheet(){
+  if(!requireStaffAction()) return;
   const cid=document.getElementById('ts_cust').value;
   const start=val('ts_start'),end=val('ts_end');
   if(cid==='' ){toast('Bitte zuerst einen Kunden annehmen',true);return;}
@@ -2602,6 +2687,7 @@ function saveTimesheet(){
   renderStaff('hours');
 }
 function approveTimesheet(id){
+  if(!requireAdminAction()) return;
   const t=timesheets.find(x=>x.id===id); if(!t)return;
   t.status='freigegeben'; t.proof=true;
   // Statusänderung dauerhaft in der Datenbank speichern
@@ -2611,6 +2697,7 @@ function approveTimesheet(id){
   toast('Stundenzettel freigegeben – Leistungsnachweis erstellt');renderAdmin('hours');
 }
 function rejectTimesheet(id){
+  if(!requireAdminAction()) return;
   const t=timesheets.find(x=>x.id===id); if(!t)return;
   if(!confirm('Diesen Stundenzettel ablehnen? Er wird als abgelehnt markiert und zählt nicht zur Abrechnung.'))return;
   t.status='abgelehnt';
@@ -2662,6 +2749,7 @@ function addNote(type){
   openModal();
 }
 function saveNote(type){
+  if(!requireAdminAction()) return;
   const refId=+document.getElementById('nt_ref').value;
   const text=val('nt_text');
   if(!text){toast('Bitte Notiztext eingeben',true);return;}
@@ -3106,14 +3194,14 @@ function viewContract(name, who, idx){
 
 function closeModal(){document.getElementById('modalBg').classList.remove('show');document.getElementById('modalBox').classList.remove('wide');}
 function segPick(btn,group){document.querySelectorAll('#'+group+' button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
-function head(t,s){return '<div class="page-head"><div><h1>'+t+'</h1><p>'+s+'</p></div></div>';}
-function stat(l,v,f){return '<div class="stat"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="foot">'+f+'</div></div>';}
-function statClick(l,v,f,fn){return '<div class="stat click" onclick="'+fn+'"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="foot">'+f+'</div></div>';}
+function head(t,s){return '<div class="page-head"><div><h1>'+cleanInput(t,120)+'</h1><p>'+cleanInput(s,300)+'</p></div></div>';}
+function stat(l,v,f){return '<div class="stat"><div class="label">'+cleanInput(l,120)+'</div><div class="value">'+cleanInput(v,80)+'</div><div class="foot">'+cleanInput(f,180)+'</div></div>';}
+function statClick(l,v,f,fn){return '<div class="stat click" onclick="'+fn+'"><div class="label">'+cleanInput(l,120)+'</div><div class="value">'+cleanInput(v,80)+'</div><div class="foot">'+cleanInput(f,180)+'</div></div>';}
 function placeholder(icon,t,s){return '<div class="panel"><div class="empty"><div class="big">'+icon+'</div><b>'+t+'</b><p style="margin-top:6px;max-width:46ch;margin-inline:auto">'+s+'</p></div></div>';}
 function jobStatusTag(j){return j.status==='available'?'<span class="tag amber">verfügbar</span>':'<span class="tag green">angenommen</span>';}
-function statusTag(s){return s==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag amber">'+s+'</span>';}
+function statusTag(s){s=cleanInput(s,40);return s==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag amber">'+s+'</span>';}
 function statusBanner(s){return '<div class="panel" style="margin-bottom:18px"><div style="padding:14px 18px;display:flex;align-items:center;gap:10px;background:var(--amber-soft)"><span style="font-size:18px">⏸</span><div><b>Status: '+s+'</b> <span style="color:var(--muted)">– du nimmst aktuell keine neuen Aufträge an. Im Profil änderbar.</span></div></div></div>';}
-function val(id){const e=document.getElementById(id);return e?e.value.trim():'';}
+function val(id){const e=document.getElementById(id);return e?cleanInput(e.value):'';}
 let toastTimer;
 function toast(msg,warn){
   const t=document.getElementById('toast');
