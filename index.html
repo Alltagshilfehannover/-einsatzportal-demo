@@ -509,6 +509,12 @@ let payrolls=[
   {id:1,staffId:0,month:'Mai 2026',hours:42,gross:'546,00 €',status:'bereit'},
 ];
 let nextApptId=3, nextTsId=92, nextNoteId=3, nextProofId=1, nextPayrollId=2;
+let kostentraeger=[
+  {id:1,name:'AOK Niedersachsen',strasse:'Hildesheimer Str. 273',plz:'30519',ort:'Hannover',email:''},
+  {id:2,name:'Techniker Krankenkasse',strasse:'Bahnhofsallee 19',plz:'30159',ort:'Hannover',email:''},
+];
+let rechnungen=[];
+let nextKostentraegerId=3, nextRechnungId=1;
 
 /* ============================================================
    SUPABASE-ANBINDUNG (Testphase)
@@ -629,7 +635,8 @@ function custToRow(c){return {
   contact:c.contact,contact_name:c.contactName||null,contact_phone:c.contactPhone||null,
   no_contact:!!c.noContact,no_notes:!!c.noNotes,notes:c.notes,
   insurance_type:c.insuranceType||'gesetzlich',beihilfe_pct:c.beihilfePct||null,
-  kv_nr:(c.intern&&c.intern.kvNr)||null,kasse:(c.intern&&c.intern.kasse)||null,budget:(c.intern&&c.intern.budget)||null,budget_used:(c.intern&&c.intern.budgetUsed)||null
+  kv_nr:(c.intern&&c.intern.kvNr)||null,kasse:(c.intern&&c.intern.kasse)||null,budget:(c.intern&&c.intern.budget)||null,budget_used:(c.intern&&c.intern.budgetUsed)||null,
+  kostentraeger_id:c.kostentraegerId||null
 };}
 function rowToCust(r){return {
   id:r.id,first:r.first,last:r.last,area:r.area,address:r.address,
@@ -641,7 +648,21 @@ function rowToCust(r){return {
   contact:r.contact,contactName:r.contact_name,contactPhone:r.contact_phone,
   noContact:r.no_contact,noNotes:r.no_notes,notes:r.notes,
   insuranceType:r.insurance_type||'gesetzlich',beihilfePct:r.beihilfe_pct,
-  intern:{kvNr:r.kv_nr,kasse:r.kasse,budget:r.budget,budgetUsed:r.budget_used}
+  intern:{kvNr:r.kv_nr,kasse:r.kasse,budget:r.budget,budgetUsed:r.budget_used},
+  kostentraegerId:r.kostentraeger_id||null
+};}
+/* ============ KOSTENTRÄGER / RECHNUNGEN: DB-Mapping ============ */
+function ktToRow(k){return {name:k.name,strasse:k.strasse||null,plz:k.plz||null,ort:k.ort||null,email:k.email||null};}
+function rowToKt(r){return {id:r.id,name:r.name,strasse:r.strasse,plz:r.plz,ort:r.ort,email:r.email};}
+function rechnungToRow(r){return {
+  nummer:r.nummer, stundenzettel_id:r.stundenzettelId, customer_id:r.customerId, kostentraeger_id:r.kostentraegerId||null,
+  empfaenger_name:r.empfaengerName, empfaenger_adresse:r.empfaengerAdresse, empfaenger_email:r.empfaengerEmail||null,
+  datum:r.datum, stunden:r.stunden, preis_pro_stunde:r.preisProStunde, betrag:r.betrag, status:r.status||'offen'
+};}
+function rowToRechnung(r){return {
+  id:r.id, nummer:r.nummer, stundenzettelId:r.stundenzettel_id, customerId:r.customer_id, kostentraegerId:r.kostentraeger_id,
+  empfaengerName:r.empfaenger_name, empfaengerAdresse:r.empfaenger_adresse, empfaengerEmail:r.empfaenger_email,
+  datum:r.datum, stunden:r.stunden, preisProStunde:r.preis_pro_stunde, betrag:r.betrag, status:r.status||'offen'
 };}
 function jobToRow(j){return {customer_id:j.customerId,title:j.title,skills:j.skills||[],status:j.status,assigned_to:j.assignedTo,rejected_by:j.rejectedBy||[],commit_deadline:j.commitDeadline?new Date(j.commitDeadline).toISOString():null};}
 function rowToJob(r){return {id:r.id,customerId:r.customer_id,title:r.title,skills:r.skills||[],status:r.status,assignedTo:r.assigned_to,rejectedBy:r.rejected_by||[],commitDeadline:r.commit_deadline?new Date(r.commit_deadline).getTime():null};}
@@ -649,9 +670,9 @@ function appToRow(a){const q=a.questionnaire||{};return {first:a.first,last:a.la
 function rowToApp(r){return {id:r.id,first:r.first,last:r.last,gender:r.gender,email:r.email,phone:r.phone,area:r.area,citizenship:r.citizenship,skills:r.skills||[],motivation:r.motivation,status:r.status,docs:r.docs||{},signatures:r.signatures||{},questionnaire:r.questionnaire||{},declaration:r.declaration||{},idFront:r.id_front,idBack:r.id_back,selfie:r.selfie,agb:r.agb,isStudent:r.is_student,enrollmentFile:r.enrollment_file,pets:r.pets||[]};}
 
 /* ---- Speicher-Helfer: schreiben einzelne Objekte zurück ---- */
-async function cloudInsert(table,row){ if(!CLOUD)return null; row=sanitizeDeep(row); try{const{data,error}=await sb.from(table).insert(row).select().single(); if(error){console.warn('insert',table,error.message);return null;} return data;}catch(e){console.warn(e);return null;} }
-async function cloudUpdate(table,id,row){ if(!CLOUD)return; row=sanitizeDeep(row); try{const{error}=await sb.from(table).update(row).eq('id',id); if(error)console.warn('update',table,error.message);}catch(e){console.warn(e);} }
-async function cloudDelete(table,id){ if(!CLOUD)return; try{await sb.from(table).delete().eq('id',id);}catch(e){console.warn(e);} }
+async function cloudInsert(table,row){ if(!CLOUD)return null; row=sanitizeDeep(row); try{const{data,error}=await sb.from(table).insert(row).select().single(); if(error){console.warn('insert',table,error.message);toast('Speichern fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);return null;} return data;}catch(e){console.warn(e);toast('Speichern fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);return null;} }
+async function cloudUpdate(table,id,row){ if(!CLOUD)return; row=sanitizeDeep(row); try{const{error}=await sb.from(table).update(row).eq('id',id); if(error){console.warn('update',table,error.message);toast('Speichern fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);}}catch(e){console.warn(e);toast('Speichern fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);} }
+async function cloudDelete(table,id){ if(!CLOUD)return; try{const{error}=await sb.from(table).delete().eq('id',id); if(error){console.warn('delete',table,error.message);toast('Löschen fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);}}catch(e){console.warn(e);toast('Löschen fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);} }
 
 /* ---- Erstbefüllung: wenn DB leer, Demo-Daten hochladen ---- */
 async function seedIfEmpty(){
@@ -736,6 +757,22 @@ async function loadFromCloud(){
     if(data) timesheets=data.map(rowToTimesheet);
     DIAG.push('stundenzettel: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER stundenzettel: '+(e.message||e)); console.error('Laden stundenzettel fehlgeschlagen:', e.message||e); }
+
+  // Kostenträger
+  try{
+    const {data,error}=await sb.from('kostentraeger').select('*').order('id');
+    if(error) throw error;
+    if(data&&data.length) kostentraeger=data.map(rowToKt);
+    DIAG.push('kostentraeger: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER kostentraeger: '+(e.message||e)); console.error('Laden kostentraeger fehlgeschlagen:', e.message||e); }
+
+  // Rechnungen
+  try{
+    const {data,error}=await sb.from('rechnungen').select('*').order('id');
+    if(error) throw error;
+    if(data) rechnungen=data.map(rowToRechnung);
+    DIAG.push('rechnungen: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER rechnungen: '+(e.message||e)); console.error('Laden rechnungen fehlgeschlagen:', e.message||e); }
 
   // Geladene Inhalte entschärfen, bevor sie per innerHTML gerendert werden
   sanitizeAllLocalData();
@@ -988,8 +1025,10 @@ function buildAdminNav(active){
     navItem('applications','📥','Bewerbungen',active==='applications',newApps||'',true)+
     navItem('customers','◍','Kunden',active==='customers')+
     navItem('newcustomer','＋','Kunde anlegen',active==='newcustomer')+
+    navItem('kostentraeger','🏦','Kostenträger',active==='kostentraeger')+
     '<div class="nav-group">Abwicklung</div>'+
     navItem('hours','⏱','Stundenzettel',active==='hours')+
+    navItem('rechnungen','🧾','Rechnungen',active==='rechnungen')+
     navItem('payroll','€','Lohnabrechnung',active==='payroll')+
     navItem('notes','✎','Notizen',active==='notes')+
     navItem('calendar','▦','Kalender',active==='calendar')+
@@ -1153,7 +1192,7 @@ function renderAdmin(view){
   if(view==='hours'){
     c.innerHTML=head('Stundenzettel','Alle von Mitarbeitern erfassten Einsatzzeiten. Vom Kunden unterschriebene Einsätze enthalten einen Leistungsnachweis.')+
     '<div class="panel"><div class="panel-body" style="padding-top:16px">'+
-    (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Leistungsnachweis</th><th></th></tr></thead><tbody>'+
+    (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Leistungsnachweis</th><th>Rechnung</th><th></th></tr></thead><tbody>'+
       timesheets.map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);
         const sigOk=signatureLooksValid(t.signature);
         const statusTag = t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
@@ -1166,6 +1205,11 @@ function renderAdmin(view){
         '<td>'+sigCell+'</td>'+
         '<td>'+statusTag+'</td>'+
         '<td>'+(t.signature?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ LN</button>'+(t.hasAbtretung?' <button class="btn-ghost btn-sm" onclick="downloadAbtretung('+t.customerId+')">⬇ Abtretung</button>':''):'<span style="color:var(--muted);font-size:12px">—</span>')+'</td>'+
+        '<td>'+(()=>{ const re=rechnungen.find(r=>r.stundenzettelId===t.id);
+          if(re) return '<span class="tag green" style="font-size:11px">'+re.nummer+'</span>';
+          if(t.status==='freigegeben') return '<button class="btn-ghost btn-sm" onclick="createInvoiceForTimesheet('+t.id+')">🧾 Rechnung erstellen</button>';
+          return '<span style="color:var(--muted);font-size:12px">—</span>';
+        })()+'</td>'+
         '<td>'+(t.status==='offen'
             ? '<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn-danger-ghost btn-sm" onclick="rejectTimesheet('+t.id+')">Ablehnen</button><button class="btn-primary btn-sm" style="width:auto" onclick="approveTimesheet('+t.id+')">Freigeben</button></div>'
             : (t.status==='freigegeben'?'<span style="color:var(--good)">✓ freigegeben</span>':'<span style="color:#c0392b">✕ abgelehnt</span>'))+'</td></tr>';}).join('')+
@@ -1180,6 +1224,27 @@ function renderAdmin(view){
     (Object.keys(byStaff).length?'<table><thead><tr><th>Mitarbeiter</th><th>Freigegebene Stunden (Monat)</th><th></th></tr></thead><tbody>'+
       Object.entries(byStaff).map(([sid,min])=>'<tr><td><b>'+staffName(+sid)+'</b></td><td>'+(min/60).toFixed(1).replace('.',',')+' Std.</td><td><button class="btn-ghost btn-sm" onclick="toast(\'Abrechnung erstellt & bereitgestellt\')">Abrechnung erstellen</button></td></tr>').join('')+
       '</tbody></table>':'<div class="empty"><div class="big">€</div><b>Noch nichts freigegeben</b><p style="margin-top:6px">Gib zuerst unter „Stundenzettel“ Zeiten frei – sie erscheinen dann hier zur Abrechnung.</p></div>')+
+    '</div></div>';
+  }
+  if(view==='kostentraeger'){
+    c.innerHTML=head('Kostenträger','Krankenkassen / Pflegekassen, an die Rechnungen gestellt werden können. Bei einem Kunden hinterlegt, übernimmt die Rechnung automatisch Name und Adresse.')+
+    '<div class="panel"><div class="panel-head"><h3>'+kostentraeger.length+' Kostenträger</h3><button class="btn-primary btn-sm" style="width:auto" onclick="openKtModal(null)">＋ Neuer Kostenträger</button></div>'+
+    '<div class="panel-body" style="padding-top:10px">'+
+    (kostentraeger.length?'<table><thead><tr><th>Name</th><th>Adresse</th><th>E-Mail</th><th></th></tr></thead><tbody>'+
+      kostentraeger.map(k=>'<tr><td><b>'+k.name+'</b></td><td>'+(k.strasse||'')+', '+(k.plz||'')+' '+(k.ort||'')+'</td><td>'+(k.email||'—')+'</td>'+
+      '<td style="text-align:right"><button class="btn-ghost btn-sm" onclick="openKtModal('+k.id+')">Bearbeiten</button> <button class="btn-danger-ghost btn-sm" onclick="deleteKt('+k.id+')">Löschen</button></td></tr>').join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">🏦</div><b>Noch keine Kostenträger</b><p style="margin-top:6px">Lege hier Krankenkassen an, an die ihr Rechnungen stellt.</p></div>')+
+    '</div></div>';
+  }
+  if(view==='rechnungen'){
+    c.innerHTML=head('Rechnungen','Aus freigegebenen Stundenzetteln erstellte Rechnungen.')+
+    '<div class="panel"><div class="panel-body" style="padding-top:16px">'+
+    (rechnungen.length?'<table><thead><tr><th>Nr.</th><th>Datum</th><th>Kunde</th><th>Empfänger</th><th>Stunden</th><th>Betrag</th><th>Status</th><th></th></tr></thead><tbody>'+
+      rechnungen.slice().reverse().map(r=>{const cu=custById(r.customerId);
+        return '<tr><td><b>'+r.nummer+'</b></td><td>'+fmtDate(r.datum)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+r.empfaengerName+'</td><td>'+Number(r.stunden||0).toFixed(2).replace('.',',')+'</td><td>'+Number(r.betrag||0).toFixed(2).replace('.',',')+' €</td>'+
+        '<td><select onchange="setRechnungStatus('+r.id+',this.value)" style="font-size:12.5px;padding:4px 6px;border-radius:6px;border:1px solid var(--line)">'+['offen','versendet','bezahlt'].map(s=>'<option value="'+s+'" '+(r.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select></td>'+
+        '<td style="display:flex;gap:6px;justify-content:flex-end"><button class="btn-ghost btn-sm" onclick="downloadRechnung('+r.id+')">⬇ PDF</button>'+(r.empfaengerEmail?'<button class="btn-ghost btn-sm" onclick="mailRechnung('+r.id+')">✉ Senden</button>':'')+'</td></tr>';}).join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">🧾</div><b>Noch keine Rechnungen</b><p style="margin-top:6px">Erstelle Rechnungen direkt bei einem freigegebenen Stundenzettel.</p></div>')+
     '</div></div>';
   }
   if(view==='notes'){ c.innerHTML=head('Notizen','Bemerkungen zu Mitarbeitern und Kunden. Intern = nur Büro, Mitarbeiter = für die Person sichtbar.')+notesAdminHTML(); }
@@ -1367,8 +1432,13 @@ function customerFormHTML(c){
     '<div id="nc_beihilfeBox" style="display:'+(ins==='beihilfe'?'block':'none')+'"><label>Beihilfe-Anteil (%)</label><input id="nc_beihilfePct" type="number" min="0" max="100" value="'+(c.beihilfePct||'')+'" placeholder="z. B. 50"></div>'+
     '<div id="nc_kvBox" style="display:'+(ins==='privat'?'none':'block')+'">'+
       '<div class="form-row"><div><label>KV-Nummer</label><input id="nc_kvNr" value="'+(it.kvNr||'')+'" placeholder="1 Buchstabe + 9 Ziffern"></div>'+
-      '<div><label>Krankenkasse</label><input id="nc_kasse" value="'+(it.kasse||'')+'"></div></div>'+
+      '<div><label>Krankenkasse (Name, frei)</label><input id="nc_kasse" value="'+(it.kasse||'')+'"></div></div>'+
     '</div>'+
+    '<label>Kostenträger für Rechnungen</label>'+
+    '<select id="nc_kostentraeger"><option value="">— Privat: Rechnung direkt an den Kunden —</option>'+
+      kostentraeger.map(k=>'<option value="'+k.id+'" '+(c.kostentraegerId===k.id?'selected':'')+'>'+k.name+'</option>').join('')+
+    '</select>'+
+    '<div style="height:14px"></div>'+
     '<div class="form-row"><div><label>Budget (§45b)</label><input id="nc_budget" value="'+(it.budget||'')+'" placeholder="z. B. 131 €/Monat"></div>'+
     '<div><label>Davon genutzt</label><input id="nc_budgetUsed" value="'+(it.budgetUsed||'')+'" placeholder="z. B. 40 €"></div></div>'+
 
@@ -1417,6 +1487,8 @@ function gatherCustomer(c){
   c.intern.kvNr=(c.insuranceType==='privat')?'':val('nc_kvNr');
   c.intern.kasse=(c.insuranceType==='privat')?'':val('nc_kasse');
   c.intern.budget=val('nc_budget');c.intern.budgetUsed=val('nc_budgetUsed');
+  const ktVal=document.getElementById('nc_kostentraeger').value;
+  c.kostentraegerId=ktVal?+ktVal:null;
 }
 function createCustomer(){
   if(!requireAdminAction()) return;
@@ -3152,6 +3224,154 @@ function startLeistungsnachweis(customerId){
       if(currentRole==='admin') renderAdmin('customers');
     }
   );
+}
+
+/* ============================================================
+   KOSTENTRÄGER: Verwaltung (Krankenkassen/Pflegekassen als
+   Rechnungsempfänger)
+   ============================================================ */
+function openKtModal(id){
+  const k=id!==null?kostentraeger.find(x=>x.id===id):{name:'',strasse:'',plz:'',ort:'',email:''};
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent=id!==null?'Kostenträger bearbeiten':'Neuer Kostenträger';
+  document.getElementById('modalBody').innerHTML=
+    '<label>Name *</label><input id="kt_name" value="'+(k.name||'')+'" placeholder="z. B. AOK Niedersachsen">'+
+    '<div class="form-row"><div style="flex:2"><label>Straße + Hausnr.</label><input id="kt_strasse" value="'+(k.strasse||'')+'"></div></div>'+
+    '<div class="form-row"><div><label>PLZ</label><input id="kt_plz" value="'+(k.plz||'')+'"></div>'+
+    '<div><label>Ort</label><input id="kt_ort" value="'+(k.ort||'')+'"></div></div>'+
+    '<label>E-Mail (für Rechnungsversand, optional)</label><input id="kt_email" value="'+(k.email||'')+'" placeholder="rechnung@kasse.de">';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveKt('+(id!==null?id:'null')+')">Speichern</button>';
+  openModal();
+}
+function saveKt(id){
+  if(!requireAdminAction()) return;
+  const name=val('kt_name'); if(!name){toast('Bitte einen Namen eingeben',true);return;}
+  const email=val('kt_email');
+  if(email && !isValidEmail(email)){toast('Bitte eine gültige E-Mail eingeben',true);return;}
+  if(id!==null){
+    const k=kostentraeger.find(x=>x.id===id);
+    k.name=name;k.strasse=val('kt_strasse');k.plz=val('kt_plz');k.ort=val('kt_ort');k.email=email;
+    if(CLOUD) cloudUpdate('kostentraeger',k.id,ktToRow(k));
+  }else{
+    const k={id:nextKostentraegerId++,name:name,strasse:val('kt_strasse'),plz:val('kt_plz'),ort:val('kt_ort'),email:email};
+    kostentraeger.push(k);
+    if(CLOUD){ cloudInsert('kostentraeger',ktToRow(k)).then(r=>{ if(r) k.id=r.id; }); }
+  }
+  closeModal();toast('Kostenträger gespeichert');renderAdmin('kostentraeger');
+}
+function deleteKt(id){
+  if(!requireAdminAction()) return;
+  const inUse=customers.some(c=>c.kostentraegerId===id);
+  if(inUse){ toast('Kann nicht gelöscht werden – ist noch bei mindestens einem Kunden hinterlegt',true); return; }
+  kostentraeger=kostentraeger.filter(k=>k.id!==id);
+  if(CLOUD) cloudDelete('kostentraeger',id);
+  toast('Kostenträger gelöscht');renderAdmin('kostentraeger');
+}
+
+/* ============================================================
+   RECHNUNGEN: aus einem freigegebenen Stundenzettel erstellen
+   Empfänger = Kostenträger des Kunden, falls hinterlegt,
+   sonst der Kunde selbst (Privatrechnung).
+   ============================================================ */
+function createInvoiceForTimesheet(tsId){
+  if(!requireAdminAction()) return;
+  const t=timesheets.find(x=>x.id===tsId); if(!t){toast('Stundenzettel nicht gefunden',true);return;}
+  if(rechnungen.find(r=>r.stundenzettelId===tsId)){toast('Für diesen Stundenzettel existiert bereits eine Rechnung',true);return;}
+  if(t.status!=='freigegeben'){toast('Stundenzettel muss erst freigegeben werden',true);return;}
+  const cu=custById(t.customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
+  if(!cu.abtretung || !cu.abtretung.signature){
+    toast('Bitte zuerst die Abtretungserklärung dieses Kunden einholen (Kunden-Detailseite)',true);
+    return;
+  }
+  const kt=cu.kostentraegerId?kostentraeger.find(k=>k.id===cu.kostentraegerId):null;
+  const empfaengerName=kt?kt.name:fullName(cu);
+  const empfaengerAdresse=kt?((kt.strasse||'')+', '+(kt.plz||'')+' '+(kt.ort||'')):(cu.address||'');
+  const empfaengerEmail=kt?(kt.email||''):'';
+  const stunden=tsMinutes(t)/60;
+  const betrag=stunden*STUNDENSATZ;
+  const nummer='RE-'+new Date().getFullYear()+'-'+String(nextRechnungId++).padStart(4,'0');
+  const re={
+    id:nextRechnungId, nummer:nummer, stundenzettelId:t.id, customerId:cu.id, kostentraegerId:kt?kt.id:null,
+    empfaengerName:empfaengerName, empfaengerAdresse:empfaengerAdresse, empfaengerEmail:empfaengerEmail,
+    datum:todayISO(), stunden:stunden, preisProStunde:STUNDENSATZ, betrag:betrag, status:'offen'
+  };
+  rechnungen.push(re);
+  if(CLOUD){ cloudInsert('rechnungen',rechnungToRow(re)).then(r=>{ if(r) re.id=r.id; }); }
+  // Die drei Dokumente für diesen Abrechnungsfall herunterladen
+  downloadRechnung(re.id);
+  downloadTsLN(t.id);
+  downloadAbtretung(cu.id);
+  toast('Rechnung '+nummer+' erstellt – Rechnung, Leistungsnachweis & Abtretung werden heruntergeladen');
+  renderAdmin('hours');
+}
+function buildRechnungPdf(re, cu){
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
+  const { jsPDF } = window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(); const margin=52; let y=margin;
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(110);
+  doc.text('www.hannoverhilfe.de',margin,y); y+=16;
+  doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(10.5);
+  doc.text('Alltagshilfe Hannover UG (haftungsbeschränkt)',margin,y); y+=14;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(80);
+  doc.text('Bahnhofstraße 85 · 31515 Wunstorf',margin,y); y+=12;
+  doc.text('Tel: 05031 5165899 · email: info@hannoverhilfe.de',margin,y); y+=34;
+  doc.setTextColor(0);
+  // Empfänger-Adresse
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);
+  doc.text(String(re.empfaengerName||''),margin,y); y+=14;
+  (String(re.empfaengerAdresse||'').split(',')).forEach(line=>{ if(line.trim()){ doc.text(line.trim(),margin,y); y+=14; } });
+  y+=24;
+  doc.setFont('helvetica','bold');doc.setFontSize(16);
+  doc.text('Rechnung '+re.nummer,margin,y); y+=24;
+  doc.setFont('helvetica','normal');doc.setFontSize(10);
+  doc.text('Rechnungsdatum: '+fmtDate(re.datum),margin,y); y+=14;
+  doc.text('Leistungsempfänger / Versicherte(r): '+fullName(cu),margin,y); y+=14;
+  if(cu.intern&&cu.intern.kvNr){ doc.text('Versichertennummer: '+cu.intern.kvNr,margin,y); y+=14; }
+  y+=20;
+  // Tabelle
+  const cols=[margin, margin+300, margin+380, pageW-margin];
+  doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setFillColor(240,236,250);
+  doc.rect(margin,y-11,pageW-margin*2,18,'F');
+  doc.text('Leistung',cols[0]+2,y); doc.text('Stunden',cols[1]+2,y); doc.text('€/Std.',cols[2]+2,y); doc.text('Betrag',cols[3]-50,y);
+  y+=20; doc.setFont('helvetica','normal');
+  doc.setDrawColor(210);doc.line(margin,y-6,pageW-margin,y-6);
+  doc.text('Alltagshilfe gem. § 45b SGB XI ('+fmtDate(re.datum)+')',cols[0]+2,y);
+  doc.text(String(re.stunden.toFixed(2)).replace('.',','),cols[1]+2,y);
+  doc.text(String(re.preisProStunde.toFixed(2)).replace('.',',')+' €',cols[2]+2,y);
+  doc.text(String(re.betrag.toFixed(2)).replace('.',',')+' €',cols[3]-50,y);
+  y+=10;
+  doc.setDrawColor(120);doc.line(margin,y+6,pageW-margin,y+6); y+=26;
+  doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('Gesamtbetrag: '+re.betrag.toFixed(2).replace('.',',')+' €',pageW-margin,y,{align:'right'});
+  y+=34;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(90);
+  const hint=doc.splitTextToSize('Die Abrechnung erfolgt auf Basis der unterschriebenen Abtretungserklärung und des beigefügten Leistungsnachweises gemäß § 45b SGB XI.',pageW-margin*2);
+  doc.text(hint,margin,y);
+  return doc;
+}
+function downloadRechnung(id){
+  const re=rechnungen.find(x=>x.id===id); if(!re){toast('Rechnung nicht gefunden',true);return;}
+  const cu=custById(re.customerId);
+  const doc=buildRechnungPdf(re,cu);
+  if(doc) doc.save(('Rechnung_'+re.nummer).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+}
+function mailRechnung(id){
+  const re=rechnungen.find(x=>x.id===id); if(!re||!re.empfaengerEmail){toast('Keine E-Mail-Adresse hinterlegt',true);return;}
+  downloadRechnung(id);
+  const subject=encodeURIComponent('Rechnung '+re.nummer+' – Alltagshilfe Hannover UG');
+  const body=encodeURIComponent('Sehr geehrte Damen und Herren,\n\nanbei erhalten Sie die Rechnung '+re.nummer+' über '+re.betrag.toFixed(2).replace('.',',')+' €.\nBitte die soeben heruntergeladene PDF-Datei an diese E-Mail anhängen.\n\nMit freundlichen Grüßen\nAlltagshilfe Hannover UG');
+  window.location.href='mailto:'+re.empfaengerEmail+'?subject='+subject+'&body='+body;
+  toast('E-Mail-Programm wird geöffnet – PDF bitte manuell anhängen');
+}
+function setRechnungStatus(id,status){
+  if(!requireAdminAction()) return;
+  const re=rechnungen.find(x=>x.id===id); if(!re)return;
+  re.status=status;
+  if(CLOUD) cloudUpdate('rechnungen',id,{status:status});
+  toast('Status aktualisiert');
 }
 
 function fillContractFor(text,s){
