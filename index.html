@@ -515,6 +515,8 @@ let kostentraeger=[
 ];
 let rechnungen=[];
 let nextKostentraegerId=3, nextRechnungId=1;
+let leistungenKatalog=[];
+let nextLeistungId=1;
 
 /* ============================================================
    SUPABASE-ANBINDUNG (Testphase)
@@ -636,7 +638,7 @@ function custToRow(c){return {
   no_contact:!!c.noContact,no_notes:!!c.noNotes,notes:c.notes,
   insurance_type:c.insuranceType||'gesetzlich',beihilfe_pct:c.beihilfePct||null,
   kv_nr:(c.intern&&c.intern.kvNr)||null,kasse:(c.intern&&c.intern.kasse)||null,budget:(c.intern&&c.intern.budget)||null,budget_used:(c.intern&&c.intern.budgetUsed)||null,
-  kostentraeger_id:c.kostentraegerId||null
+  kostentraeger_id:c.kostentraegerId||null, leistungen:c.leistungen||[]
 };}
 function rowToCust(r){return {
   id:r.id,first:r.first,last:r.last,area:r.area,address:r.address,
@@ -649,19 +651,24 @@ function rowToCust(r){return {
   noContact:r.no_contact,noNotes:r.no_notes,notes:r.notes,
   insuranceType:r.insurance_type||'gesetzlich',beihilfePct:r.beihilfe_pct,
   intern:{kvNr:r.kv_nr,kasse:r.kasse,budget:r.budget,budgetUsed:r.budget_used},
-  kostentraegerId:r.kostentraeger_id||null
+  kostentraegerId:r.kostentraeger_id||null, leistungen:r.leistungen||[]
 };}
 /* ============ KOSTENTRÄGER / RECHNUNGEN: DB-Mapping ============ */
+function lkToRow(l){return {name:l.name,preis:l.preis,einheit:l.einheit};}
+function rowToLk(r){return {id:r.id,name:r.name,preis:r.preis,einheit:r.einheit};}
 function ktToRow(k){return {name:k.name,strasse:k.strasse||null,plz:k.plz||null,ort:k.ort||null,email:k.email||null};}
 function rowToKt(r){return {id:r.id,name:r.name,strasse:r.strasse,plz:r.plz,ort:r.ort,email:r.email};}
 function rechnungToRow(r){return {
   nummer:r.nummer, stundenzettel_id:r.stundenzettelId, customer_id:r.customerId, kostentraeger_id:r.kostentraegerId||null,
   empfaenger_name:r.empfaengerName, empfaenger_adresse:r.empfaengerAdresse, empfaenger_email:r.empfaengerEmail||null,
+  leistung_name:r.leistungName||null, leistung_einheit:r.leistungEinheit||null, menge:r.menge||null,
   datum:r.datum, stunden:r.stunden, preis_pro_stunde:r.preisProStunde, betrag:r.betrag, status:r.status||'offen'
 };}
 function rowToRechnung(r){return {
-  id:r.id, nummer:r.nummer, stundenzettelId:r.stundenzettel_id, customerId:r.customer_id, kostentraegerId:r.kostentraeger_id,
+  id:r.id, nummer:r.nummer, stundenzettelId:r.stundenzettel_id, customerId:r.customer_id, kostentraeger_id:r.kostentraeger_id,
+  kostentraegerId:r.kostentraeger_id,
   empfaengerName:r.empfaenger_name, empfaengerAdresse:r.empfaenger_adresse, empfaengerEmail:r.empfaenger_email,
+  leistungName:r.leistung_name, leistungEinheit:r.leistung_einheit, menge:r.menge,
   datum:r.datum, stunden:r.stunden, preisProStunde:r.preis_pro_stunde, betrag:r.betrag, status:r.status||'offen'
 };}
 function jobToRow(j){return {customer_id:j.customerId,title:j.title,skills:j.skills||[],status:j.status,assigned_to:j.assignedTo,rejected_by:j.rejectedBy||[],commit_deadline:j.commitDeadline?new Date(j.commitDeadline).toISOString():null};}
@@ -773,6 +780,14 @@ async function loadFromCloud(){
     if(data) rechnungen=data.map(rowToRechnung);
     DIAG.push('rechnungen: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER rechnungen: '+(e.message||e)); console.error('Laden rechnungen fehlgeschlagen:', e.message||e); }
+
+  // Leistungskatalog
+  try{
+    const {data,error}=await sb.from('leistungen').select('*').order('id');
+    if(error) throw error;
+    if(data) leistungenKatalog=data.map(rowToLk);
+    DIAG.push('leistungen: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER leistungen: '+(e.message||e)); console.error('Laden leistungen fehlgeschlagen:', e.message||e); }
 
   // Geladene Inhalte entschärfen, bevor sie per innerHTML gerendert werden
   sanitizeAllLocalData();
@@ -1026,6 +1041,7 @@ function buildAdminNav(active){
     navItem('customers','◍','Kunden',active==='customers')+
     navItem('newcustomer','＋','Kunde anlegen',active==='newcustomer')+
     navItem('kostentraeger','🏦','Kostenträger',active==='kostentraeger')+
+    navItem('leistungen','📋','Leistungen',active==='leistungen')+
     '<div class="nav-group">Abwicklung</div>'+
     navItem('hours','⏱','Stundenzettel',active==='hours')+
     navItem('rechnungen','🧾','Rechnungen',active==='rechnungen')+
@@ -1207,7 +1223,7 @@ function renderAdmin(view){
         '<td>'+(t.signature?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ LN</button>'+(t.hasAbtretung?' <button class="btn-ghost btn-sm" onclick="downloadAbtretung('+t.customerId+')">⬇ Abtretung</button>':''):'<span style="color:var(--muted);font-size:12px">—</span>')+'</td>'+
         '<td>'+(()=>{ const re=rechnungen.find(r=>r.stundenzettelId===t.id);
           if(re) return '<span class="tag green" style="font-size:11px">'+re.nummer+'</span>';
-          if(t.status==='freigegeben') return '<button class="btn-ghost btn-sm" onclick="createInvoiceForTimesheet('+t.id+')">🧾 Rechnung erstellen</button>';
+          if(t.status==='freigegeben') return '<span class="tag amber" style="font-size:11px">bereit (siehe Rechnungen)</span>';
           return '<span style="color:var(--muted);font-size:12px">—</span>';
         })()+'</td>'+
         '<td>'+(t.status==='offen'
@@ -1236,15 +1252,43 @@ function renderAdmin(view){
       '</tbody></table>':'<div class="empty"><div class="big">🏦</div><b>Noch keine Kostenträger</b><p style="margin-top:6px">Lege hier Krankenkassen an, an die ihr Rechnungen stellt.</p></div>')+
     '</div></div>';
   }
+  if(view==='leistungen'){
+    c.innerHTML=head('Leistungen','Eigene Leistungsarten mit Preis und Abrechnungseinheit. Diese werden neuen Kunden automatisch vorgeschlagen und können je Kunde individuell angepasst werden.')+
+    '<div class="panel"><div class="panel-head"><h3>'+leistungenKatalog.length+' Leistungen</h3><button class="btn-primary btn-sm" style="width:auto" onclick="openLkModal(null)">＋ Neue Leistung</button></div>'+
+    '<div class="panel-body" style="padding-top:10px">'+
+    (leistungenKatalog.length?'<table><thead><tr><th>Name</th><th>Preis</th><th>Einheit</th><th></th></tr></thead><tbody>'+
+      leistungenKatalog.map(l=>'<tr><td><b>'+l.name+'</b></td><td>'+Number(l.preis||0).toFixed(2).replace('.',',')+' €</td><td>'+l.einheit+'</td>'+
+      '<td style="text-align:right"><button class="btn-ghost btn-sm" onclick="openLkModal('+l.id+')">Bearbeiten</button> <button class="btn-danger-ghost btn-sm" onclick="deleteLk('+l.id+')">Löschen</button></td></tr>').join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">📋</div><b>Noch keine Leistungen definiert</b><p style="margin-top:6px">Lege hier eure Leistungsarten mit Preis und Abrechnungseinheit an (z. B. „Haushaltshilfe" – 25 € – pro Stunde).</p></div>')+
+    '</div></div>';
+  }
   if(view==='rechnungen'){
-    c.innerHTML=head('Rechnungen','Aus freigegebenen Stundenzetteln erstellte Rechnungen.')+
-    '<div class="panel"><div class="panel-body" style="padding-top:16px">'+
-    (rechnungen.length?'<table><thead><tr><th>Nr.</th><th>Datum</th><th>Kunde</th><th>Empfänger</th><th>Stunden</th><th>Betrag</th><th>Status</th><th></th></tr></thead><tbody>'+
+    const ready=timesheets.filter(t=>t.status==='freigegeben' && !rechnungen.find(r=>r.stundenzettelId===t.id));
+    c.innerHTML=head('Rechnungen','Stundenzettel, die abgerechnet werden können, und bereits erstellte Rechnungen.')+
+    '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Bereit zur Abrechnung ('+ready.length+')</h3></div>'+
+    '<div class="panel-body" style="padding-top:10px">'+
+    (ready.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Dauer</th><th></th></tr></thead><tbody>'+
+      ready.map(t=>{const cu=custById(t.customerId);
+        return '<tr><td>'+fmtDate(t.date)+'</td><td>'+staffName(t.staffId)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+tsDuration(t)+'</td>'+
+        '<td style="text-align:right"><button class="btn-primary btn-sm" style="width:auto" onclick="openInvoiceModal('+t.id+')">🧾 Rechnung erstellen</button></td></tr>';}).join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">✓</div><b>Aktuell nichts offen</b><p style="margin-top:6px">Sobald ein Stundenzettel freigegeben ist, erscheint er hier zur Abrechnung.</p></div>')+
+    '</div></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Erstellte Rechnungen</h3></div><div class="panel-body" style="padding-top:16px">'+
+    (rechnungen.length?'<table><thead><tr><th>Nr.</th><th>Datum</th><th>Kunde</th><th>Empfänger</th><th>Betrag</th><th>Status</th><th>Dokumente</th></tr></thead><tbody>'+
       rechnungen.slice().reverse().map(r=>{const cu=custById(r.customerId);
-        return '<tr><td><b>'+r.nummer+'</b></td><td>'+fmtDate(r.datum)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+r.empfaengerName+'</td><td>'+Number(r.stunden||0).toFixed(2).replace('.',',')+'</td><td>'+Number(r.betrag||0).toFixed(2).replace('.',',')+' €</td>'+
-        '<td><select onchange="setRechnungStatus('+r.id+',this.value)" style="font-size:12.5px;padding:4px 6px;border-radius:6px;border:1px solid var(--line)">'+['offen','versendet','bezahlt'].map(s=>'<option value="'+s+'" '+(r.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select></td>'+
-        '<td style="display:flex;gap:6px;justify-content:flex-end"><button class="btn-ghost btn-sm" onclick="downloadRechnung('+r.id+')">⬇ PDF</button>'+(r.empfaengerEmail?'<button class="btn-ghost btn-sm" onclick="mailRechnung('+r.id+')">✉ Senden</button>':'')+'</td></tr>';}).join('')+
-      '</tbody></table>':'<div class="empty"><div class="big">🧾</div><b>Noch keine Rechnungen</b><p style="margin-top:6px">Erstelle Rechnungen direkt bei einem freigegebenen Stundenzettel.</p></div>')+
+        const tage=Math.floor((Date.now()-new Date(r.datum).getTime())/86400000);
+        const ueberfaellig = r.status!=='bezahlt' && tage>14;
+        const statusBadge = ueberfaellig
+          ? '<span class="tag red">überfällig ('+tage+' Tage)</span>'
+          : (r.status==='bezahlt'?'<span class="tag green">bezahlt</span>':r.status==='versendet'?'<span class="tag blue">versendet</span>':'<span class="tag amber">offen</span>');
+        return '<tr><td><b>'+r.nummer+'</b></td><td>'+fmtDate(r.datum)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+r.empfaengerName+'</td><td>'+Number(r.betrag||0).toFixed(2).replace('.',',')+' €</td>'+
+        '<td>'+statusBadge+'<br><select onchange="setRechnungStatus('+r.id+',this.value)" style="margin-top:4px;font-size:12px;padding:3px 5px;border-radius:6px;border:1px solid var(--line)">'+['offen','versendet','bezahlt'].map(s=>'<option value="'+s+'" '+(r.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select></td>'+
+        '<td style="display:flex;gap:5px;flex-wrap:wrap"><button class="btn-ghost btn-sm" onclick="downloadRechnung('+r.id+')">RE</button>'+
+          (r.stundenzettelId?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+r.stundenzettelId+')">LV</button>':'')+
+          '<button class="btn-ghost btn-sm" onclick="downloadAbtretung('+r.customerId+')">AB</button>'+
+          (r.empfaengerEmail?'<button class="btn-ghost btn-sm" onclick="mailRechnung('+r.id+')">✉</button>':'')+
+        '</td></tr>';}).join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">🧾</div><b>Noch keine Rechnungen</b><p style="margin-top:6px">Erstelle oben eine Rechnung aus einem bereiten Stundenzettel.</p></div>')+
     '</div></div>';
   }
   if(view==='notes'){ c.innerHTML=head('Notizen','Bemerkungen zu Mitarbeitern und Kunden. Intern = nur Büro, Mitarbeiter = für die Person sichtbar.')+notesAdminHTML(); }
@@ -1383,6 +1427,7 @@ function createLogin(id){
 function customerFormHTML(c){
   const isNew=!c;
   c=c||{first:'',last:'',area:'',street:'',houseNo:'',plz:'',city:'',phoneMobile:'',phoneLandline:'',need:[],freqNum:1,freqUnit:'pro Woche',timeWindows:[],pets:[],pgrad:'1',contactName:'',contactPhone:'',noContact:false,noNotes:false,notes:'',insuranceType:'gesetzlich',beihilfePct:'',intern:{kvNr:'',kasse:'',budget:'',budgetUsed:''}};
+  const myLeistungen = c.leistungen || leistungenKatalog.map(l=>({leistungId:l.id,name:l.name,preis:l.preis,einheit:l.einheit}));
   const it=c.intern||{};
   const tw=c.timeWindows||[];
   const pets=c.pets||[];
@@ -1439,6 +1484,19 @@ function customerFormHTML(c){
       kostentraeger.map(k=>'<option value="'+k.id+'" '+(c.kostentraegerId===k.id?'selected':'')+'>'+k.name+'</option>').join('')+
     '</select>'+
     '<div style="height:14px"></div>'+
+    '<div class="section-label">Abgerechnete Leistungen</div>'+
+    '<p style="font-size:13px;color:var(--muted);margin-bottom:10px">Haken setzen = diese Leistung gilt für diesen Kunden. Preis kann pro Kunde individuell angepasst werden.</p>'+
+    '<div id="nc_leistungen">'+
+    (leistungenKatalog.length?leistungenKatalog.map(l=>{
+      const mine=myLeistungen.find(x=>x.leistungId===l.id);
+      return '<div class="form-row" style="align-items:flex-end;gap:10px" data-lk="'+l.id+'">'+
+        '<div style="flex:none;padding-bottom:11px"><input type="checkbox" id="nc_lk_on_'+l.id+'" '+(mine?'checked':'')+'></div>'+
+        '<div style="flex:2"><label>'+l.name+'</label><input id="nc_lk_preis_'+l.id+'" type="number" min="0" step="0.01" value="'+(mine?mine.preis:l.preis)+'"></div>'+
+        '<div style="flex:1;padding-bottom:11px;color:var(--muted);font-size:13px">'+l.einheit+'</div>'+
+      '</div>';
+    }).join(''):'<p style="font-size:13.5px;color:var(--muted)">Noch keine Leistungen im Katalog hinterlegt – unter „Leistungen" im Menü anlegen.</p>')+
+    '</div>'+
+    '<div style="height:14px"></div>'+
     '<div class="form-row"><div><label>Budget (§45b)</label><input id="nc_budget" value="'+(it.budget||'')+'" placeholder="z. B. 131 €/Monat"></div>'+
     '<div><label>Davon genutzt</label><input id="nc_budgetUsed" value="'+(it.budgetUsed||'')+'" placeholder="z. B. 40 €"></div></div>'+
 
@@ -1489,6 +1547,10 @@ function gatherCustomer(c){
   c.intern.budget=val('nc_budget');c.intern.budgetUsed=val('nc_budgetUsed');
   const ktVal=document.getElementById('nc_kostentraeger').value;
   c.kostentraegerId=ktVal?+ktVal:null;
+  c.leistungen=leistungenKatalog.filter(l=>{const el=document.getElementById('nc_lk_on_'+l.id);return el&&el.checked;}).map(l=>{
+    const pEl=document.getElementById('nc_lk_preis_'+l.id);
+    return {leistungId:l.id,name:l.name,preis:pEl?(parseFloat(pEl.value)||l.preis):l.preis,einheit:l.einheit};
+  });
 }
 function createCustomer(){
   if(!requireAdminAction()) return;
@@ -1600,6 +1662,7 @@ function deleteExtDoc(custId, idx){
   editCustomer(custId);
 }
 function updateCustomer(id){
+  if(!requireAdminAction()) return;
   const c=custById(id);gatherCustomer(c);
   if(CLOUD) cloudUpdate('kunden',id,custToRow(c));
   closeModal();document.getElementById('modalBox').classList.remove('wide');
@@ -3270,41 +3333,131 @@ function deleteKt(id){
   toast('Kostenträger gelöscht');renderAdmin('kostentraeger');
 }
 
+const LEISTUNGS_EINHEITEN=['pro 15 Min','pro 30 Min','pro Stunde','pro Einheit','Pauschale'];
+function openLkModal(id){
+  const l=id!==null?leistungenKatalog.find(x=>x.id===id):{name:'',preis:'',einheit:'pro Stunde'};
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent=id!==null?'Leistung bearbeiten':'Neue Leistung';
+  document.getElementById('modalBody').innerHTML=
+    '<label>Bezeichnung *</label><input id="lk_name" value="'+(l.name||'')+'" placeholder="z. B. Haushaltshilfe">'+
+    '<div class="form-row"><div><label>Preis (€) *</label><input id="lk_preis" type="number" min="0" step="0.01" value="'+(l.preis||'')+'"></div>'+
+    '<div><label>Abrechnungseinheit *</label><select id="lk_einheit">'+LEISTUNGS_EINHEITEN.map(e=>'<option '+(l.einheit===e?'selected':'')+'>'+e+'</option>').join('')+'</select></div></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveLk('+(id!==null?id:'null')+')">Speichern</button>';
+  openModal();
+}
+function saveLk(id){
+  if(!requireAdminAction()) return;
+  const name=val('lk_name'); if(!name){toast('Bitte eine Bezeichnung eingeben',true);return;}
+  const preis=parseFloat(document.getElementById('lk_preis').value);
+  if(!preis||preis<=0){toast('Bitte einen gültigen Preis eingeben',true);return;}
+  const einheit=document.getElementById('lk_einheit').value;
+  if(id!==null){
+    const l=leistungenKatalog.find(x=>x.id===id);
+    l.name=name;l.preis=preis;l.einheit=einheit;
+    if(CLOUD) cloudUpdate('leistungen',l.id,lkToRow(l));
+  }else{
+    const l={id:nextLeistungId++,name:name,preis:preis,einheit:einheit};
+    leistungenKatalog.push(l);
+    if(CLOUD){ cloudInsert('leistungen',lkToRow(l)).then(r=>{ if(r) l.id=r.id; }); }
+  }
+  closeModal();toast('Leistung gespeichert');renderAdmin('leistungen');
+}
+function deleteLk(id){
+  if(!requireAdminAction()) return;
+  leistungenKatalog=leistungenKatalog.filter(l=>l.id!==id);
+  if(CLOUD) cloudDelete('leistungen',id);
+  toast('Leistung gelöscht (bereits zugewiesene Leistungen bei Kunden bleiben unverändert)');
+  renderAdmin('leistungen');
+}
+
 /* ============================================================
    RECHNUNGEN: aus einem freigegebenen Stundenzettel erstellen
    Empfänger = Kostenträger des Kunden, falls hinterlegt,
    sonst der Kunde selbst (Privatrechnung).
    ============================================================ */
-function createInvoiceForTimesheet(tsId){
+function invoiceDefaultMenge(einheit, mins){
+  if(einheit==='pro Stunde') return Math.round((mins/60)*100)/100;
+  if(einheit==='pro 15 Min') return Math.ceil(mins/15);
+  if(einheit==='pro 30 Min') return Math.ceil(mins/30);
+  return 1; // pro Einheit / Pauschale
+}
+function openInvoiceModal(tsId){
   if(!requireAdminAction()) return;
   const t=timesheets.find(x=>x.id===tsId); if(!t){toast('Stundenzettel nicht gefunden',true);return;}
   if(rechnungen.find(r=>r.stundenzettelId===tsId)){toast('Für diesen Stundenzettel existiert bereits eine Rechnung',true);return;}
-  if(t.status!=='freigegeben'){toast('Stundenzettel muss erst freigegeben werden',true);return;}
   const cu=custById(t.customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
   if(!cu.abtretung || !cu.abtretung.signature){
     toast('Bitte zuerst die Abtretungserklärung dieses Kunden einholen (Kunden-Detailseite)',true);
     return;
   }
-  const kt=cu.kostentraegerId?kostentraeger.find(k=>k.id===cu.kostentraegerId):null;
+  if(cu.insuranceType==='gesetzlich' && !cu.kostentraegerId){
+    toast('Kunde ist gesetzlich versichert, hat aber keinen Kostenträger hinterlegt. Bitte erst beim Kunden eintragen.',true);
+    return;
+  }
+  const mine=cu.leistungen||[];
+  if(!mine.length){ toast('Für diesen Kunden sind keine Leistungen hinterlegt (Kunde bearbeiten → Abgerechnete Leistungen)',true); return; }
+  const mins=tsMinutes(t);
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Rechnung erstellen – '+fullName(cu);
+  const payerInfo = cu.insuranceType==='gesetzlich'
+    ? '<div class="summary" style="margin-bottom:14px"><div class="sh">Gesetzlich versichert</div>Rechnung geht an den hinterlegten Kostenträger: <b>'+(kostentraeger.find(k=>k.id===cu.kostentraegerId)||{}).name+'</b></div>'
+    : '<div class="summary" style="margin-bottom:14px"><div class="sh">'+(cu.insuranceType==='beihilfe'?'Beihilfeberechtigt':'Privat versichert')+'</div>Rechnung geht direkt an den Kunden (Privatrechnung).</div>';
+  document.getElementById('modalBody').innerHTML=
+    payerInfo+
+    '<label>Leistung</label><select id="inv_leistung" onchange="invoiceRecalc('+mins+')">'+
+      mine.map((l,i)=>'<option value="'+i+'">'+l.name+' – '+Number(l.preis).toFixed(2).replace('.',',')+' € '+l.einheit+'</option>').join('')+
+    '</select>'+
+    '<label>Menge</label><input id="inv_menge" type="number" min="0" step="0.01" value="'+invoiceDefaultMenge(mine[0].einheit,mins)+'" oninput="invoiceRecalc('+mins+')">'+
+    '<div class="reveal-row" style="margin-top:10px"><span class="k"><b>Gesamtbetrag</b></span><span class="v" id="inv_betrag"><b>'+(mine[0].preis*invoiceDefaultMenge(mine[0].einheit,mins)).toFixed(2).replace('.',',')+' €</b></span></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="createInvoiceForTimesheet('+tsId+')">Rechnung erstellen</button>';
+  window.__invoiceCtx={tsId:tsId, mins:mins, leistungen:mine};
+  openModal();
+}
+function invoiceRecalc(mins){
+  const ctx=window.__invoiceCtx; if(!ctx)return;
+  const idx=+document.getElementById('inv_leistung').value;
+  const l=ctx.leistungen[idx];
+  const mengeEl=document.getElementById('inv_menge');
+  if(document.activeElement!==mengeEl){ mengeEl.value=invoiceDefaultMenge(l.einheit,mins); }
+  const menge=parseFloat(mengeEl.value)||0;
+  document.getElementById('inv_betrag').innerHTML='<b>'+(l.preis*menge).toFixed(2).replace('.',',')+' €</b>';
+}
+function createInvoiceForTimesheet(tsId){
+  const ctx=window.__invoiceCtx; if(!ctx||ctx.tsId!==tsId){toast('Bitte erneut öffnen',true);return;}
+  const t=timesheets.find(x=>x.id===tsId); if(!t)return;
+  const cu=custById(t.customerId); if(!cu)return;
+  const idx=+document.getElementById('inv_leistung').value;
+  const l=ctx.leistungen[idx];
+  const menge=parseFloat(document.getElementById('inv_menge').value)||0;
+  if(menge<=0){toast('Bitte eine gültige Menge angeben',true);return;}
+  const betrag=l.preis*menge;
+
+  const isGesetzlich=cu.insuranceType==='gesetzlich';
+  const kt=isGesetzlich?kostentraeger.find(k=>k.id===cu.kostentraegerId):null;
+  if(isGesetzlich && !kt){toast('Kostenträger nicht gefunden',true);return;}
   const empfaengerName=kt?kt.name:fullName(cu);
   const empfaengerAdresse=kt?((kt.strasse||'')+', '+(kt.plz||'')+' '+(kt.ort||'')):(cu.address||'');
   const empfaengerEmail=kt?(kt.email||''):'';
-  const stunden=tsMinutes(t)/60;
-  const betrag=stunden*STUNDENSATZ;
+
   const nummer='RE-'+new Date().getFullYear()+'-'+String(nextRechnungId++).padStart(4,'0');
   const re={
     id:nextRechnungId, nummer:nummer, stundenzettelId:t.id, customerId:cu.id, kostentraegerId:kt?kt.id:null,
     empfaengerName:empfaengerName, empfaengerAdresse:empfaengerAdresse, empfaengerEmail:empfaengerEmail,
-    datum:todayISO(), stunden:stunden, preisProStunde:STUNDENSATZ, betrag:betrag, status:'offen'
+    leistungName:l.name, leistungEinheit:l.einheit, menge:menge,
+    datum:todayISO(), stunden:tsMinutes(t)/60, preisProStunde:l.preis, betrag:betrag, status:'offen'
   };
   rechnungen.push(re);
   if(CLOUD){ cloudInsert('rechnungen',rechnungToRow(re)).then(r=>{ if(r) re.id=r.id; }); }
-  // Die drei Dokumente für diesen Abrechnungsfall herunterladen
   downloadRechnung(re.id);
   downloadTsLN(t.id);
   downloadAbtretung(cu.id);
+  closeModal();
   toast('Rechnung '+nummer+' erstellt – Rechnung, Leistungsnachweis & Abtretung werden heruntergeladen');
-  renderAdmin('hours');
+  renderAdmin('rechnungen');
 }
 function buildRechnungPdf(re, cu){
   if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
@@ -3325,23 +3478,25 @@ function buildRechnungPdf(re, cu){
   (String(re.empfaengerAdresse||'').split(',')).forEach(line=>{ if(line.trim()){ doc.text(line.trim(),margin,y); y+=14; } });
   y+=24;
   doc.setFont('helvetica','bold');doc.setFontSize(16);
-  doc.text('Rechnung '+re.nummer,margin,y); y+=24;
-  doc.setFont('helvetica','normal');doc.setFontSize(10);
+  doc.text('Rechnung '+re.nummer,margin,y); y+=18;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(110);
+  doc.text(re.kostentraegerId?'Kostenträger-Rechnung':'Privatrechnung',margin,y); y+=20;
+  doc.setTextColor(0);doc.setFontSize(10);
   doc.text('Rechnungsdatum: '+fmtDate(re.datum),margin,y); y+=14;
   doc.text('Leistungsempfänger / Versicherte(r): '+fullName(cu),margin,y); y+=14;
   if(cu.intern&&cu.intern.kvNr){ doc.text('Versichertennummer: '+cu.intern.kvNr,margin,y); y+=14; }
   y+=20;
   // Tabelle
-  const cols=[margin, margin+300, margin+380, pageW-margin];
+  const cols=[margin, margin+260, margin+340, margin+410, pageW-margin];
   doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setFillColor(240,236,250);
   doc.rect(margin,y-11,pageW-margin*2,18,'F');
-  doc.text('Leistung',cols[0]+2,y); doc.text('Stunden',cols[1]+2,y); doc.text('€/Std.',cols[2]+2,y); doc.text('Betrag',cols[3]-50,y);
+  doc.text('Leistung',cols[0]+2,y); doc.text('Menge',cols[1]+2,y); doc.text('Einzelpreis',cols[2]+2,y); doc.text('Betrag',cols[3]-30,y);
   y+=20; doc.setFont('helvetica','normal');
   doc.setDrawColor(210);doc.line(margin,y-6,pageW-margin,y-6);
-  doc.text('Alltagshilfe gem. § 45b SGB XI ('+fmtDate(re.datum)+')',cols[0]+2,y);
-  doc.text(String(re.stunden.toFixed(2)).replace('.',','),cols[1]+2,y);
+  doc.text(String(re.leistungName||'Alltagshilfe')+' ('+fmtDate(re.datum)+')',cols[0]+2,y);
+  doc.text(String((re.menge||re.stunden||0).toFixed(2)).replace('.',',')+' '+(re.leistungEinheit||''),cols[1]+2,y);
   doc.text(String(re.preisProStunde.toFixed(2)).replace('.',',')+' €',cols[2]+2,y);
-  doc.text(String(re.betrag.toFixed(2)).replace('.',',')+' €',cols[3]-50,y);
+  doc.text(String(re.betrag.toFixed(2)).replace('.',',')+' €',cols[3]-30,y);
   y+=10;
   doc.setDrawColor(120);doc.line(margin,y+6,pageW-margin,y+6); y+=26;
   doc.setFont('helvetica','bold');doc.setFontSize(12);
