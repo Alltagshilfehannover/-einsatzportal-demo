@@ -886,7 +886,7 @@ async function doLogin(){
       const { data, error } = await sb.auth.signInWithPassword({ email: email, password: pass });
       if(error){ toast('Anmeldung fehlgeschlagen: '+error.message, true); return; }
       // Rolle aus den Benutzer-Metadaten lesen (vom Entwickler zu setzen)
-      const role = (data.user && data.user.user_metadata && data.user.user_metadata.role) || 'staff';
+      const role = (data.user && data.user.app_metadata && data.user.app_metadata.role) || 'staff';
       enterApp(role, data.user);
     }catch(e){ toast('Anmeldung fehlgeschlagen',true); }
     return;
@@ -3244,7 +3244,7 @@ async function restoreSession(){
     const { data } = await sb.auth.getSession();
     if(data && data.session && data.session.user){
       const user=data.session.user;
-      const role=(user.user_metadata && user.user_metadata.role) || 'staff';
+      const role=(user.app_metadata && user.app_metadata.role) || 'staff';
       enterApp(role, user);
     }
   }catch(e){ console.error('Sitzung wiederherstellen fehlgeschlagen:', e&&(e.message||e)); }
@@ -3325,7 +3325,7 @@ async function saveNewPassword(){
     try{ await loadFromCloud(); }catch(e){}
     // DIREKT einloggen mit der bereits aktiven Sitzung -> ins eigene Profil
     const user=data.user;
-    const role=(user.user_metadata && user.user_metadata.role) || 'staff';
+    const role=(user.app_metadata && user.app_metadata.role) || 'staff';
     toast('Passwort gespeichert – willkommen!');
     enterApp(role, user);
   }catch(e){ toast('Aktion fehlgeschlagen: '+(e&&(e.message||e)),true); }
