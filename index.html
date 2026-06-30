@@ -928,6 +928,44 @@ async function bootCloud(){
     else { showCloudBadge('lokal'); }
   }
 }
+/* ============================================================
+   AUTOMATISCHE AKTUALISIERUNG (ADMIN/BÜRO)
+   ------------------------------------------------------------
+   Diese App lädt Daten aus Supabase bisher nur beim Start bzw.
+   beim Standortwechsel. Wenn z. B. ein Mitarbeiter unterwegs am
+   Handy einen Termin abschließt und einen Stundenzettel anlegt,
+   sah man das im bereits geöffneten Webadmin-Tab nicht, bis neu
+   geladen wurde. Deshalb: alle 25 Sekunden im Hintergrund neu
+   laden, solange jemand mit Büro-Rolle eingeloggt ist – und beim
+   Wechsel in die Stundenzettel-Ansicht zusätzlich sofort einmal.
+   ============================================================ */
+let __refreshInFlight=false;
+async function refreshCloudDataSilently(){
+  if(!CLOUD || __refreshInFlight) return;
+  if(!document.getElementById('appScreen').classList.contains('active')) return;
+  if(currentRole==='staff') return; // Mitarbeiter-Ansicht bleibt unverändert
+  const modalOpen=document.getElementById('modalBg').classList.contains('show');
+  const editingForm=__lastAdminView==='newcustomer'; // langes Formular nicht während Eingabe überschreiben
+  const ae=document.activeElement;
+  const typing=ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT');
+  if(modalOpen || editingForm || typing) return;
+  __refreshInFlight=true;
+  try{
+    await loadFromCloud();
+    if(__lastAdminView) renderAdmin(__lastAdminView);
+  }catch(e){ console.warn('Automatische Aktualisierung fehlgeschlagen:', e&&(e.message||e)); }
+  __refreshInFlight=false;
+}
+setInterval(refreshCloudDataSilently, 25000);
+async function manualRefreshHours(){
+  if(!CLOUD){ toast('Keine Cloud-Verbindung',true); return; }
+  toast('Aktualisiere…');
+  try{
+    await loadFromCloud();
+    renderAdmin('hours');
+    toast('Aktualisiert');
+  }catch(e){ toast('Aktualisierung fehlgeschlagen',true); }
+}
 function showCloudBadge(state){
   let b=document.getElementById('cloudBadge');
   if(!b){ b=document.createElement('div'); b.id='cloudBadge'; b.style.cssText='position:fixed;bottom:12px;right:12px;z-index:9999;font-size:12px;font-weight:600;padding:6px 11px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer'; b.title='Klicken für Lade-Diagnose'; b.onclick=showDiag; document.body.appendChild(b); }
@@ -1262,9 +1300,11 @@ function buildStaffNav(active){
     navItem('emergency','✆','Notfallnummer',active==='emergency');
 }
 /* ============ ADMIN VIEWS ============ */
+let __lastAdminView=null;
 function renderAdmin(view){
   if(!standorte.length && view!=='standorte' && currentRole==='admin'){ view='standorte'; toast('Bitte zuerst einen Standort anlegen',true); }
   if(!viewAllowed(view)){ toast('Kein Zugriff auf diesen Bereich', true); view=defaultViewForRole(); }
+  __lastAdminView=view;
   buildAdminNav(view);
   document.getElementById('sidebar').classList.remove('open');
   const c=document.getElementById('content');
@@ -1421,7 +1461,7 @@ function renderAdmin(view){
 
   if(view==='hours'){
     c.innerHTML=head('Stundenzettel','Alle von Mitarbeitern erfassten Einsatzzeiten. Vom Kunden unterschriebene Einsätze enthalten einen Leistungsnachweis.')+
-    '<div class="panel"><div class="panel-body" style="padding-top:16px">'+
+    '<div class="panel"><div class="panel-head"><h3>'+timesheets.length+' Einträge</h3><button class="btn-ghost btn-sm" onclick="manualRefreshHours()">↻ Aktualisieren</button></div><div class="panel-body" style="padding-top:16px">'+
     (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Leistungsnachweis</th><th>Rechnung</th><th></th></tr></thead><tbody>'+
       timesheets.map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);
         const sigOk=signatureLooksValid(t.signature);
