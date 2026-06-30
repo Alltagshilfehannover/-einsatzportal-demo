@@ -596,6 +596,31 @@ function requireAdminAction(){
   if(currentRole!=='admin'){ toast('Keine Berechtigung für diese Aktion', true); return false; }
   return true;
 }
+/* ============ ROLLEN / RECHTE ============
+   Rollen: admin (Geschäftsführung, voller Zugriff), staff (Mitarbeiter-App, unverändert),
+   buero (Büro – Standort-Verwaltung), callcenter (Kundenaufnahme & CRM),
+   buchhaltung (Abrechnung & kaufmännische Übersicht). */
+const ROLE_VIEWS={
+  admin:null, // null = alle Views erlaubt
+  buero:['dashboard','staff','customers','newcustomer','applications','kommunikation','hours','leistungen','calendar','mylogin'],
+  callcenter:['dashboard','customers','newcustomer','kommunikation','calendar','mylogin'],
+  buchhaltung:['dashboard','rechnungen','hours','customers','staff','kostentraeger','leistungen','standorte','calendar','mylogin']
+};
+const ROLE_LABELS={admin:'Büro',buero:'Büro',callcenter:'CallCenter',buchhaltung:'Buchhaltung',staff:'Mitarbeiter'};
+function hasRole(...roles){ return roles.includes(currentRole); }
+function requireRoleAction(...roles){
+  if(!hasRole(...roles)){ toast('Keine Berechtigung für diese Aktion', true); return false; }
+  return true;
+}
+function isOfficeRole(){ return currentRole==='admin'||currentRole==='buero'||currentRole==='callcenter'||currentRole==='buchhaltung'; }
+function viewAllowed(view){
+  const allowed=ROLE_VIEWS[currentRole];
+  return allowed===null||allowed===undefined?true:allowed.includes(view);
+}
+function defaultViewForRole(){
+  const allowed=ROLE_VIEWS[currentRole];
+  return (allowed&&allowed[0])||'dashboard';
+}
 function requireStaffAction(){
   if(currentRole!=='staff'){ toast('Keine Berechtigung für diese Aktion', true); return false; }
   return true;
@@ -998,6 +1023,80 @@ async function callCreateStaffAccount(payload){
   return data;
 }
 
+/* ============================================================
+   ZUGÄNGE & ROLLEN (Admin verwaltet Büro/CallCenter/Buchhaltung/Admin-
+   Logins direkt aus der App). Ruft die Edge Function "manage-users" auf,
+   die serverseitig (mit Service-Role-Key) Nutzer einlädt, auflistet und
+   deren Rolle setzt. Diese Funktion muss einmalig in Supabase deployt
+   werden (Quelltext + Anleitung erhältst du separat).
+   ============================================================ */
+async function callManageUsers(action, payload){
+  const { data:sessionData } = await sb.auth.getSession();
+  const accessToken = sessionData && sessionData.session && sessionData.session.access_token;
+  if(!accessToken) throw new Error('Keine gültige Admin-Sitzung');
+  const url = SUPABASE_URL + '/functions/v1/manage-users';
+  const res = await fetch(url, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+accessToken },
+    body: JSON.stringify(sanitizeDeep(Object.assign({action:action}, payload)))
+  });
+  let data={};
+  try{ data=await res.json(); }catch(e){}
+  if(!res.ok || data.error){ throw new Error(data.error || ('HTTP '+res.status)); }
+  return data;
+}
+async function loadUserList(){
+  const body=document.getElementById('zugaengeListBody');
+  if(!body) return;
+  if(!CLOUD){ body.innerHTML='<p style="color:var(--muted);padding:8px 0">Keine Cloud-Verbindung.</p>'; return; }
+  try{
+    const resp=await callManageUsers('list',{});
+    renderUserListTable(resp.users||[]);
+  }catch(e){
+    body.innerHTML='<p style="color:var(--danger);padding:8px 0">Fehler beim Laden: '+(e.message||e)+'<br><span style="color:var(--muted);font-size:12.5px">Ist die Edge Function "manage-users" in Supabase deployt?</span></p>';
+  }
+}
+function renderUserListTable(users){
+  const body=document.getElementById('zugaengeListBody'); if(!body) return;
+  if(!users.length){ body.innerHTML='<p style="color:var(--muted);padding:8px 0">Keine Zugänge gefunden.</p>'; return; }
+  body.innerHTML='<table><thead><tr><th>E-Mail</th><th>Rolle</th><th>Status</th><th></th></tr></thead><tbody>'+
+    users.map(u=>{
+      const role=(u.role||'staff');
+      return '<tr><td>'+u.email+'</td>'+
+      '<td><select id="zg_role_'+u.id+'">'+Object.keys(ROLE_LABELS).map(r=>'<option value="'+r+'" '+(role===r?'selected':'')+'>'+ROLE_LABELS[r]+' ('+r+')</option>').join('')+'</select></td>'+
+      '<td>'+(u.confirmed?'<span class="tag green">bestätigt</span>':'<span class="tag amber">Einladung offen</span>')+'</td>'+
+      '<td style="text-align:right"><button class="btn-primary btn-sm" style="width:auto" onclick="setUserRole(\''+u.id+'\')">Rolle speichern</button></td></tr>';
+    }).join('')+
+    '</tbody></table>';
+}
+async function inviteOfficeUser(){
+  if(!requireAdminAction()) return;
+  const email=val('zg_email');
+  if(!isValidEmail(email)){ toast('Bitte eine gültige E-Mail-Adresse eingeben',true); return; }
+  const role=document.getElementById('zg_role').value;
+  toast('Sende Einladung an '+email+' …');
+  try{
+    await callManageUsers('invite',{email:email, role:role});
+    toast('Einladung an '+email+' gesendet ('+ROLE_LABELS[role]+')');
+    document.getElementById('zg_email').value='';
+    loadUserList();
+  }catch(e){
+    toast('Fehler beim Einladen: '+(e.message||e),true);
+  }
+}
+async function setUserRole(userId){
+  if(!requireAdminAction()) return;
+  const sel=document.getElementById('zg_role_'+userId); if(!sel) return;
+  const role=sel.value;
+  try{
+    await callManageUsers('setRole',{userId:userId, role:role});
+    toast('Rolle aktualisiert: '+ROLE_LABELS[role]);
+    loadUserList();
+  }catch(e){
+    toast('Fehler beim Speichern der Rolle: '+(e.message||e),true);
+  }
+}
+
 async function doLogin(){
   const email=document.getElementById('user').value.trim();
   const pass=document.getElementById('pass').value;
@@ -1025,13 +1124,14 @@ async function doLogin(){
 function enterApp(role, user){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').classList.add('active');
-  if(role==='admin'){
-    currentRole='admin';
-    document.getElementById('rolePill').textContent='Büro';
-    document.getElementById('whoName').textContent= user? (user.email||'Büro') : 'Daniel D.';
-    document.getElementById('whoRole').textContent='Büro / Verwaltung';
-    document.getElementById('avatar').textContent='D';
-    try{ renderAdmin('dashboard'); }
+  if(role==='admin'||role==='buero'||role==='callcenter'||role==='buchhaltung'){
+    currentRole=role;
+    const label=ROLE_LABELS[role]||'Büro';
+    document.getElementById('rolePill').textContent=label;
+    document.getElementById('whoName').textContent= user? (user.email||label) : 'Daniel D.';
+    document.getElementById('whoRole').textContent=label+(role==='admin'?' / Verwaltung':'');
+    document.getElementById('avatar').textContent=label[0];
+    try{ renderAdmin(defaultViewForRole()); }
     catch(e){ console.error('Dashboard-Render Problem:', e&&(e.message||e)); }
   }else{
     currentRole='staff';
@@ -1099,35 +1199,47 @@ async function showForgot(){
 
 /* ============ NAVIGATION ============ */
 function navItem(id,icon,label,active,badge,blue){
-  return '<button class="nav-item '+(active?'active':'')+'" onclick="'+(currentRole==='admin'?'renderAdmin':'renderStaff')+'(\''+id+'\')"><span class="ic">'+icon+'</span>'+label+(badge?'<span class="badge'+(blue?' blue':'')+'">'+badge+'</span>':'')+'</button>';
+  return '<button class="nav-item '+(active?'active':'')+'" onclick="'+(currentRole==='staff'?'renderStaff':'renderAdmin')+'(\''+id+'\')"><span class="ic">'+icon+'</span>'+label+(badge?'<span class="badge'+(blue?' blue':'')+'">'+badge+'</span>':'')+'</button>';
 }
 function buildAdminNav(active){
   const open=jobs.filter(j=>j.status==='available').length;
   const newApps=applications.filter(a=>a.status!=='aktiv').length;
   const offeneKomm=kommunikationen.filter(k=>k.status==='offen').length;
   const offeneAufgaben=aufgaben.filter(a=>a.status==='offen').length;
-  document.getElementById('sidebar').innerHTML=
-    '<div class="nav-group">Übersicht</div>'+
-    navItem('dashboard','◧','Dashboard',active==='dashboard')+
-    navItem('standorte','🏢','Standorte',active==='standorte')+
-    navItem('jobs','◎','Aufträge',active==='jobs',open)+
-    '<div class="nav-group">Verwaltung</div>'+
-    navItem('staff','♟','Mitarbeiter',active==='staff')+
-    navItem('applications','📥','Bewerbungen',active==='applications',newApps||'',true)+
-    navItem('customers','◍','Kunden',active==='customers')+
-    navItem('newcustomer','＋','Kunde anlegen',active==='newcustomer')+
-    navItem('kommunikation','💬','Kommunikation',active==='kommunikation',offeneKomm||'',true)+
-    navItem('aufgaben','☑','Aufgaben',active==='aufgaben',offeneAufgaben||'')+
-    navItem('kostentraeger','🏦','Kostenträger',active==='kostentraeger')+
-    navItem('leistungen','📋','Leistungen',active==='leistungen')+
-    '<div class="nav-group">Abwicklung</div>'+
-    navItem('hours','⏱','Stundenzettel',active==='hours')+
-    navItem('rechnungen','🧾','Rechnungen',active==='rechnungen')+
-    navItem('payroll','€','Lohnabrechnung',active==='payroll')+
-    navItem('notes','✎','Notizen',active==='notes')+
-    navItem('calendar','▦','Kalender',active==='calendar')+
-    '<div class="nav-group">Konto</div>'+
-    navItem('mylogin','🔑','Meine Zugangsdaten',active==='mylogin');
+  const groups=[
+    ['Übersicht',[
+      navItem('dashboard','◧','Dashboard',active==='dashboard'),
+      viewAllowed('standorte')?navItem('standorte','🏢','Standorte',active==='standorte'):'',
+      viewAllowed('jobs')?navItem('jobs','◎','Aufträge',active==='jobs',open):''
+    ]],
+    ['Verwaltung',[
+      viewAllowed('staff')?navItem('staff','♟','Mitarbeiter',active==='staff'):'',
+      viewAllowed('applications')?navItem('applications','📥','Bewerbungen',active==='applications',newApps||'',true):'',
+      viewAllowed('customers')?navItem('customers','◍','Kunden',active==='customers'):'',
+      viewAllowed('newcustomer')?navItem('newcustomer','＋','Kunde anlegen',active==='newcustomer'):'',
+      viewAllowed('kommunikation')?navItem('kommunikation','💬','Kommunikation',active==='kommunikation',offeneKomm||'',true):'',
+      viewAllowed('aufgaben')?navItem('aufgaben','☑','Aufgaben',active==='aufgaben',offeneAufgaben||''):'',
+      viewAllowed('kostentraeger')?navItem('kostentraeger','🏦','Kostenträger',active==='kostentraeger'):'',
+      viewAllowed('leistungen')?navItem('leistungen','📋','Leistungen',active==='leistungen'):''
+    ]],
+    ['Abwicklung',[
+      viewAllowed('hours')?navItem('hours','⏱','Stundenzettel',active==='hours'):'',
+      viewAllowed('rechnungen')?navItem('rechnungen','🧾','Rechnungen',active==='rechnungen'):'',
+      viewAllowed('payroll')?navItem('payroll','€','Lohnabrechnung',active==='payroll'):'',
+      viewAllowed('notes')?navItem('notes','✎','Notizen',active==='notes'):'',
+      viewAllowed('calendar')?navItem('calendar','▦','Kalender',active==='calendar'):''
+    ]],
+    ['System',[
+      viewAllowed('zugaenge')?navItem('zugaenge','👥','Zugänge & Rollen',active==='zugaenge'):''
+    ]],
+    ['Konto',[
+      viewAllowed('mylogin')?navItem('mylogin','🔑','Meine Zugangsdaten',active==='mylogin'):''
+    ]]
+  ];
+  document.getElementById('sidebar').innerHTML=groups.map(([label,items])=>{
+    const html=items.join('');
+    return html?'<div class="nav-group">'+label+'</div>'+html:'';
+  }).join('');
 }
 function buildStaffNav(active){
   const m=me();
@@ -1151,7 +1263,8 @@ function buildStaffNav(active){
 }
 /* ============ ADMIN VIEWS ============ */
 function renderAdmin(view){
-  if(!standorte.length && view!=='standorte'){ view='standorte'; toast('Bitte zuerst einen Standort anlegen',true); }
+  if(!standorte.length && view!=='standorte' && currentRole==='admin'){ view='standorte'; toast('Bitte zuerst einen Standort anlegen',true); }
+  if(!viewAllowed(view)){ toast('Kein Zugriff auf diesen Bereich', true); view=defaultViewForRole(); }
   buildAdminNav(view);
   document.getElementById('sidebar').classList.remove('open');
   const c=document.getElementById('content');
@@ -1221,14 +1334,15 @@ function renderAdmin(view){
       if(!q)return true;
       return (fullName(s)+' '+(s.role||'')+' '+(s.area||'')+' '+(s.skills||[]).join(' ')).toLowerCase().includes(q);
     });
-    c.innerHTML=head('Mitarbeiter','Auf einen Mitarbeiter klicken, um alle Daten anzusehen und zu bearbeiten.')+
-    '<div class="panel"><div class="panel-head"><h3>Team ('+filtered.length+(filtered.length!==staff.length?' von '+staff.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportMitarbeiter()">⬇ CSV</button><button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button></div></div>'+
+    const canManageStaff=hasRole('admin');
+    c.innerHTML=head('Mitarbeiter',canManageStaff?'Auf einen Mitarbeiter klicken, um alle Daten anzusehen und zu bearbeiten.':'Übersicht über alle Mitarbeiter:innen.')+
+    '<div class="panel"><div class="panel-head"><h3>Team ('+filtered.length+(filtered.length!==staff.length?' von '+staff.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportMitarbeiter()">⬇ CSV</button>'+(canManageStaff?'<button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button>':'')+'</div></div>'+
     '<div class="list-toolbar"><input class="search-input" id="staffSearchInput" placeholder="🔍 Mitarbeiter suchen (Name, Funktion, Gebiet)…" value="'+(staffSearch||'').replace(/"/g,'&quot;')+'" oninput="staffSearch=this.value;renderAdmin(\'staff\');setTimeout(()=>{const e=document.getElementById(\'staffSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
       '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['login','Mit Login'],['nologin','Ohne Login']].map(([v,l])=>'<span class="chip '+(staffFilter===v?'on':'')+'" onclick="staffFilter=\''+v+'\';renderAdmin(\'staff\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
     '<div class="panel-body" style="padding-top:8px"><table>'+
-      '<thead><tr><th>Name</th><th>Funktion</th><th>Gebiet</th><th>Login</th><th>Status</th></tr></thead><tbody>'+
-      (filtered.length?filtered.map(s=>'<tr class="clickable" onclick="editStaff('+s.id+')"><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:'+(s.color||'#6d28d9')+';margin-right:7px"></span><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td><td>'+statusTag(s.status)+'</td></tr>').join(''):'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Keine Mitarbeiter gefunden.</td></tr>')+
+      '<thead><tr><th>Name</th><th>Funktion</th><th>Gebiet</th><th>Login</th><th>Status</th>'+(canManageStaff?'<th></th>':'')+'</tr></thead><tbody>'+
+      (filtered.length?filtered.map(s=>'<tr'+(canManageStaff?' class="clickable" onclick="editStaff('+s.id+')"':'')+'><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:'+(s.color||'#6d28d9')+';margin-right:7px"></span><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td><td>'+statusTag(s.status)+'</td>'+(canManageStaff?'<td><button class="btn-danger-ghost btn-sm" onclick="event.stopPropagation();deleteStaff('+s.id+')">Löschen</button></td>':'')+'</tr>').join(''):'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Keine Mitarbeiter gefunden.</td></tr>')+
       '</tbody></table></div></div>';
   }
 
@@ -1255,13 +1369,14 @@ function renderAdmin(view){
       if(!q)return true;
       return (fullName(c)+' '+(c.area||'')+' '+(c.city||'')+' '+(c.need||[]).join(' ')).toLowerCase().includes(q);
     });
-    c.innerHTML=head('Kunden','Auf einen Kunden klicken, um Daten anzusehen und zu bearbeiten. Über die Knöpfe rechts erstellst du die Dokumente.')+
-    '<div class="panel"><div class="panel-head"><h3>Kunden ('+filtered.length+(filtered.length!==customers.length?' von '+customers.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportKunden()">⬇ CSV</button><button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button></div></div>'+
+    const canCreateCust=hasRole('admin','buero','callcenter');
+    c.innerHTML=head('Kunden',canCreateCust?'Auf einen Kunden klicken, um Daten anzusehen und zu bearbeiten. Über die Knöpfe rechts erstellst du die Dokumente.':'Übersicht über alle Kund:innen.')+
+    '<div class="panel"><div class="panel-head"><h3>Kunden ('+filtered.length+(filtered.length!==customers.length?' von '+customers.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportKunden()">⬇ CSV</button>'+(canCreateCust?'<button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button>':'')+'</div></div>'+
     '<div class="list-toolbar"><input class="search-input" id="custSearchInput" placeholder="🔍 Kunde suchen (Name, Gebiet, Bedarf)…" value="'+(custSearch||'').replace(/"/g,'&quot;')+'" oninput="custSearch=this.value;renderAdmin(\'customers\');setTimeout(()=>{const e=document.getElementById(\'custSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
       '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['pg3','Pflegegrad 3+'],['ohneabtretung','Ohne Abtretung']].map(([v,l])=>'<span class="chip '+(custFilter===v?'on':'')+'" onclick="custFilter=\''+v+'\';renderAdmin(\'customers\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
     '<div class="panel-body" style="padding-top:8px"><table>'+
-      '<thead><tr><th>Name</th><th>Gebiet</th><th>Bedarf</th><th>Status</th><th>Dokumente</th></tr></thead><tbody>'+
+      '<thead><tr><th>Name</th><th>Gebiet</th><th>Bedarf</th><th>Status</th><th>Dokumente</th>'+(canCreateCust?'<th></th>':'')+'</tr></thead><tbody>'+
       (filtered.length?filtered.map(c=>'<tr>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')"><b>'+fullName(c)+'</b></td>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')">'+c.area+'</td>'+
@@ -1269,11 +1384,29 @@ function renderAdmin(view){
         '<td>'+(c.status==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag grey">'+c.status+'</span>')+'</td>'+
         '<td style="white-space:nowrap"><button class="btn-ghost btn-sm" onclick="event.stopPropagation();startAbtretung('+c.id+')">Abtretung</button> '+
         '<button class="btn-ghost btn-sm" onclick="event.stopPropagation();startLeistungsnachweis('+c.id+')">Leistungsnachweis</button></td>'+
-      '</tr>').join(''):'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Keine Kunden gefunden.</td></tr>')+
+        (canCreateCust?'<td><button class="btn-danger-ghost btn-sm" onclick="event.stopPropagation();deleteCustomer('+c.id+')">Löschen</button></td>':'')+
+      '</tr>').join(''):'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Keine Kunden gefunden.</td></tr>')+
       '</tbody></table></div></div>';
   }
 
   if(view==='newcustomer'){ c.innerHTML=head('Kunde anlegen','Neuen Kunden erfassen und als Auftrag freigeben.')+customerFormHTML(null); }
+
+  if(view==='zugaenge'){
+    if(!requireAdminAction()){ /* nav blendet das eh aus, doppelte Absicherung */ }
+    c.innerHTML=head('Zugänge & Rollen','Login-Konten und ihre Rollen verwalten – Büro, CallCenter, Buchhaltung und Admin. Mitarbeiter-Logins entstehen weiterhin automatisch über genehmigte Bewerbungen.')+
+    '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Neuen Zugang einladen</h3></div>'+
+    '<div class="panel-body content-form" style="padding-top:16px"><div class="form-row">'+
+      '<div><label>E-Mail *</label><input id="zg_email" type="email" placeholder="name@firma.de"></div>'+
+      '<div><label>Rolle *</label><select id="zg_role">'+
+        Object.keys(ROLE_LABELS).filter(r=>r!=='staff').map(r=>'<option value="'+r+'">'+ROLE_LABELS[r]+' ('+r+')</option>').join('')+
+      '</select></div></div>'+
+      '<button class="btn-primary btn-sm" style="width:auto;margin-top:10px" onclick="inviteOfficeUser()">＋ Einladung senden</button>'+
+      '<p style="color:var(--muted);font-size:12.5px;margin-top:8px">Die Person erhält eine E-Mail mit Link zum Passwort setzen und kann sich danach direkt mit der zugewiesenen Rolle anmelden.</p>'+
+    '</div></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Bestehende Zugänge</h3><button class="btn-ghost btn-sm" onclick="loadUserList()">↻ Aktualisieren</button></div>'+
+    '<div class="panel-body" style="padding-top:10px" id="zugaengeListBody"><p style="color:var(--muted);padding:8px 0">Lade Zugänge…</p></div></div>';
+    loadUserList();
+  }
 
   if(view==='mylogin'){
     c.innerHTML=head('Meine Zugangsdaten','Deine eigenen Anmeldedaten verwalten.')+
@@ -1325,39 +1458,42 @@ function renderAdmin(view){
     '</div></div>';
   }
   if(view==='standorte'){
+    const canManageStandorte=hasRole('admin');
     c.innerHTML=head('Standorte','Eure einzelnen Unternehmen/Standorte. Jeder Standort hat eigene Kunden, Mitarbeiter, Kostenträger, Leistungen und Rechnungen. Über die Auswahl oben rechts wechselst du zwischen ihnen.')+
-    '<div class="panel"><div class="panel-head"><h3>'+standorte.length+' Standorte</h3><button class="btn-primary btn-sm" style="width:auto" onclick="openStandortModal(null)">＋ Neuer Standort</button></div>'+
+    '<div class="panel"><div class="panel-head"><h3>'+standorte.length+' Standorte</h3>'+(canManageStandorte?'<button class="btn-primary btn-sm" style="width:auto" onclick="openStandortModal(null)">＋ Neuer Standort</button>':'')+'</div>'+
     '<div class="panel-body" style="padding-top:10px">'+
     (standorte.length?'<table><thead><tr><th>Name</th><th>Firma</th><th>Adresse</th><th>Interne Notizen</th><th></th></tr></thead><tbody>'+
       standorte.map(s=>'<tr'+(s.id===currentStandortId?' style="background:var(--petrol-soft)"':'')+'><td><b>'+s.name+'</b>'+(s.id===currentStandortId?' <span class="tag green" style="font-size:10px">aktiv</span>':'')+'</td><td>'+(s.firma||'—')+'</td><td>'+(s.strasse?s.strasse+', ':'')+(s.plz||'')+' '+(s.ort||'')+'</td><td style="max-width:240px;font-size:13px;color:var(--muted)">'+(s.notizen||'—')+'</td>'+
       '<td style="text-align:right;display:flex;gap:6px;justify-content:flex-end">'+
       (s.id!==currentStandortId?'<button class="btn-ghost btn-sm" onclick="switchStandort('+s.id+')">Wechseln</button>':'')+
-      '<button class="btn-ghost btn-sm" onclick="openStandortModal('+s.id+')">Bearbeiten</button></td></tr>').join('')+
+      (canManageStandorte?'<button class="btn-ghost btn-sm" onclick="openStandortModal('+s.id+')">Bearbeiten</button>':'')+'</td></tr>').join('')+
       '</tbody></table>':'<div class="empty"><div class="big">🏢</div><b>Noch kein Standort angelegt</b><p style="margin-top:6px">Lege hier euer erstes Unternehmen/Standort an (z. B. „Alltagshilfe Hannover"), bevor du Kunden oder Mitarbeiter anlegst.</p></div>')+
     '</div></div>';
   }
   if(view==='kostentraeger'){
+    const canManageKt=hasRole('admin');
     c.innerHTML=head('Kostenträger','Krankenkassen / Pflegekassen, an die Rechnungen gestellt werden können. Bei einem Kunden hinterlegt, übernimmt die Rechnung automatisch Name und Adresse.')+
     '<div class="panel"><div class="panel-head"><h3>'+kostentraeger.length+' Kostenträger</h3>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
       '<button class="btn-ghost btn-sm" onclick="exportKostentraeger()">⬇ CSV Export</button>'+
-      '<label class="btn-ghost btn-sm" style="cursor:pointer">⬆ CSV Import<input type="file" accept=".csv" style="display:none" onchange="importKostentraegerFile(this)"></label>'+
-      '<button class="btn-primary btn-sm" style="width:auto" onclick="openKtModal(null)">＋ Neuer Kostenträger</button>'+
+      (canManageKt?'<label class="btn-ghost btn-sm" style="cursor:pointer">⬆ CSV Import<input type="file" accept=".csv" style="display:none" onchange="importKostentraegerFile(this)"></label>'+
+      '<button class="btn-primary btn-sm" style="width:auto" onclick="openKtModal(null)">＋ Neuer Kostenträger</button>':'')+
       '</div></div>'+
     '<div class="panel-body" style="padding-top:10px">'+
     (kostentraeger.length?'<table><thead><tr><th>Name</th><th>Adresse</th><th>E-Mail</th><th></th></tr></thead><tbody>'+
       kostentraeger.map(k=>'<tr><td><b>'+k.name+'</b></td><td>'+(k.strasse||'')+', '+(k.plz||'')+' '+(k.ort||'')+'</td><td>'+(k.email||'—')+'</td>'+
-      '<td style="text-align:right"><button class="btn-ghost btn-sm" onclick="openKtModal('+k.id+')">Bearbeiten</button> <button class="btn-danger-ghost btn-sm" onclick="deleteKt('+k.id+')">Löschen</button></td></tr>').join('')+
+      '<td style="text-align:right">'+(canManageKt?'<button class="btn-ghost btn-sm" onclick="openKtModal('+k.id+')">Bearbeiten</button> <button class="btn-danger-ghost btn-sm" onclick="deleteKt('+k.id+')">Löschen</button>':'')+'</td></tr>').join('')+
       '</tbody></table>':'<div class="empty"><div class="big">🏦</div><b>Noch keine Kostenträger</b><p style="margin-top:6px">Lege hier Krankenkassen an, an die ihr Rechnungen stellt.</p></div>')+
     '</div></div>';
   }
   if(view==='leistungen'){
+    const canManageLk=hasRole('admin');
     c.innerHTML=head('Leistungen','Eigene Leistungsarten mit Preis und Abrechnungseinheit. Diese werden neuen Kunden automatisch vorgeschlagen und können je Kunde individuell angepasst werden.')+
-    '<div class="panel"><div class="panel-head"><h3>'+leistungenKatalog.length+' Leistungen</h3><button class="btn-primary btn-sm" style="width:auto" onclick="openLkModal(null)">＋ Neue Leistung</button></div>'+
+    '<div class="panel"><div class="panel-head"><h3>'+leistungenKatalog.length+' Leistungen</h3>'+(canManageLk?'<button class="btn-primary btn-sm" style="width:auto" onclick="openLkModal(null)">＋ Neue Leistung</button>':'')+'</div>'+
     '<div class="panel-body" style="padding-top:10px">'+
     (leistungenKatalog.length?'<table><thead><tr><th>Name</th><th>Preis</th><th>Einheit</th><th></th></tr></thead><tbody>'+
       leistungenKatalog.map(l=>'<tr><td><b>'+l.name+'</b></td><td>'+Number(l.preis||0).toFixed(2).replace('.',',')+' €</td><td>'+l.einheit+'</td>'+
-      '<td style="text-align:right"><button class="btn-ghost btn-sm" onclick="openLkModal('+l.id+')">Bearbeiten</button> <button class="btn-danger-ghost btn-sm" onclick="deleteLk('+l.id+')">Löschen</button></td></tr>').join('')+
+      '<td style="text-align:right">'+(canManageLk?'<button class="btn-ghost btn-sm" onclick="openLkModal('+l.id+')">Bearbeiten</button> <button class="btn-danger-ghost btn-sm" onclick="deleteLk('+l.id+')">Löschen</button>':'')+'</td></tr>').join('')+
       '</tbody></table>':'<div class="empty"><div class="big">📋</div><b>Noch keine Leistungen definiert</b><p style="margin-top:6px">Lege hier eure Leistungsarten mit Preis und Abrechnungseinheit an (z. B. „Haushaltshilfe" – 25 € – pro Stunde).</p></div>')+
     '</div></div>';
   }
@@ -1534,6 +1670,17 @@ function saveStaff(){
   document.getElementById('modalBox').classList.remove('wide');
   renderAdmin('staff');
 }
+function deleteStaff(id){
+  if(!requireAdminAction()) return;
+  const s=staff.find(x=>x.id===id); if(!s) return;
+  confirmDangerDelete('Mitarbeiter löschen','Soll <b>'+fullName(s)+'</b> wirklich endgültig gelöscht werden? Zugehörige Termine und Stundenzettel bleiben in der Datenbank bestehen, verweisen danach aber auf keinen Mitarbeiter mehr. Ein eventuell vorhandenes Login-Konto wird dadurch NICHT gelöscht – das bitte separat in Supabase entfernen.',function(){
+    staff=staff.filter(x=>x.id!==id);
+    jobs=jobs.filter(j=>j.assignedTo!==id);
+    if(CLOUD) cloudDelete('mitarbeiter',id);
+    document.getElementById('modalBox').classList.remove('wide');
+    toast('Mitarbeiter gelöscht');renderAdmin('staff');
+  });
+}
 function createLogin(id){
   if(!requireAdminAction()) return;
   const s=staff.find(x=>x.id===id);
@@ -1677,7 +1824,7 @@ function gatherCustomer(c){
   });
 }
 function createCustomer(){
-  if(!requireAdminAction()) return;
+  if(!requireRoleAction('admin','buero','callcenter')) return;
   const c={id:nextCustomerId++,status:'Interessent',intern:{}};
   gatherCustomer(c);
   // Sicherheitsmechanismus: Pflichtfelder prüfen, sonst keine Freigabe
@@ -1704,10 +1851,11 @@ function createCustomer(){
   }
 }
 function editCustomer(id){
-  if(!requireAdminAction()) return;
+  if(!requireRoleAction('admin','buero','callcenter','buchhaltung')) return;
   const c=custById(id);
+  const readOnly=!hasRole('admin','buero','callcenter');
   document.getElementById('modalBox').classList.add('wide');
-  document.getElementById('modalTitle').textContent='Kunde bearbeiten';
+  document.getElementById('modalTitle').textContent=readOnly?'Kunde (nur Ansicht)':'Kunde bearbeiten';
   let docsHtml='<div class="section-label">📁 Dokumente (Kunden-Ordner)</div>';
   // Abtretung
   if(c.abtretung){
@@ -1738,8 +1886,8 @@ function editCustomer(id){
 
   document.getElementById('modalBody').innerHTML=customerFormHTML(c).replace('<div class="panel"><div class="panel-body content-form" style="padding-top:18px">','<div class="content-form">').replace(/<\/div><\/div>$/,'</div>')+docsHtml+'<div style="margin-top:18px">'+custKommListHTML(c.id)+'</div>';
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
-    '<button class="btn-ghost" style="width:auto" onclick="startAbtretung('+c.id+')">+ Abtretung</button>'+
-    '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="updateCustomer('+c.id+')">Speichern</button>';
+    (readOnly?'':'<button class="btn-ghost" style="width:auto" onclick="startAbtretung('+c.id+')">+ Abtretung</button>'+
+    '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="updateCustomer('+c.id+')">Speichern</button>');
   openModal();
 }
 function downloadCustLN(custId, idx){
@@ -1786,11 +1934,22 @@ function deleteExtDoc(custId, idx){
   editCustomer(custId);
 }
 function updateCustomer(id){
-  if(!requireAdminAction()) return;
+  if(!requireRoleAction('admin','buero','callcenter')) return;
   const c=custById(id);gatherCustomer(c);
   if(CLOUD) cloudUpdate('kunden',id,custToRow(c));
   closeModal();document.getElementById('modalBox').classList.remove('wide');
   toast('Kundendaten gespeichert');renderAdmin('customers');
+}
+function deleteCustomer(id){
+  if(!requireRoleAction('admin','buero','callcenter')) return;
+  const cu=custById(id); if(!cu) return;
+  confirmDangerDelete('Kunde löschen','Soll <b>'+fullName(cu)+'</b> wirklich endgültig gelöscht werden? Zugehörige Aufträge, Termine und Stundenzettel bleiben in der Datenbank bestehen, verweisen danach aber auf keinen Kunden mehr.',function(){
+    customers=customers.filter(c=>c.id!==id);
+    jobs=jobs.filter(j=>j.customerId!==id);
+    if(CLOUD) cloudDelete('kunden',id);
+    document.getElementById('modalBox').classList.remove('wide');
+    toast('Kunde gelöscht');renderAdmin('customers');
+  });
 }
 /* ============ BEWERBUNGS-GENEHMIGUNG (ADMIN) ============ */
 function showApplication(id){
@@ -1829,12 +1988,23 @@ function showApplication(id){
     fileRow('Personalausweis Vorderseite',a.idFront,'idFront')+fileRow('Personalausweis Rückseite',a.idBack,'idBack')+fileRow('Selfie',a.selfie,'selfie')+
     (a.isStudent?fileRow('Immatrikulationsbescheinigung',a.enrollmentFile,'enrollment'):'')+
     '<div class="reveal-row"><span class="k">AGB & Datenschutz gelesen</span><span class="v">'+(a.agb?'<span class="tag green">✓ bestätigt</span>':'<span class="tag red">offen</span>')+'</span></div>';
-  let foot='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  let foot='<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
+    '<button class="btn-danger-ghost" style="width:auto" onclick="deleteApplication('+id+')">Löschen</button>';
   if(a.status==='neu') foot+='<button class="btn-primary" style="width:auto;padding:11px 18px" onclick="approveApp('+id+')">✓ Genehmigen</button>';
   if(a.status==='geprüft') foot+='<button class="btn-primary" style="width:auto;padding:11px 18px;background:var(--blue)" onclick="sendAppLogin('+id+')">🔑 Zugangsdaten erstellen & senden</button>';
   if(a.status==='versendet') foot+='<span style="font-size:13.5px;color:var(--good);align-self:center">✓ Mitarbeiter ist aktiv – kann sich anmelden</span>';
   document.getElementById('modalFoot').innerHTML=foot;
   openModal();
+}
+function deleteApplication(id){
+  if(!requireRoleAction('admin','buero')) return;
+  const a=applications.find(x=>x.id===id); if(!a) return;
+  confirmDangerDelete('Bewerbung löschen','Soll die Bewerbung von <b>'+fullName(a)+'</b> wirklich endgültig gelöscht werden?',function(){
+    applications=applications.filter(x=>x.id!==id);
+    if(CLOUD) cloudDelete('bewerbungen',id);
+    document.getElementById('modalBox').classList.remove('wide');
+    toast('Bewerbung gelöscht');renderAdmin('applications');
+  });
 }
 function viewStaffDoc(staffId, key, label){
   const s=staff.find(x=>x.id===staffId); if(!s||!s.docImages||!s.docImages[key])return;
@@ -3622,9 +3792,12 @@ function deleteKt(id){
   if(!requireAdminAction()) return;
   const inUse=customers.some(c=>c.kostentraegerId===id);
   if(inUse){ toast('Kann nicht gelöscht werden – ist noch bei mindestens einem Kunden hinterlegt',true); return; }
-  kostentraeger=kostentraeger.filter(k=>k.id!==id);
-  if(CLOUD) cloudDelete('kostentraeger',id);
-  toast('Kostenträger gelöscht');renderAdmin('kostentraeger');
+  const k=kostentraeger.find(x=>x.id===id); if(!k) return;
+  confirmDangerDelete('Kostenträger löschen','Soll <b>'+k.name+'</b> wirklich endgültig gelöscht werden?',function(){
+    kostentraeger=kostentraeger.filter(x=>x.id!==id);
+    if(CLOUD) cloudDelete('kostentraeger',id);
+    toast('Kostenträger gelöscht');renderAdmin('kostentraeger');
+  });
 }
 
 /* ============================================================
@@ -3751,10 +3924,13 @@ function saveLk(id){
 }
 function deleteLk(id){
   if(!requireAdminAction()) return;
-  leistungenKatalog=leistungenKatalog.filter(l=>l.id!==id);
-  if(CLOUD) cloudDelete('leistungen',id);
-  toast('Leistung gelöscht (bereits zugewiesene Leistungen bei Kunden bleiben unverändert)');
-  renderAdmin('leistungen');
+  const l=leistungenKatalog.find(x=>x.id===id); if(!l) return;
+  confirmDangerDelete('Leistung löschen','Soll <b>'+l.name+'</b> wirklich endgültig gelöscht werden? Bereits zugewiesene Leistungen bei Kunden bleiben unverändert.',function(){
+    leistungenKatalog=leistungenKatalog.filter(x=>x.id!==id);
+    if(CLOUD) cloudDelete('leistungen',id);
+    toast('Leistung gelöscht');
+    renderAdmin('leistungen');
+  });
 }
 
 /* ============ KOMMUNIKATION (CRM) ============ */
@@ -3762,6 +3938,7 @@ const KOMM_TYPEN=[['anruf','📞 Anruf'],['email','✉ E-Mail'],['brief','✉ Br
 function kommTypeLabel(t){const f=KOMM_TYPEN.find(x=>x[0]===t);return f?f[1]:(t||'—');}
 let __kommTasks=[];
 function openKommModal(custId, id){
+  if(!requireRoleAction('admin','buero','callcenter')) return;
   const isEdit=id!==null;
   const k=isEdit?kommunikationen.find(x=>x.id===id):{customerId:custId,title:'',type:'anruf',date:todayISO(),time:'',status:'offen',note:'',tasks:[]};
   __kommTasks=(k.tasks||[]).slice();
@@ -3804,6 +3981,7 @@ function addKommTask(){
 function toggleKommTaskDraft(i){ __kommTasks[i].done=!__kommTasks[i].done; document.getElementById('komm_tasklist').innerHTML=kommTaskListHTML(); }
 function removeKommTaskDraft(i){ __kommTasks.splice(i,1); document.getElementById('komm_tasklist').innerHTML=kommTaskListHTML(); }
 function saveKomm(id, fixedCustId){
+  if(!requireRoleAction('admin','buero','callcenter')) return;
   const title=val('komm_title'); if(!title){toast('Bitte einen Titel eingeben',true);return;}
   const customerId=fixedCustId!==null?fixedCustId:(document.getElementById('komm_customer')?+document.getElementById('komm_customer').value:null);
   if(!customerId){toast('Bitte eine Klientin zuweisen',true);return;}
@@ -3822,18 +4000,22 @@ function saveKomm(id, fixedCustId){
     if(CLOUD){ cloudInsert('kommunikation',kommToRow(k)).then(r=>{ if(r) k.id=r.id; }); }
   }
   closeModal();toast('Kommunikation gespeichert');
-  if(currentRole==='admin') renderAdmin('kommunikation');
+  if(hasRole('admin','buero','callcenter')) renderAdmin('kommunikation');
 }
 function deleteKomm(id){
-  if(!requireAdminAction()) return;
-  kommunikationen=kommunikationen.filter(k=>k.id!==id);
-  if(CLOUD) cloudDelete('kommunikation',id);
-  closeModal();toast('Kommunikation gelöscht');renderAdmin('kommunikation');
+  if(!requireRoleAction('admin','buero','callcenter')) return;
+  const k=kommunikationen.find(x=>x.id===id); if(!k) return;
+  confirmDangerDelete('Kommunikation löschen','Soll dieser Eintrag ("'+k.title+'") wirklich endgültig gelöscht werden?',function(){
+    kommunikationen=kommunikationen.filter(x=>x.id!==id);
+    if(CLOUD) cloudDelete('kommunikation',id);
+    toast('Kommunikation gelöscht');renderAdmin('kommunikation');
+  });
 }
 function custKommListHTML(custId){
   const list=kommunikationen.filter(k=>k.customerId===custId);
-  return '<div class="section-label" style="display:flex;justify-content:space-between;align-items:center">Kommunikation (CRM) <button class="btn-primary btn-sm" style="width:auto" onclick="openKommModal('+custId+',null)">＋ Hinzufügen</button></div>'+
-  (list.length?list.map(k=>'<div class="list-row clickable" style="padding:11px 0;border-bottom:1px solid var(--line)" onclick="openKommModal('+custId+','+k.id+')"><div class="li-main"><b>'+kommTypeLabel(k.type)+' · '+k.title+'</b><div class="li-sub">'+fmtDate(k.date)+' · '+k.time+' · '+(k.note||'').slice(0,80)+'</div></div>'+(k.status==='erledigt'?'<span class="tag green">erledigt</span>':'<span class="tag amber">offen</span>')+'</div>').join('')
+  const canWrite=hasRole('admin','buero','callcenter');
+  return '<div class="section-label" style="display:flex;justify-content:space-between;align-items:center">Kommunikation (CRM) '+(canWrite?'<button class="btn-primary btn-sm" style="width:auto" onclick="openKommModal('+custId+',null)">＋ Hinzufügen</button>':'')+'</div>'+
+  (list.length?list.map(k=>'<div class="list-row'+(canWrite?' clickable':'')+'" style="padding:11px 0;border-bottom:1px solid var(--line)" '+(canWrite?'onclick="openKommModal('+custId+','+k.id+')"':'')+'><div class="li-main"><b>'+kommTypeLabel(k.type)+' · '+k.title+'</b><div class="li-sub">'+fmtDate(k.date)+' · '+k.time+' · '+(k.note||'').slice(0,80)+'</div></div>'+(k.status==='erledigt'?'<span class="tag green">erledigt</span>':'<span class="tag amber">offen</span>')+'</div>').join('')
     :'<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine Kommunikation dokumentiert.</p>');
 }
 
@@ -3876,9 +4058,12 @@ function saveAufgabe(id){
 }
 function deleteAufgabe(id){
   if(!requireAdminAction()) return;
-  aufgaben=aufgaben.filter(a=>a.id!==id);
-  if(CLOUD) cloudDelete('aufgaben',id);
-  toast('Aufgabe gelöscht');renderAdmin('aufgaben');
+  const a=aufgaben.find(x=>x.id===id); if(!a) return;
+  confirmDangerDelete('Aufgabe löschen','Soll die Aufgabe "'+a.title+'" wirklich endgültig gelöscht werden?',function(){
+    aufgaben=aufgaben.filter(x=>x.id!==id);
+    if(CLOUD) cloudDelete('aufgaben',id);
+    toast('Aufgabe gelöscht');renderAdmin('aufgaben');
+  });
 }
 function toggleAufgabeStatus(id){
   const a=aufgaben.find(x=>x.id===id); if(!a) return;
@@ -3914,7 +4099,7 @@ function invoiceDefaultMenge(einheit, mins){
   return 1; // pro Einheit / Pauschale
 }
 function openInvoiceModal(tsId){
-  if(!requireAdminAction()) return;
+  if(!requireRoleAction('admin','buchhaltung')) return;
   const t=timesheets.find(x=>x.id===tsId); if(!t){toast('Stundenzettel nicht gefunden',true);return;}
   if(rechnungen.find(r=>r.stundenzettelId===tsId)){toast('Für diesen Stundenzettel existiert bereits eine Rechnung',true);return;}
   const cu=custById(t.customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
@@ -4052,7 +4237,7 @@ function mailRechnung(id){
   toast('E-Mail-Programm wird geöffnet – PDF bitte manuell anhängen');
 }
 function setRechnungStatus(id,status){
-  if(!requireAdminAction()) return;
+  if(!requireRoleAction('admin','buchhaltung')) return;
   const re=rechnungen.find(x=>x.id===id); if(!re)return;
   re.status=status;
   if(CLOUD) cloudUpdate('rechnungen',id,{status:status});
@@ -4098,6 +4283,33 @@ function viewContract(name, who, idx){
 }
 
 function closeModal(){document.getElementById('modalBg').classList.remove('show');document.getElementById('modalBox').classList.remove('wide');}
+/* ============ SICHERHEITS-ABFRAGE VOR ENDGÜLTIGEM LÖSCHEN ============
+   Für Kunden, Mitarbeiter und andere wichtige Datensätze: Löschen erst
+   möglich, nachdem das Wort "LÖSCHEN" eingetippt wurde. Danach wird der
+   Datensatz auch in der Datenbank (Supabase) entfernt, nicht nur lokal. */
+let __confirmDeleteFn=null;
+function confirmDangerDelete(title, message, onConfirm){
+  __confirmDeleteFn=onConfirm;
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent=title;
+  document.getElementById('modalBody').innerHTML=
+    '<p style="margin-bottom:14px">'+message+'</p>'+
+    '<p style="color:var(--danger);font-weight:600;margin-bottom:10px">⚠ Dies kann nicht rückgängig gemacht werden – der Datensatz wird auch aus der Datenbank entfernt.</p>'+
+    '<label>Tippe <b>LÖSCHEN</b> zum Bestätigen</label>'+
+    '<input id="confirmDeleteInput" placeholder="LÖSCHEN" autocomplete="off" oninput="const b=document.getElementById(\'confirmDeleteBtn\');const ok=this.value.trim().toUpperCase()===\'LÖSCHEN\';b.disabled=!ok;b.style.opacity=ok?\'1\':\'.5\'">';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="__confirmDeleteFn=null;closeModal()">Abbrechen</button>'+
+    '<button id="confirmDeleteBtn" disabled style="width:auto;padding:11px 20px;background:var(--danger);color:#fff;border:0;border-radius:9px;font-weight:600;cursor:pointer;opacity:.5" onclick="runConfirmedDelete()">Endgültig löschen</button>';
+  openModal();
+  setTimeout(()=>{const i=document.getElementById('confirmDeleteInput'); if(i) i.focus();},50);
+}
+function runConfirmedDelete(){
+  const v=(document.getElementById('confirmDeleteInput').value||'').trim().toUpperCase();
+  if(v!=='LÖSCHEN'){ toast('Bitte das Wort LÖSCHEN eingeben',true); return; }
+  const fn=__confirmDeleteFn; __confirmDeleteFn=null;
+  closeModal();
+  if(fn) fn();
+}
 function segPick(btn,group){document.querySelectorAll('#'+group+' button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
 function head(t,s){return '<div class="page-head"><div><h1>'+cleanInput(t,120)+'</h1><p>'+cleanInput(s,300)+'</p></div></div>';}
 function stat(l,v,f){return '<div class="stat"><div class="label">'+cleanInput(l,120)+'</div><div class="value">'+cleanInput(v,80)+'</div><div class="foot">'+cleanInput(f,180)+'</div></div>';}
