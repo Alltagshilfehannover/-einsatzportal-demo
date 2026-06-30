@@ -1141,7 +1141,7 @@ function renderAdmin(view){
       return (fullName(s)+' '+(s.role||'')+' '+(s.area||'')+' '+(s.skills||[]).join(' ')).toLowerCase().includes(q);
     });
     c.innerHTML=head('Mitarbeiter','Auf einen Mitarbeiter klicken, um alle Daten anzusehen und zu bearbeiten.')+
-    '<div class="panel"><div class="panel-head"><h3>Team ('+filtered.length+(filtered.length!==staff.length?' von '+staff.length:'')+')</h3><button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Team ('+filtered.length+(filtered.length!==staff.length?' von '+staff.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportMitarbeiter()">⬇ CSV</button><button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button></div></div>'+
     '<div class="list-toolbar"><input class="search-input" id="staffSearchInput" placeholder="🔍 Mitarbeiter suchen (Name, Funktion, Gebiet)…" value="'+(staffSearch||'').replace(/"/g,'&quot;')+'" oninput="staffSearch=this.value;renderAdmin(\'staff\');setTimeout(()=>{const e=document.getElementById(\'staffSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
       '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['login','Mit Login'],['nologin','Ohne Login']].map(([v,l])=>'<span class="chip '+(staffFilter===v?'on':'')+'" onclick="staffFilter=\''+v+'\';renderAdmin(\'staff\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
@@ -1175,7 +1175,7 @@ function renderAdmin(view){
       return (fullName(c)+' '+(c.area||'')+' '+(c.city||'')+' '+(c.need||[]).join(' ')).toLowerCase().includes(q);
     });
     c.innerHTML=head('Kunden','Auf einen Kunden klicken, um Daten anzusehen und zu bearbeiten. Über die Knöpfe rechts erstellst du die Dokumente.')+
-    '<div class="panel"><div class="panel-head"><h3>Kunden ('+filtered.length+(filtered.length!==customers.length?' von '+customers.length:'')+')</h3><button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Kunden ('+filtered.length+(filtered.length!==customers.length?' von '+customers.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportKunden()">⬇ CSV</button><button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button></div></div>'+
     '<div class="list-toolbar"><input class="search-input" id="custSearchInput" placeholder="🔍 Kunde suchen (Name, Gebiet, Bedarf)…" value="'+(custSearch||'').replace(/"/g,'&quot;')+'" oninput="custSearch=this.value;renderAdmin(\'customers\');setTimeout(()=>{const e=document.getElementById(\'custSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
       '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['pg3','Pflegegrad 3+'],['ohneabtretung','Ohne Abtretung']].map(([v,l])=>'<span class="chip '+(custFilter===v?'on':'')+'" onclick="custFilter=\''+v+'\';renderAdmin(\'customers\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
@@ -1244,7 +1244,12 @@ function renderAdmin(view){
   }
   if(view==='kostentraeger'){
     c.innerHTML=head('Kostenträger','Krankenkassen / Pflegekassen, an die Rechnungen gestellt werden können. Bei einem Kunden hinterlegt, übernimmt die Rechnung automatisch Name und Adresse.')+
-    '<div class="panel"><div class="panel-head"><h3>'+kostentraeger.length+' Kostenträger</h3><button class="btn-primary btn-sm" style="width:auto" onclick="openKtModal(null)">＋ Neuer Kostenträger</button></div>'+
+    '<div class="panel"><div class="panel-head"><h3>'+kostentraeger.length+' Kostenträger</h3>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button class="btn-ghost btn-sm" onclick="exportKostentraeger()">⬇ CSV Export</button>'+
+      '<label class="btn-ghost btn-sm" style="cursor:pointer">⬆ CSV Import<input type="file" accept=".csv" style="display:none" onchange="importKostentraegerFile(this)"></label>'+
+      '<button class="btn-primary btn-sm" style="width:auto" onclick="openKtModal(null)">＋ Neuer Kostenträger</button>'+
+      '</div></div>'+
     '<div class="panel-body" style="padding-top:10px">'+
     (kostentraeger.length?'<table><thead><tr><th>Name</th><th>Adresse</th><th>E-Mail</th><th></th></tr></thead><tbody>'+
       kostentraeger.map(k=>'<tr><td><b>'+k.name+'</b></td><td>'+(k.strasse||'')+', '+(k.plz||'')+' '+(k.ort||'')+'</td><td>'+(k.email||'—')+'</td>'+
@@ -1273,7 +1278,7 @@ function renderAdmin(view){
         '<td style="text-align:right"><button class="btn-primary btn-sm" style="width:auto" onclick="openInvoiceModal('+t.id+')">🧾 Rechnung erstellen</button></td></tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">✓</div><b>Aktuell nichts offen</b><p style="margin-top:6px">Sobald ein Stundenzettel freigegeben ist, erscheint er hier zur Abrechnung.</p></div>')+
     '</div></div>'+
-    '<div class="panel"><div class="panel-head"><h3>Erstellte Rechnungen</h3></div><div class="panel-body" style="padding-top:16px">'+
+    '<div class="panel"><div class="panel-head"><h3>Erstellte Rechnungen</h3><button class="btn-ghost btn-sm" onclick="exportRechnungen()">⬇ CSV Export</button></div><div class="panel-body" style="padding-top:16px">'+
     (rechnungen.length?'<table><thead><tr><th>Nr.</th><th>Datum</th><th>Kunde</th><th>Empfänger</th><th>Betrag</th><th>Status</th><th>Dokumente</th></tr></thead><tbody>'+
       rechnungen.slice().reverse().map(r=>{const cu=custById(r.customerId);
         const tage=Math.floor((Date.now()-new Date(r.datum).getTime())/86400000);
@@ -3331,6 +3336,97 @@ function deleteKt(id){
   kostentraeger=kostentraeger.filter(k=>k.id!==id);
   if(CLOUD) cloudDelete('kostentraeger',id);
   toast('Kostenträger gelöscht');renderAdmin('kostentraeger');
+}
+
+/* ============================================================
+   CSV IMPORT / EXPORT
+   ============================================================ */
+function csvEscape(v){
+  v=(v===null||v===undefined)?'':String(v);
+  if(/[",;\n]/.test(v)) return '"'+v.replace(/"/g,'""')+'"';
+  return v;
+}
+function toCSV(headers, rows){
+  const lines=[headers.join(',')];
+  rows.forEach(row=>{ lines.push(headers.map(h=>csvEscape(row[h])).join(',')); });
+  return lines.join('\r\n');
+}
+function downloadCSV(filename, csvString){
+  const blob=new Blob(['\uFEFF'+csvString], {type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+// Robuster CSV-Parser: erkennt Trennzeichen automatisch (Komma oder Semikolon), versteht Anführungszeichen
+function parseCSV(text){
+  text=text.replace(/^\uFEFF/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim();
+  if(!text) return [];
+  const firstLine=text.split('\n')[0];
+  const delim=(firstLine.split(';').length>firstLine.split(',').length)?';':',';
+  const rows=[]; let row=[]; let field=''; let inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(inQuotes){
+      if(ch==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else { inQuotes=false; } }
+      else field+=ch;
+    }else{
+      if(ch==='"') inQuotes=true;
+      else if(ch===delim){ row.push(field); field=''; }
+      else if(ch==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else field+=ch;
+    }
+  }
+  row.push(field); rows.push(row);
+  const headers=rows[0].map(h=>h.trim().toLowerCase());
+  return rows.slice(1).filter(r=>r.some(c=>c.trim()!=='')).map(r=>{
+    const obj={}; headers.forEach((h,i)=>{ obj[h]=(r[i]||'').trim(); }); return obj;
+  });
+}
+
+function exportKunden(){
+  const headers=['id','first','last','strasse','hausnr','plz','ort','telefon','pflegegrad','versicherungsart','kostentraeger'];
+  const rows=customers.map(c=>({id:c.id,first:c.first,last:c.last,strasse:c.street||'',hausnr:c.houseNo||'',plz:c.plz||'',ort:c.city||'',telefon:c.phone||'',pflegegrad:c.pgrad||'',versicherungsart:c.insuranceType||'',kostentraeger:(kostentraeger.find(k=>k.id===c.kostentraegerId)||{}).name||''}));
+  downloadCSV('kunden_export.csv', toCSV(headers, rows));
+}
+function exportMitarbeiter(){
+  const headers=['id','first','last','role','status','telefon','email','area'];
+  const rows=staff.map(s=>({id:s.id,first:s.first,last:s.last,role:s.role,status:s.status,telefon:s.phone||'',email:s.email||'',area:s.area||''}));
+  downloadCSV('mitarbeiter_export.csv', toCSV(headers, rows));
+}
+function exportKostentraeger(){
+  const headers=['name','strasse','plz','ort','email'];
+  downloadCSV('kostentraeger_export.csv', toCSV(headers, kostentraeger));
+}
+function exportRechnungen(){
+  const headers=['nummer','datum','kunde','empfaenger','leistung','menge','einheit','betrag','status'];
+  const rows=rechnungen.map(r=>{const cu=custById(r.customerId);return {nummer:r.nummer,datum:r.datum,kunde:cu?fullName(cu):'',empfaenger:r.empfaengerName,leistung:r.leistungName||'',menge:r.menge||'',einheit:r.leistungEinheit||'',betrag:r.betrag,status:r.status};});
+  downloadCSV('rechnungen_export.csv', toCSV(headers, rows));
+}
+
+function importKostentraegerFile(input){
+  if(!requireAdminAction()) return;
+  const file=input.files&&input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    let rows;
+    try{ rows=parseCSV(e.target.result); }catch(err){ toast('CSV konnte nicht gelesen werden',true); input.value=''; return; }
+    if(!rows.length){ toast('Keine Zeilen in der Datei gefunden',true); input.value=''; return; }
+    let imported=0, skipped=0;
+    rows.forEach(r=>{
+      const name=cleanInput(r.name||r.bezeichnung||'',120);
+      if(!name){ skipped++; return; }
+      if(kostentraeger.some(k=>k.name.toLowerCase()===name.toLowerCase())){ skipped++; return; }
+      const k={id:nextKostentraegerId++, name:name, strasse:cleanInput(r.strasse||r.straße||'',150), plz:cleanInput(r.plz||'',10), ort:cleanInput(r.ort||'',100), email:cleanInput(r.email||'',150)};
+      kostentraeger.push(k);
+      if(CLOUD){ cloudInsert('kostentraeger',ktToRow(k)).then(res=>{ if(res) k.id=res.id; }); }
+      imported++;
+    });
+    toast(imported+' Kostenträger importiert'+(skipped?', '+skipped+' übersprungen (leer/Duplikat)':''));
+    input.value='';
+    renderAdmin('kostentraeger');
+  };
+  reader.readAsText(file, 'UTF-8');
 }
 
 const LEISTUNGS_EINHEITEN=['pro 15 Min','pro 30 Min','pro Stunde','pro Einheit','Pauschale'];
