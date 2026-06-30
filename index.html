@@ -780,9 +780,9 @@ function appToRow(a){const q=a.questionnaire||{};return {first:a.first,last:a.la
 function rowToApp(r){return {id:r.id,first:r.first,last:r.last,gender:r.gender,email:r.email,phone:r.phone,area:r.area,citizenship:r.citizenship,skills:r.skills||[],motivation:r.motivation,status:r.status,docs:r.docs||{},signatures:r.signatures||{},questionnaire:r.questionnaire||{},declaration:r.declaration||{},idFront:r.id_front,idBack:r.id_back,selfie:r.selfie,agb:r.agb,isStudent:r.is_student,enrollmentFile:r.enrollment_file,pets:r.pets||[]};}
 
 /* ---- Speicher-Helfer: schreiben einzelne Objekte zurück ---- */
-async function cloudInsert(table,row){ if(!CLOUD)return null; row=sanitizeDeep(row); try{const{data,error}=await sb.from(table).insert(row).select().single(); if(error){console.warn('insert',table,error.message);toast('Speichern fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);return null;} return data;}catch(e){console.warn(e);toast('Speichern fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);return null;} }
-async function cloudUpdate(table,id,row){ if(!CLOUD)return; row=sanitizeDeep(row); try{const{error}=await sb.from(table).update(row).eq('id',id); if(error){console.warn('update',table,error.message);toast('Speichern fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);}}catch(e){console.warn(e);toast('Speichern fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);} }
-async function cloudDelete(table,id){ if(!CLOUD)return; try{const{error}=await sb.from(table).delete().eq('id',id); if(error){console.warn('delete',table,error.message);toast('Löschen fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);}}catch(e){console.warn(e);toast('Löschen fehlgeschlagen (Internet/Datenbank) – bitte erneut versuchen',true);} }
+async function cloudInsert(table,row){ if(!CLOUD)return null; row=sanitizeDeep(row); try{const{data,error}=await sb.from(table).insert(row).select().single(); if(error){console.warn('insert',table,error.message);toast('Speichern fehlgeschlagen ('+table+'): '+error.message,true);return null;} return data;}catch(e){console.warn(e);toast('Speichern fehlgeschlagen ('+table+'): '+(e&&e.message||e),true);return null;} }
+async function cloudUpdate(table,id,row){ if(!CLOUD)return; row=sanitizeDeep(row); try{const{error}=await sb.from(table).update(row).eq('id',id); if(error){console.warn('update',table,error.message);toast('Speichern fehlgeschlagen ('+table+'): '+error.message,true);}}catch(e){console.warn(e);toast('Speichern fehlgeschlagen ('+table+'): '+(e&&e.message||e),true);} }
+async function cloudDelete(table,id){ if(!CLOUD)return; try{const{error}=await sb.from(table).delete().eq('id',id); if(error){console.warn('delete',table,error.message);toast('Löschen fehlgeschlagen ('+table+'): '+error.message,true);}}catch(e){console.warn(e);toast('Löschen fehlgeschlagen ('+table+'): '+(e&&e.message||e),true);} }
 
 /* ---- Erstbefüllung: wenn DB leer, Demo-Daten hochladen ---- */
 async function seedIfEmpty(){
@@ -953,10 +953,12 @@ async function loadStandorte(){
 async function switchStandort(id){
   currentStandortId=+id;
   localStorage.setItem('dailydo-standort', String(currentStandortId));
+  const sel=document.getElementById('standortSwitch');
+  if(sel) sel.value=String(currentStandortId);
   showCloudBadge('verbinde');
   await loadFromCloud();
   showCloudBadge('cloud');
-  if(currentRole==='admin'){ renderAdmin('dashboard'); }
+  if(currentRole!=='staff'){ renderAdmin(__lastAdminView||defaultViewForRole()); }
 }
 async function bootCloud(){
   if(!initSupabase()){ showCloudBadge('lokal'); return; }
@@ -1851,7 +1853,8 @@ function customerFormHTML(c){
     '<div id="nc_beihilfeBox" style="display:'+(ins==='beihilfe'?'block':'none')+'"><label>Beihilfe-Anteil (%)</label><input id="nc_beihilfePct" type="number" min="0" max="100" value="'+(c.beihilfePct||'')+'" placeholder="z. B. 50"></div>'+
     '<div id="nc_kvBox" style="display:'+(ins==='privat'?'none':'block')+'">'+
       '<div class="form-row"><div><label>KV-Nummer</label><input id="nc_kvNr" value="'+(it.kvNr||'')+'" placeholder="1 Buchstabe + 9 Ziffern"></div>'+
-      '<div><label>Krankenkasse (Name, frei)</label><input id="nc_kasse" value="'+(it.kasse||'')+'"></div></div>'+
+      '<div><label>Krankenkasse</label><input id="nc_kasse" list="nc_kasse_list" value="'+(it.kasse||'')+'" placeholder="Tippen zum Suchen…" autocomplete="off" oninput="syncKasseToKostentraeger(this.value)">'+
+      '<datalist id="nc_kasse_list">'+[...new Set(kostentraeger.map(k=>k.name))].map(n=>'<option value="'+n+'">').join('')+'</datalist></div></div>'+
     '</div>'+
     '<label>Kostenträger für Rechnungen</label>'+
     '<select id="nc_kostentraeger"><option value="">— Privat: Rechnung direkt an den Kunden —</option>'+
@@ -4564,6 +4567,11 @@ function runConfirmedDelete(){
   if(fn) fn();
 }
 function segPick(btn,group){document.querySelectorAll('#'+group+' button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
+function syncKasseToKostentraeger(name){
+  const sel=document.getElementById('nc_kostentraeger'); if(!sel) return;
+  const match=kostentraeger.find(k=>k.name.toLowerCase()===String(name||'').trim().toLowerCase());
+  if(match) sel.value=String(match.id);
+}
 function head(t,s){return '<div class="page-head"><div><h1>'+cleanInput(t,120)+'</h1><p>'+cleanInput(s,300)+'</p></div></div>';}
 function stat(l,v,f){return '<div class="stat"><div class="label">'+cleanInput(l,120)+'</div><div class="value">'+cleanInput(v,80)+'</div><div class="foot">'+cleanInput(f,180)+'</div></div>';}
 function statClick(l,v,f,fn){return '<div class="stat click" onclick="'+fn+'"><div class="label">'+cleanInput(l,120)+'</div><div class="value">'+cleanInput(v,80)+'</div><div class="foot">'+cleanInput(f,180)+'</div></div>';}
