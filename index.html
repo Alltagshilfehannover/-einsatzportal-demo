@@ -526,6 +526,8 @@ let kommunikationen=[];
 let nextKommId=1;
 let aufgaben=[];
 let nextAufgabeId=1;
+let activityLog=[];
+let currentUserLabel='—';
 
 /* ============================================================
    SUPABASE-ANBINDUNG (Testphase)
@@ -721,6 +723,42 @@ function rowToAufgabe(r){return {
   id:r.id, mitarbeiterId:r.mitarbeiter_id, customerId:r.customer_id, title:r.title, beschreibung:r.beschreibung,
   status:r.status, faelligAm:r.faellig_am, kommunikationId:r.kommunikation_id
 };}
+function rowToActivity(r){return {id:r.id, userLabel:r.user_label, role:r.role, action:r.action, createdAt:r.created_at};}
+/* ============================================================
+   AKTIVITÄTSPROTOKOLL
+   ------------------------------------------------------------
+   Schreibt bei wichtigen Aktionen (Anlegen/Ändern/Löschen) einen
+   Eintrag in die Tabelle "aktivitaeten": wer (Login-E-Mail bzw.
+   Mitarbeitername), welche Rolle, welche Aktion, wann.
+   ============================================================ */
+function logActivity(action){
+  if(!CLOUD) return;
+  cloudInsert('aktivitaeten',{
+    standort_id:currentStandortId, user_label:currentUserLabel, role:currentRole, action:cleanInput(action,300)
+  });
+}
+async function loadActivityLog(){
+  const body=document.getElementById('activityLogBody');
+  if(!CLOUD){ if(body) body.innerHTML='<p style="color:var(--muted);padding:8px 0">Keine Cloud-Verbindung.</p>'; return; }
+  try{
+    const {data,error}=await sb.from('aktivitaeten').select('*').eq('standort_id',currentStandortId).order('created_at',{ascending:false}).limit(300);
+    if(error) throw error;
+    activityLog=(data||[]).map(rowToActivity);
+  }catch(e){ console.error('Laden aktivitaeten fehlgeschlagen:', e&&(e.message||e)); activityLog=[]; }
+  if(body) body.innerHTML=activityLogTableHTML();
+}
+function activityLogTableHTML(){
+  if(!activityLog.length) return '<p style="color:var(--muted);padding:8px 0">Noch keine Aktivitäten protokolliert.</p>';
+  return '<table><thead><tr><th>Zeitpunkt</th><th>Wer</th><th>Rolle</th><th>Aktion</th></tr></thead><tbody>'+
+    activityLog.map(a=>'<tr><td style="white-space:nowrap">'+fmtDateTime(a.createdAt)+'</td><td>'+(a.userLabel||'—')+'</td><td>'+(ROLE_LABELS[a.role]||a.role||'—')+'</td><td>'+(a.action||'')+'</td></tr>').join('')+
+    '</tbody></table>';
+}
+function fmtDateTime(iso){
+  if(!iso) return '—';
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return iso;
+  return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+d.getFullYear()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
 function ktToRow(k){return {name:k.name,strasse:k.strasse||null,plz:k.plz||null,ort:k.ort||null,email:k.email||null, standort_id:currentStandortId};}
 function rowToKt(r){return {id:r.id,name:r.name,strasse:r.strasse,plz:r.plz,ort:r.ort,email:r.email};}
 function rechnungToRow(r){return {
@@ -1124,6 +1162,7 @@ async function inviteOfficeUser(){
   toast('Sende Einladung an '+email+' …');
   try{
     await callManageUsers('invite',{email:email, role:role});
+    logActivity('Zugang eingeladen: '+email+' ('+ROLE_LABELS[role]+')');
     toast('Einladung an '+email+' gesendet ('+ROLE_LABELS[role]+')');
     document.getElementById('zg_email').value='';
     loadUserList();
@@ -1137,6 +1176,7 @@ async function setUserRole(userId){
   const role=sel.value;
   try{
     await callManageUsers('setRole',{userId:userId, role:role});
+    logActivity('Rolle geändert für Nutzer-ID '+userId+': '+ROLE_LABELS[role]);
     toast('Rolle aktualisiert: '+ROLE_LABELS[role]);
     loadUserList();
   }catch(e){
@@ -1178,6 +1218,7 @@ function enterApp(role, user){
     document.getElementById('whoName').textContent= user? (user.email||label) : 'Daniel D.';
     document.getElementById('whoRole').textContent=label+(role==='admin'?' / Verwaltung':'');
     document.getElementById('avatar').textContent=label[0];
+    currentUserLabel=(user&&user.email)||label+' (lokal)';
     try{ renderAdmin(defaultViewForRole()); }
     catch(e){ console.error('Dashboard-Render Problem:', e&&(e.message||e)); }
   }else{
@@ -1210,6 +1251,7 @@ function enterApp(role, user){
     document.getElementById('whoName').textContent=m.first+' '+(m.last?m.last[0]+'.':'');
     document.getElementById('whoRole').textContent=m.role;
     document.getElementById('avatar').textContent=initials(m);
+    currentUserLabel=fullName(m)+' (Mitarbeiter)';
     renderStaff('board');
   }
 }
@@ -1265,9 +1307,7 @@ function buildAdminNav(active){
       viewAllowed('customers')?navItem('customers','◍','Kunden',active==='customers'):'',
       viewAllowed('newcustomer')?navItem('newcustomer','＋','Kunde anlegen',active==='newcustomer'):'',
       viewAllowed('kommunikation')?navItem('kommunikation','💬','Kommunikation',active==='kommunikation',offeneKomm||'',true):'',
-      viewAllowed('aufgaben')?navItem('aufgaben','☑','Aufgaben',active==='aufgaben',offeneAufgaben||''):'',
-      viewAllowed('kostentraeger')?navItem('kostentraeger','🏦','Kostenträger',active==='kostentraeger'):'',
-      viewAllowed('leistungen')?navItem('leistungen','📋','Leistungen',active==='leistungen'):''
+      viewAllowed('aufgaben')?navItem('aufgaben','☑','Aufgaben',active==='aufgaben',offeneAufgaben||''):''
     ]],
     ['Abwicklung',[
       viewAllowed('hours')?navItem('hours','⏱','Stundenzettel',active==='hours'):'',
@@ -1276,7 +1316,10 @@ function buildAdminNav(active){
       viewAllowed('notes')?navItem('notes','✎','Notizen',active==='notes'):'',
       viewAllowed('calendar')?navItem('calendar','▦','Kalender',active==='calendar'):''
     ]],
-    ['System',[
+    ['Einstellungen',[
+      viewAllowed('leistungen')?navItem('leistungen','📋','Leistungen',active==='leistungen'):'',
+      viewAllowed('kostentraeger')?navItem('kostentraeger','🏦','Kostenträger',active==='kostentraeger'):'',
+      viewAllowed('aktivitaeten')?navItem('aktivitaeten','📜','Aktivitätsprotokoll',active==='aktivitaeten'):'',
       viewAllowed('zugaenge')?navItem('zugaenge','👥','Zugänge & Rollen',active==='zugaenge'):''
     ]],
     ['Konto',[
@@ -1455,6 +1498,14 @@ function renderAdmin(view){
     '<div class="panel"><div class="panel-head"><h3>Bestehende Zugänge</h3><button class="btn-ghost btn-sm" onclick="loadUserList()">↻ Aktualisieren</button></div>'+
     '<div class="panel-body" style="padding-top:10px" id="zugaengeListBody"><p style="color:var(--muted);padding:8px 0">Lade Zugänge…</p></div></div>';
     loadUserList();
+  }
+
+  if(view==='aktivitaeten'){
+    if(!requireAdminAction()){ /* nav blendet das eh aus, doppelte Absicherung */ }
+    c.innerHTML=head('Aktivitätsprotokoll','Wer hat was in der Software gemacht – Anlegen, Ändern und Löschen wichtiger Datensätze für diesen Standort.')+
+    '<div class="panel"><div class="panel-head"><h3>Letzte 300 Aktivitäten</h3><button class="btn-ghost btn-sm" onclick="loadActivityLog()">↻ Aktualisieren</button></div>'+
+    '<div class="panel-body" style="padding-top:10px" id="activityLogBody"><p style="color:var(--muted);padding:8px 0">Lade Protokoll…</p></div></div>';
+    loadActivityLog();
   }
 
   if(view==='mylogin'){
@@ -1703,6 +1754,7 @@ function saveStaff(){
     if(s.email && !isValidEmail(s.email)){toast('Bitte gültige E-Mail-Adresse eingeben',true);return;}
     if(!isValidPhone(s.phone)){toast('Bitte gültige Telefonnummer eingeben',true);return;}
     if(CLOUD) cloudUpdate('mitarbeiter',s.id,staffToRow(s));
+    logActivity('Mitarbeiter bearbeitet: '+fullName(s));
     closeModal();toast('Mitarbeiterdaten gespeichert');
   }else{
     const s={id:nextStaffId++,maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',skills:[],color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,intern:{}};
@@ -1714,6 +1766,7 @@ function saveStaff(){
     if(login){ if(!isValidEmail(login)){toast('Bitte gültige Login-E-Mail eingeben',true);return;} if(pass&&pass.length<8){toast('Startpasswort mindestens 8 Zeichen',true);return;} if(pass){s.hasLogin=true;s.login=login;} }
     staff.push(s);
     if(CLOUD){ cloudInsert('mitarbeiter',staffToRow(s)).then(r=>{ if(r)s.id=r.id; }); }
+    logActivity('Mitarbeiter angelegt: '+fullName(s));
     closeModal();toast('Mitarbeiter hinzugefügt');
   }
   document.getElementById('modalBox').classList.remove('wide');
@@ -1726,6 +1779,7 @@ function deleteStaff(id){
     staff=staff.filter(x=>x.id!==id);
     jobs=jobs.filter(j=>j.assignedTo!==id);
     if(CLOUD) cloudDelete('mitarbeiter',id);
+    logActivity('Mitarbeiter gelöscht: '+fullName(s));
     document.getElementById('modalBox').classList.remove('wide');
     toast('Mitarbeiter gelöscht');renderAdmin('staff');
   });
@@ -1892,10 +1946,12 @@ function createCustomer(){
         const jRow=await cloudInsert('auftraege',jobToRow(job)); if(jRow)job.id=jRow.id;
       }
       customers.unshift(c);jobs.unshift(job);
+      logActivity('Kunde angelegt: '+fullName(c));
       toast('Kunde gespeichert & als Auftrag freigegeben');renderAdmin('jobs');
     })();
   }else{
     customers.unshift(c);jobs.unshift(job);
+    logActivity('Kunde angelegt: '+fullName(c));
     toast('Kunde korrekt angelegt & als Auftrag freigegeben');renderAdmin('jobs');
   }
 }
@@ -1986,6 +2042,7 @@ function updateCustomer(id){
   if(!requireRoleAction('admin','buero','callcenter')) return;
   const c=custById(id);gatherCustomer(c);
   if(CLOUD) cloudUpdate('kunden',id,custToRow(c));
+  logActivity('Kunde bearbeitet: '+fullName(c));
   closeModal();document.getElementById('modalBox').classList.remove('wide');
   toast('Kundendaten gespeichert');renderAdmin('customers');
 }
@@ -1996,6 +2053,7 @@ function deleteCustomer(id){
     customers=customers.filter(c=>c.id!==id);
     jobs=jobs.filter(j=>j.customerId!==id);
     if(CLOUD) cloudDelete('kunden',id);
+    logActivity('Kunde gelöscht: '+fullName(cu));
     document.getElementById('modalBox').classList.remove('wide');
     toast('Kunde gelöscht');renderAdmin('customers');
   });
@@ -3301,6 +3359,7 @@ function approveTimesheet(id){
   if(CLOUD){ cloudUpdate('stundenzettel', id, { status:'freigegeben', proof:true }); }
   // echten Leistungsnachweis erzeugen
   proofs.push({id:nextProofId++,timesheetId:t.id,staffId:t.staffId,customerId:t.customerId,date:t.date,task:t.task,minutes:tsMinutes(t),signed:false});
+  logActivity('Stundenzettel freigegeben: '+staffName(t.staffId)+', '+fmtDate(t.date));
   toast('Stundenzettel freigegeben – Leistungsnachweis erstellt');renderAdmin('hours');
 }
 function rejectTimesheet(id){
@@ -3309,6 +3368,7 @@ function rejectTimesheet(id){
   if(!confirm('Diesen Stundenzettel ablehnen? Er wird als abgelehnt markiert und zählt nicht zur Abrechnung.'))return;
   t.status='abgelehnt';
   if(CLOUD){ cloudUpdate('stundenzettel', id, { status:'abgelehnt' }); }
+  logActivity('Stundenzettel abgelehnt: '+staffName(t.staffId)+', '+fmtDate(t.date));
   toast('Stundenzettel abgelehnt',true); renderAdmin('hours');
 }
 /* Plausibilitäts-Check der Unterschrift (kein forensischer Vergleich!):
@@ -3878,6 +3938,7 @@ function saveStandort(id){
     const s=standorte.find(x=>x.id===id);
     Object.assign(s,data);
     if(CLOUD) cloudUpdate('standorte',s.id,standortToRow(s));
+    logActivity('Standort bearbeitet: '+s.name);
     closeModal();toast('Standort gespeichert');renderAdmin('standorte');
   }else{
     const s=Object.assign({id:nextStandortId++},data);
@@ -3889,6 +3950,7 @@ function saveStandort(id){
     if(CLOUD){
       cloudInsert('standorte',standortToRow(s)).then(r=>{
         if(r){ s.id=r.id; if(isFirst){ currentStandortId=r.id; localStorage.setItem('dailydo-standort', String(r.id)); } }
+        logActivity('Standort angelegt: '+s.name);
         closeModal();toast('Standort angelegt');
         if(isFirst){ loadFromCloud().then(()=>renderAdmin('dashboard')); } else { renderAdmin('standorte'); }
       });
@@ -3924,10 +3986,12 @@ function saveKt(id){
     const k=kostentraeger.find(x=>x.id===id);
     k.name=name;k.strasse=val('kt_strasse');k.plz=val('kt_plz');k.ort=val('kt_ort');k.email=email;
     if(CLOUD) cloudUpdate('kostentraeger',k.id,ktToRow(k));
+    logActivity('Kostenträger bearbeitet: '+k.name);
   }else{
     const k={id:nextKostentraegerId++,name:name,strasse:val('kt_strasse'),plz:val('kt_plz'),ort:val('kt_ort'),email:email};
     kostentraeger.push(k);
     if(CLOUD){ cloudInsert('kostentraeger',ktToRow(k)).then(r=>{ if(r) k.id=r.id; }); }
+    logActivity('Kostenträger angelegt: '+k.name);
   }
   closeModal();toast('Kostenträger gespeichert');renderAdmin('kostentraeger');
 }
@@ -3939,6 +4003,7 @@ function deleteKt(id){
   confirmDangerDelete('Kostenträger löschen','Soll <b>'+k.name+'</b> wirklich endgültig gelöscht werden?',function(){
     kostentraeger=kostentraeger.filter(x=>x.id!==id);
     if(CLOUD) cloudDelete('kostentraeger',id);
+    logActivity('Kostenträger gelöscht: '+k.name);
     toast('Kostenträger gelöscht');renderAdmin('kostentraeger');
   });
 }
@@ -4060,10 +4125,12 @@ function saveLk(id){
     const l=leistungenKatalog.find(x=>x.id===id);
     l.name=name;l.preis=preis;l.einheit=einheit;
     if(CLOUD) cloudUpdate('leistungen',l.id,lkToRow(l));
+    logActivity('Leistung bearbeitet: '+l.name);
   }else{
     const l={id:nextLeistungId++,name:name,preis:preis,einheit:einheit};
     leistungenKatalog.push(l);
     if(CLOUD){ cloudInsert('leistungen',lkToRow(l)).then(r=>{ if(r) l.id=r.id; }); }
+    logActivity('Leistung angelegt: '+l.name);
   }
   closeModal();toast('Leistung gespeichert');renderAdmin('leistungen');
 }
@@ -4073,6 +4140,7 @@ function deleteLk(id){
   confirmDangerDelete('Leistung löschen','Soll <b>'+l.name+'</b> wirklich endgültig gelöscht werden? Bereits zugewiesene Leistungen bei Kunden bleiben unverändert.',function(){
     leistungenKatalog=leistungenKatalog.filter(x=>x.id!==id);
     if(CLOUD) cloudDelete('leistungen',id);
+    logActivity('Leistung gelöscht: '+l.name);
     toast('Leistung gelöscht');
     renderAdmin('leistungen');
   });
@@ -4133,6 +4201,7 @@ function addKommAufgabe(kommId){
   const a={id:nextAufgabeId++,title,mitarbeiterId,customerId:k.customerId,beschreibung:null,status:'offen',faelligAm:null,kommunikationId:kommId};
   aufgaben.push(a);
   if(CLOUD){ cloudInsert('aufgaben',aufgabeToRow(a)).then(r=>{ if(r) a.id=r.id; }); }
+  logActivity('Aufgabe aus Kommunikation zugewiesen: '+title+' → '+staffName(mitarbeiterId));
   document.getElementById('komm_newtask').value='';
   document.getElementById('komm_newtask_staff').value='';
   document.getElementById('komm_tasklist').innerHTML=kommAufgabenListHTML(kommId);
@@ -4162,6 +4231,7 @@ function saveKomm(id, fixedCustId){
     const k=kommunikationen.find(x=>x.id===id);
     Object.assign(k,{title,type,date,time,status,note,customerId});
     if(CLOUD) cloudUpdate('kommunikation',k.id,kommToRow(k));
+    logActivity('Kommunikation bearbeitet: '+title);
     closeModal();toast('Kommunikation gespeichert');
     if(hasRole('admin','buero','callcenter')) renderAdmin('kommunikation');
     return;
@@ -4169,6 +4239,7 @@ function saveKomm(id, fixedCustId){
   const k={id:nextKommId++,title,type,date,time,status,note,customerId,createdBy:myId||null};
   kommunikationen.unshift(k);
   const afterSave=()=>{
+    logActivity('Kommunikation angelegt: '+title);
     toast('Kommunikation gespeichert – jetzt können Aufgaben zugewiesen werden');
     openKommModal(customerId,k.id);
   };
@@ -4181,6 +4252,7 @@ function deleteKomm(id){
   confirmDangerDelete('Kommunikation löschen','Soll dieser Eintrag ("'+k.title+'") wirklich endgültig gelöscht werden?',function(){
     kommunikationen=kommunikationen.filter(x=>x.id!==id);
     if(CLOUD) cloudDelete('kommunikation',id);
+    logActivity('Kommunikation gelöscht: '+k.title);
     toast('Kommunikation gelöscht');renderAdmin('kommunikation');
   });
 }
@@ -4226,10 +4298,12 @@ function saveAufgabe(id){
     const a=aufgaben.find(x=>x.id===id);
     Object.assign(a,{title,mitarbeiterId,customerId,faelligAm,status,beschreibung});
     if(CLOUD) cloudUpdate('aufgaben',a.id,aufgabeToRow(a));
+    logActivity('Aufgabe bearbeitet: '+title+' → '+staffName(mitarbeiterId));
   }else{
     const a={id:nextAufgabeId++,title,mitarbeiterId,customerId,faelligAm,status,beschreibung};
     aufgaben.push(a);
     if(CLOUD){ cloudInsert('aufgaben',aufgabeToRow(a)).then(r=>{ if(r) a.id=r.id; }); }
+    logActivity('Aufgabe zugewiesen: '+title+' → '+staffName(mitarbeiterId));
   }
   closeModal();toast('Aufgabe gespeichert');renderAdmin('aufgaben');
 }
@@ -4239,6 +4313,7 @@ function deleteAufgabe(id){
   confirmDangerDelete('Aufgabe löschen','Soll die Aufgabe "'+a.title+'" wirklich endgültig gelöscht werden?',function(){
     aufgaben=aufgaben.filter(x=>x.id!==id);
     if(CLOUD) cloudDelete('aufgaben',id);
+    logActivity('Aufgabe gelöscht: '+a.title);
     toast('Aufgabe gelöscht');renderAdmin('aufgaben');
   });
 }
@@ -4247,6 +4322,7 @@ function toggleAufgabeStatus(id){
   if(currentRole==='staff'&&a.mitarbeiterId!==myId){ toast('Keine Berechtigung für diese Aktion',true); return; }
   a.status=nextAufgabeStatus(a.status||'offen');
   if(CLOUD) cloudUpdate('aufgaben',a.id,aufgabeToRow(a));
+  logActivity('Aufgabe „'+a.title+'“ → Status: '+aufgabeStatusLabel(a.status));
   toast('Status: '+aufgabeStatusLabel(a.status));
   if(currentRole==='staff') renderStaff('aufgaben'); else renderAdmin('aufgaben');
 }
