@@ -443,6 +443,7 @@
 /* ============ DEMO-DATEN ============ */
 let currentRole='admin';
 let custSearch='', custFilter='alle', staffSearch='', staffFilter='alle';
+let kommFilter='alle', aufgabeFilter='alle';
 const SKILLS=['Haushaltshilfe','Einkaufsservice','Begleitdienste','Organisatorische Hilfe','Digitale Fragen'];
 const WEEKDAYS=['Mo','Di','Mi','Do','Fr','Sa','So'];
 const FREQ_UNITS=['pro Woche','alle 2 Wochen','pro Monat','nach Bedarf'];
@@ -520,6 +521,10 @@ let nextLeistungId=1;
 let standorte=[];
 let currentStandortId=null;
 let nextStandortId=1;
+let kommunikationen=[];
+let nextKommId=1;
+let aufgaben=[];
+let nextAufgabeId=1;
 
 /* ============================================================
    SUPABASE-ANBINDUNG (Testphase)
@@ -570,6 +575,7 @@ function sanitizeAllLocalData(){
   staff=sanitizeDeep(staff); customers=sanitizeDeep(customers); jobs=sanitizeDeep(jobs);
   applications=sanitizeDeep(applications); appointments=sanitizeDeep(appointments);
   timesheets=sanitizeDeep(timesheets); notes=sanitizeDeep(notes); proofs=sanitizeDeep(proofs); payrolls=sanitizeDeep(payrolls);
+  kommunikationen=sanitizeDeep(kommunikationen); aufgaben=sanitizeDeep(aufgaben);
 }
 function isValidEmail(v){ return /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(String(v||'').trim()); }
 function isValidPhone(v){ return !v || /^[0-9+()\/ .-]{6,30}$/.test(String(v||'').trim()); }
@@ -664,6 +670,23 @@ function standortToRow(s){return {name:s.name,firma:s.firma||null,strasse:s.stra
 function rowToStandort(r){return {id:r.id,name:r.name,firma:r.firma,strasse:r.strasse,plz:r.plz,ort:r.ort,telefon:r.telefon,email:r.email,notizen:r.notizen};}
 function lkToRow(l){return {name:l.name,preis:l.preis,einheit:l.einheit, standort_id:currentStandortId};}
 function rowToLk(r){return {id:r.id,name:r.name,preis:r.preis,einheit:r.einheit};}
+/* ============ KOMMUNIKATION (CRM) / AUFGABEN: DB-Mapping ============ */
+function kommToRow(k){return {
+  customer_id:k.customerId, title:k.title, type:k.type||'anruf', date:k.date, time:k.time||null,
+  status:k.status||'offen', note:k.note||null, tasks:k.tasks||[], created_by:k.createdBy||null, standort_id:currentStandortId
+};}
+function rowToKomm(r){return {
+  id:r.id, customerId:r.customer_id, title:r.title, type:r.type, date:r.date, time:r.time,
+  status:r.status, note:r.note, tasks:r.tasks||[], createdBy:r.created_by
+};}
+function aufgabeToRow(a){return {
+  mitarbeiter_id:a.mitarbeiterId, customer_id:a.customerId||null, title:a.title, beschreibung:a.beschreibung||null,
+  status:a.status||'offen', faellig_am:a.faelligAm||null, standort_id:currentStandortId
+};}
+function rowToAufgabe(r){return {
+  id:r.id, mitarbeiterId:r.mitarbeiter_id, customerId:r.customer_id, title:r.title, beschreibung:r.beschreibung,
+  status:r.status, faelligAm:r.faellig_am
+};}
 function ktToRow(k){return {name:k.name,strasse:k.strasse||null,plz:k.plz||null,ort:k.ort||null,email:k.email||null, standort_id:currentStandortId};}
 function rowToKt(r){return {id:r.id,name:r.name,strasse:r.strasse,plz:r.plz,ort:r.ort,email:r.email};}
 function rechnungToRow(r){return {
@@ -797,6 +820,22 @@ async function loadFromCloud(){
     if(data) leistungenKatalog=data.map(rowToLk);
     DIAG.push('leistungen: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER leistungen: '+(e.message||e)); console.error('Laden leistungen fehlgeschlagen:', e.message||e); }
+
+  // Kommunikation (CRM)
+  try{
+    const {data,error}=await sb.from('kommunikation').select('*').eq('standort_id',currentStandortId).order('date',{ascending:false});
+    if(error) throw error;
+    if(data) kommunikationen=data.map(rowToKomm);
+    DIAG.push('kommunikation: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER kommunikation: '+(e.message||e)); console.error('Laden kommunikation fehlgeschlagen:', e.message||e); }
+
+  // Aufgaben
+  try{
+    const {data,error}=await sb.from('aufgaben').select('*').eq('standort_id',currentStandortId).order('id');
+    if(error) throw error;
+    if(data) aufgaben=data.map(rowToAufgabe);
+    DIAG.push('aufgaben: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER aufgaben: '+(e.message||e)); console.error('Laden aufgaben fehlgeschlagen:', e.message||e); }
 
   // Geladene Inhalte entschärfen, bevor sie per innerHTML gerendert werden
   sanitizeAllLocalData();
@@ -1065,6 +1104,8 @@ function navItem(id,icon,label,active,badge,blue){
 function buildAdminNav(active){
   const open=jobs.filter(j=>j.status==='available').length;
   const newApps=applications.filter(a=>a.status!=='aktiv').length;
+  const offeneKomm=kommunikationen.filter(k=>k.status==='offen').length;
+  const offeneAufgaben=aufgaben.filter(a=>a.status==='offen').length;
   document.getElementById('sidebar').innerHTML=
     '<div class="nav-group">Übersicht</div>'+
     navItem('dashboard','◧','Dashboard',active==='dashboard')+
@@ -1075,6 +1116,8 @@ function buildAdminNav(active){
     navItem('applications','📥','Bewerbungen',active==='applications',newApps||'',true)+
     navItem('customers','◍','Kunden',active==='customers')+
     navItem('newcustomer','＋','Kunde anlegen',active==='newcustomer')+
+    navItem('kommunikation','💬','Kommunikation',active==='kommunikation',offeneKomm||'',true)+
+    navItem('aufgaben','☑','Aufgaben',active==='aufgaben',offeneAufgaben||'')+
     navItem('kostentraeger','🏦','Kostenträger',active==='kostentraeger')+
     navItem('leistungen','📋','Leistungen',active==='leistungen')+
     '<div class="nav-group">Abwicklung</div>'+
@@ -1090,11 +1133,13 @@ function buildStaffNav(active){
   const m=me();
   const mineCount=jobs.filter(j=>j.status==='assigned'&&j.assignedTo===myId).length;
   const open=availableForMe().length;
+  const offeneAufgaben=aufgaben.filter(a=>a.mitarbeiterId===myId&&a.status==='offen').length;
   document.getElementById('sidebar').innerHTML=
     '<div class="nav-group">Mein Tag</div>'+
     navItem('dashboard','◧','Dashboard',active==='dashboard')+
     navItem('board','◎','Auftragsbörse',active==='board',m.status==='aktiv'?open:'')+
     navItem('mine','✓','Meine Kunden',active==='mine',mineCount||'')+
+    navItem('aufgaben','☑','Meine Aufgaben',active==='aufgaben',offeneAufgaben||'',true)+
     '<div class="nav-group">Organisation</div>'+
     navItem('calendar','▦','Meine Termine',active==='calendar')+
     navItem('hours','⏱','Stundenzettel',active==='hours')+
@@ -1316,6 +1361,31 @@ function renderAdmin(view){
       '</tbody></table>':'<div class="empty"><div class="big">📋</div><b>Noch keine Leistungen definiert</b><p style="margin-top:6px">Lege hier eure Leistungsarten mit Preis und Abrechnungseinheit an (z. B. „Haushaltshilfe" – 25 € – pro Stunde).</p></div>')+
     '</div></div>';
   }
+  if(view==='kommunikation'){
+    const filtered=kommunikationen.filter(k=>!kommFilter||kommFilter==='alle'||k.status===kommFilter);
+    c.innerHTML=head('Kommunikation (CRM)','Anrufe, Beschwerden und Anliegen eurer Kund:innen – standortübergreifend dokumentiert für dieses Standort.')+
+    '<div class="panel"><div class="panel-head"><h3>'+filtered.length+' Einträge</h3><button class="btn-primary btn-sm" style="width:auto" onclick="openKommModal(null,null)">＋ Kommunikation hinzufügen</button></div>'+
+    '<div class="list-toolbar"><div class="filter-chips">'+[['alle','Alle'],['offen','Offen'],['erledigt','Erledigt']].map(([v,l])=>'<span class="chip '+((kommFilter||'alle')===v?'on':'')+'" onclick="kommFilter=\''+v+'\';renderAdmin(\'kommunikation\')">'+l+'</span>').join('')+'</div></div>'+
+    '<div class="panel-body" style="padding-top:8px">'+
+    (filtered.length?'<table><thead><tr><th>Kunde</th><th>Titel</th><th>Typ</th><th>Datum</th><th>Status</th></tr></thead><tbody>'+
+      filtered.map(k=>{const cu=custById(k.customerId);return '<tr class="clickable" onclick="openKommModal('+k.customerId+','+k.id+')"><td><b>'+(cu?fullName(cu):'—')+'</b></td><td>'+(k.title||'')+'</td><td>'+kommTypeLabel(k.type)+'</td><td>'+fmtDate(k.date)+(k.time?' · '+k.time:'')+'</td><td>'+(k.status==='erledigt'?'<span class="tag green">erledigt</span>':'<span class="tag amber">offen</span>')+'</td></tr>';}).join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">💬</div><b>Noch keine Einträge</b><p style="margin-top:6px">Dokumentiere hier Anrufe, Beschwerden oder Anliegen von Kund:innen.</p></div>')+
+    '</div></div>';
+  }
+
+  if(view==='aufgaben'){
+    const filtered=aufgaben.filter(a=>!aufgabeFilter||aufgabeFilter==='alle'||a.status===aufgabeFilter);
+    c.innerHTML=head('Aufgaben','Aufgaben, die ihr Mitarbeiter:innen zuweist. Sie erscheinen dort unter „Meine Aufgaben" und können als erledigt markiert werden.')+
+    '<div class="panel"><div class="panel-head"><h3>'+filtered.length+' Aufgaben</h3><button class="btn-primary btn-sm" style="width:auto" onclick="openAufgabeModal(null)">＋ Aufgabe zuweisen</button></div>'+
+    '<div class="list-toolbar"><div class="filter-chips">'+[['alle','Alle'],['offen','Offen'],['erledigt','Erledigt']].map(([v,l])=>'<span class="chip '+((aufgabeFilter||'alle')===v?'on':'')+'" onclick="aufgabeFilter=\''+v+'\';renderAdmin(\'aufgaben\')">'+l+'</span>').join('')+'</div></div>'+
+    '<div class="panel-body" style="padding-top:8px">'+
+    (filtered.length?'<table><thead><tr><th>Titel</th><th>Mitarbeiter</th><th>Kunde</th><th>Fällig</th><th>Status</th><th></th></tr></thead><tbody>'+
+      filtered.map(a=>{const cu=a.customerId?custById(a.customerId):null;return '<tr><td class="clickable" onclick="openAufgabeModal('+a.id+')"><b>'+(a.title||'')+'</b></td><td>'+staffName(a.mitarbeiterId)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+(a.faelligAm?fmtDate(a.faelligAm):'—')+'</td><td>'+(a.status==='erledigt'?'<span class="tag green">erledigt</span>':'<span class="tag amber">offen</span>')+'</td>'+
+      '<td style="text-align:right"><button class="btn-danger-ghost btn-sm" onclick="deleteAufgabe('+a.id+')">Löschen</button></td></tr>';}).join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">☑</div><b>Noch keine Aufgaben</b><p style="margin-top:6px">Weise hier Mitarbeiter:innen Aufgaben zu, optional mit Kundenbezug.</p></div>')+
+    '</div></div>';
+  }
+
   if(view==='rechnungen'){
     const ready=timesheets.filter(t=>t.status==='freigegeben' && t.billable!==false && !rechnungen.find(r=>r.stundenzettelId===t.id));
     c.innerHTML=head('Rechnungen','Stundenzettel, die abgerechnet werden können, und bereits erstellte Rechnungen.')+
@@ -1666,7 +1736,7 @@ function editCustomer(id){
   docsHtml+='<div class="upload-box" style="margin-top:10px" onclick="document.getElementById(\'extFileInput\').click()"><div class="ub-ic">⬆️</div><div class="ub-t">Externes Dokument hochladen</div><div class="ub-s">PDF, JPG oder PNG · z. B. Pflegegrad-Bescheid, Vollmacht</div></div>'+
     '<input type="file" id="extFileInput" accept="application/pdf,image/*" style="display:none" onchange="uploadExtDoc('+c.id+',this)">';
 
-  document.getElementById('modalBody').innerHTML=customerFormHTML(c).replace('<div class="panel"><div class="panel-body content-form" style="padding-top:18px">','<div class="content-form">').replace(/<\/div><\/div>$/,'</div>')+docsHtml;
+  document.getElementById('modalBody').innerHTML=customerFormHTML(c).replace('<div class="panel"><div class="panel-body content-form" style="padding-top:18px">','<div class="content-form">').replace(/<\/div><\/div>$/,'</div>')+docsHtml+'<div style="margin-top:18px">'+custKommListHTML(c.id)+'</div>';
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
     '<button class="btn-ghost" style="width:auto" onclick="startAbtretung('+c.id+')">+ Abtretung</button>'+
     '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="updateCustomer('+c.id+')">Speichern</button>';
@@ -1923,7 +1993,22 @@ function renderStaff(view){
     c.innerHTML=head('Meine Kunden','Angenommene Aufträge mit vollständigen Kontaktdaten. Vereinbare jetzt selbst einen Termin.')+
     (mine.length?'<div class="cards grid-2">'+mine.map(mineCard).join('')+'</div>':placeholder('✓','Noch keine Kunden angenommen','Geh zur Auftragsbörse und nimm einen Auftrag an – die vollständigen Daten erscheinen dann hier.'));
   }
-  if(view==='calendar'){ c.innerHTML=head('Meine Termine','Deine vereinbarten Einsätze. Termine entstehen, wenn du bei „Meine Kunden“ einen Termin vereinbarst.')+calendarHTML(myId); }
+  if(view==='aufgaben'){
+    const mine=aufgaben.filter(a=>a.mitarbeiterId===myId).sort((x,y)=>(x.status==='erledigt')-(y.status==='erledigt'));
+    c.innerHTML=head('Meine Aufgaben','Vom Büro zugewiesene Aufgaben. Markiere sie als erledigt, sobald du fertig bist.')+
+    '<div class=”panel”><div class=”panel-body” style=”padding-top:8px”>'+
+    (mine.length?mine.map(a=>{const cu=a.customerId?custById(a.customerId):null;
+      return '<div class=”list-row” style=”padding:13px 0;border-bottom:1px solid var(--line)”>'+
+        '<div class=”li-main” style=”flex:1”><b style=”'+(a.status==='erledigt'?'text-decoration:line-through;color:var(--muted)':'')+'”>'+a.title+'</b>'+
+        (a.beschreibung?'<div class=”li-sub”>'+a.beschreibung+'</div>':'')+
+        '<div class=”li-sub”>'+(a.faelligAm?'Fällig: '+fmtDate(a.faelligAm)+' · ':'')+(cu?'Kunde: '+fullName(cu):'')+'</div></div>'+
+        '<div style=”display:flex;gap:7px;align-items:center”>'+
+        (cu?'<button class=”btn-ghost btn-sm” onclick=”showCustomerForTask('+cu.id+')”>Kunde ansehen</button>':'')+
+        '<button class=”btn-primary btn-sm” style=”width:auto” onclick=”toggleAufgabeStatus('+a.id+')”>'+(a.status==='erledigt'?'Wieder öffnen':'✓ Erledigt')+'</button>'+
+        '</div></div>';}).join(''):placeholder('☑','Keine Aufgaben','Aktuell hat dir das Büro keine Aufgaben zugewiesen.'))+
+    '</div></div>';
+  }
+  if(view==='calendar'){ c.innerHTML=head('Meine Termine','Deine vereinbarten Einsätze. Termine entstehen, wenn du bei „Meine Kunden” einen Termin vereinbarst.')+calendarHTML(myId); }
   if(view==='hours'){
     const mine=timesheets.filter(t=>t.staffId===myId);
     c.innerHTML=head('Stundenzettel','Deine Einsätze. Vom Kunden unterschriebene Einsätze kannst du als Leistungsnachweis-PDF herunterladen.')+
@@ -3670,6 +3755,151 @@ function deleteLk(id){
   if(CLOUD) cloudDelete('leistungen',id);
   toast('Leistung gelöscht (bereits zugewiesene Leistungen bei Kunden bleiben unverändert)');
   renderAdmin('leistungen');
+}
+
+/* ============ KOMMUNIKATION (CRM) ============ */
+const KOMM_TYPEN=[['anruf','📞 Anruf'],['email','✉ E-Mail'],['brief','✉ Brief'],['persoenlich','👤 Persönlich'],['sonstiges','✱ Weiteres']];
+function kommTypeLabel(t){const f=KOMM_TYPEN.find(x=>x[0]===t);return f?f[1]:(t||'—');}
+let __kommTasks=[];
+function openKommModal(custId, id){
+  const isEdit=id!==null;
+  const k=isEdit?kommunikationen.find(x=>x.id===id):{customerId:custId,title:'',type:'anruf',date:todayISO(),time:'',status:'offen',note:'',tasks:[]};
+  __kommTasks=(k.tasks||[]).slice();
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Kommunikation '+(isEdit?'bearbeiten':'hinzufügen');
+  const fixedCustomer=custId!==null;
+  document.getElementById('modalBody').innerHTML=
+    '<label>Titel *</label><input id="komm_title" value="'+(k.title||'')+'" placeholder="z. B. Beschwerde Pünktlichkeit">'+
+    '<div class="form-row" style="margin-top:8px">'+KOMM_TYPEN.map(([v,l])=>'<label style="display:flex;align-items:center;gap:5px;font-weight:400"><input type="radio" name="komm_type" value="'+v+'" '+((k.type||'anruf')===v?'checked':'')+'> '+l+'</label>').join('')+'</div>'+
+    '<div class="form-row" style="margin-top:8px"><div><label>Datum *</label><input id="komm_date" type="date" value="'+(k.date||todayISO())+'"></div>'+
+    '<div><label>Uhrzeit *</label><input id="komm_time" type="time" value="'+(k.time||'')+'"></div></div>'+
+    '<div class="form-row"><div><label>Status *</label><select id="komm_status"><option value="offen" '+(k.status!=='erledigt'?'selected':'')+'>Offen</option><option value="erledigt" '+(k.status==='erledigt'?'selected':'')+'>Erledigt</option></select></div>'+
+    '<div><label>Klientin zuweisen *</label>'+(fixedCustomer?
+      '<input value="'+(custById(custId)?fullName(custById(custId)):'')+'" disabled>'
+      :'<select id="komm_customer"><option value="">Klient auswählen</option>'+customers.map(c=>'<option value="'+c.id+'" '+(k.customerId===c.id?'selected':'')+'>'+fullName(c)+'</option>').join('')+'</select>')+
+    '</div></div>'+
+    '<div class="section-label" style="margin-top:6px">Aufgabenliste</div>'+
+    '<div id="komm_tasklist">'+kommTaskListHTML()+'</div>'+
+    '<div style="display:flex;gap:8px;margin-top:8px"><input id="komm_newtask" placeholder="Aufgabe hinzufügen…" style="flex:1" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addKommTask();}"><button class="btn-primary btn-sm" style="width:auto" onclick="addKommTask()">+ Hinzufügen</button></div>'+
+    '<label style="margin-top:14px;display:block">Notiz *</label><textarea id="komm_note" rows="4">'+(k.note||'')+'</textarea>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    (isEdit?'<button class="btn-danger-ghost" style="width:auto" onclick="deleteKomm('+id+')">Löschen</button>':'')+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveKomm('+(isEdit?id:'null')+','+(fixedCustomer?custId:'null')+')">Hinzufügen</button>';
+  openModal();
+}
+function kommTaskListHTML(){
+  if(!__kommTasks.length) return '<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine Aufgaben.</p>';
+  return '<ul style="list-style:none;display:flex;flex-direction:column;gap:6px">'+__kommTasks.map((t,i)=>
+    '<li style="display:flex;align-items:center;gap:8px"><input type="checkbox" '+(t.done?'checked':'')+' onchange="toggleKommTaskDraft('+i+')">'+
+    '<span style="flex:1;'+(t.done?'text-decoration:line-through;color:var(--muted)':'')+'">'+t.text+'</span>'+
+    '<button class="btn-ghost btn-sm" onclick="removeKommTaskDraft('+i+')">✕</button></li>').join('')+'</ul>';
+}
+function addKommTask(){
+  const v=val('komm_newtask'); if(!v) return;
+  __kommTasks.push({text:v,done:false});
+  document.getElementById('komm_newtask').value='';
+  document.getElementById('komm_tasklist').innerHTML=kommTaskListHTML();
+}
+function toggleKommTaskDraft(i){ __kommTasks[i].done=!__kommTasks[i].done; document.getElementById('komm_tasklist').innerHTML=kommTaskListHTML(); }
+function removeKommTaskDraft(i){ __kommTasks.splice(i,1); document.getElementById('komm_tasklist').innerHTML=kommTaskListHTML(); }
+function saveKomm(id, fixedCustId){
+  const title=val('komm_title'); if(!title){toast('Bitte einen Titel eingeben',true);return;}
+  const customerId=fixedCustId!==null?fixedCustId:(document.getElementById('komm_customer')?+document.getElementById('komm_customer').value:null);
+  if(!customerId){toast('Bitte eine Klientin zuweisen',true);return;}
+  const type=(document.querySelector('input[name="komm_type"]:checked')||{}).value||'anruf';
+  const date=val('komm_date'), time=val('komm_time'), status=document.getElementById('komm_status').value, note=val('komm_note');
+  if(!date||!time){toast('Bitte Datum und Uhrzeit angeben',true);return;}
+  if(!note){toast('Bitte eine Notiz eingeben',true);return;}
+  const tasks=__kommTasks.slice();
+  if(id!==null){
+    const k=kommunikationen.find(x=>x.id===id);
+    Object.assign(k,{title,type,date,time,status,note,customerId,tasks});
+    if(CLOUD) cloudUpdate('kommunikation',k.id,kommToRow(k));
+  }else{
+    const k={id:nextKommId++,title,type,date,time,status,note,customerId,tasks,createdBy:myId||null};
+    kommunikationen.unshift(k);
+    if(CLOUD){ cloudInsert('kommunikation',kommToRow(k)).then(r=>{ if(r) k.id=r.id; }); }
+  }
+  closeModal();toast('Kommunikation gespeichert');
+  if(currentRole==='admin') renderAdmin('kommunikation');
+}
+function deleteKomm(id){
+  if(!requireAdminAction()) return;
+  kommunikationen=kommunikationen.filter(k=>k.id!==id);
+  if(CLOUD) cloudDelete('kommunikation',id);
+  closeModal();toast('Kommunikation gelöscht');renderAdmin('kommunikation');
+}
+function custKommListHTML(custId){
+  const list=kommunikationen.filter(k=>k.customerId===custId);
+  return '<div class="section-label" style="display:flex;justify-content:space-between;align-items:center">Kommunikation (CRM) <button class="btn-primary btn-sm" style="width:auto" onclick="openKommModal('+custId+',null)">＋ Hinzufügen</button></div>'+
+  (list.length?list.map(k=>'<div class="list-row clickable" style="padding:11px 0;border-bottom:1px solid var(--line)" onclick="openKommModal('+custId+','+k.id+')"><div class="li-main"><b>'+kommTypeLabel(k.type)+' · '+k.title+'</b><div class="li-sub">'+fmtDate(k.date)+' · '+k.time+' · '+(k.note||'').slice(0,80)+'</div></div>'+(k.status==='erledigt'?'<span class="tag green">erledigt</span>':'<span class="tag amber">offen</span>')+'</div>').join('')
+    :'<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine Kommunikation dokumentiert.</p>');
+}
+
+/* ============ AUFGABEN (Mitarbeiter-Zuweisung) ============ */
+function openAufgabeModal(id){
+  if(!requireAdminAction()) return;
+  const isEdit=id!==null;
+  const a=isEdit?aufgaben.find(x=>x.id===id):{mitarbeiterId:'',customerId:'',title:'',beschreibung:'',status:'offen',faelligAm:''};
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Aufgabe '+(isEdit?'bearbeiten':'zuweisen');
+  document.getElementById('modalBody').innerHTML=
+    '<label>Titel *</label><input id="auf_title" value="'+(a.title||'')+'" placeholder="z. B. Pflegegrad-Unterlagen abholen">'+
+    '<div class="form-row" style="margin-top:8px"><div><label>Mitarbeiter *</label><select id="auf_staff"><option value="">Auswählen</option>'+staff.map(s=>'<option value="'+s.id+'" '+(a.mitarbeiterId===s.id?'selected':'')+'>'+fullName(s)+'</option>').join('')+'</select></div>'+
+    '<div><label>Kunde (optional)</label><select id="auf_customer"><option value="">—</option>'+customers.map(c=>'<option value="'+c.id+'" '+(a.customerId===c.id?'selected':'')+'>'+fullName(c)+'</option>').join('')+'</select></div></div>'+
+    '<div class="form-row"><div><label>Fällig am</label><input id="auf_faellig" type="date" value="'+(a.faelligAm||'')+'"></div>'+
+    '<div><label>Status</label><select id="auf_status"><option value="offen" '+(a.status!=='erledigt'?'selected':'')+'>Offen</option><option value="erledigt" '+(a.status==='erledigt'?'selected':'')+'>Erledigt</option></select></div></div>'+
+    '<label>Beschreibung</label><textarea id="auf_beschreibung" rows="4">'+(a.beschreibung||'')+'</textarea>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveAufgabe('+(isEdit?id:'null')+')">Speichern</button>';
+  openModal();
+}
+function saveAufgabe(id){
+  if(!requireAdminAction()) return;
+  const title=val('auf_title'); if(!title){toast('Bitte einen Titel eingeben',true);return;}
+  const mitarbeiterId=document.getElementById('auf_staff').value?+document.getElementById('auf_staff').value:null;
+  if(!mitarbeiterId){toast('Bitte einen Mitarbeiter auswählen',true);return;}
+  const customerId=document.getElementById('auf_customer').value?+document.getElementById('auf_customer').value:null;
+  const faelligAm=val('auf_faellig'), status=document.getElementById('auf_status').value, beschreibung=val('auf_beschreibung');
+  if(id!==null){
+    const a=aufgaben.find(x=>x.id===id);
+    Object.assign(a,{title,mitarbeiterId,customerId,faelligAm,status,beschreibung});
+    if(CLOUD) cloudUpdate('aufgaben',a.id,aufgabeToRow(a));
+  }else{
+    const a={id:nextAufgabeId++,title,mitarbeiterId,customerId,faelligAm,status,beschreibung};
+    aufgaben.push(a);
+    if(CLOUD){ cloudInsert('aufgaben',aufgabeToRow(a)).then(r=>{ if(r) a.id=r.id; }); }
+  }
+  closeModal();toast('Aufgabe gespeichert');renderAdmin('aufgaben');
+}
+function deleteAufgabe(id){
+  if(!requireAdminAction()) return;
+  aufgaben=aufgaben.filter(a=>a.id!==id);
+  if(CLOUD) cloudDelete('aufgaben',id);
+  toast('Aufgabe gelöscht');renderAdmin('aufgaben');
+}
+function toggleAufgabeStatus(id){
+  const a=aufgaben.find(x=>x.id===id); if(!a) return;
+  if(currentRole==='staff'&&a.mitarbeiterId!==myId){ toast('Keine Berechtigung für diese Aktion',true); return; }
+  a.status=a.status==='erledigt'?'offen':'erledigt';
+  if(CLOUD) cloudUpdate('aufgaben',a.id,aufgabeToRow(a));
+  toast(a.status==='erledigt'?'Aufgabe als erledigt markiert':'Aufgabe wieder geöffnet');
+  if(currentRole==='admin') renderAdmin('aufgaben'); else renderStaff('aufgaben');
+}
+function showCustomerForTask(custId){
+  const cu=custById(custId); if(!cu) return;
+  const allowed=aufgaben.some(a=>a.mitarbeiterId===myId&&a.customerId===custId) || jobs.some(j=>j.assignedTo===myId&&j.customerId===custId);
+  if(!allowed){ toast('Kein Zugriff auf diese Kundendaten',true); return; }
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent=fullName(cu);
+  document.getElementById('modalBody').innerHTML=
+    '<div class="form-row"><div><label>Adresse</label><p>'+(cu.street?cu.street+' '+(cu.houseNo||''):'')+'<br>'+(cu.plz||'')+' '+(cu.city||'')+'</p></div>'+
+    '<div><label>Telefon</label><p>'+(cu.phone||cu.phoneMobile||cu.phoneLandline||'—')+'</p></div></div>'+
+    '<div class="section-label">Kommunikation</div>'+custKommListHTML(custId).replace(/onclick="openKommModal/g,'onclick="void(0);//');
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  openModal();
 }
 
 /* ============================================================
