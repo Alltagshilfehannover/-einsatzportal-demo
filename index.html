@@ -163,6 +163,7 @@
   .seg button.on{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol-dark)}
   .seg.status button.on[data-v="aktiv"],.seg.status button.on[data-v="erledigt"]{border-color:var(--good);background:var(--good-soft);color:var(--good)}
   .seg.status button.on[data-v="Urlaub"],.seg.status button.on[data-v="krank"],.seg.status button.on[data-v="offen"]{border-color:var(--amber);background:var(--amber-soft);color:var(--amber)}
+  .seg.status button.on[data-v="in_arbeit"]{border-color:var(--blue);background:var(--blue-soft);color:var(--blue)}
   .day-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-bottom:6px}
   .day{padding:10px 4px;text-align:center;border:1.5px solid var(--line);border-radius:9px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
   .day.on{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol-dark)}
@@ -691,8 +692,16 @@ function rowToCust(r){return {
   bedarfsanalyse:r.bedarfsanalyse||null, vertrag:r.vertrag||null
 };}
 /* ============ KOSTENTRÄGER / RECHNUNGEN: DB-Mapping ============ */
-function standortToRow(s){return {name:s.name,firma:s.firma||null,strasse:s.strasse||null,plz:s.plz||null,ort:s.ort||null,telefon:s.telefon||null,email:s.email||null,notizen:s.notizen||null};}
-function rowToStandort(r){return {id:r.id,name:r.name,firma:r.firma,strasse:r.strasse,plz:r.plz,ort:r.ort,telefon:r.telefon,email:r.email,notizen:r.notizen};}
+function standortToRow(s){return {name:s.name,firma:s.firma||null,strasse:s.strasse||null,plz:s.plz||null,ort:s.ort||null,telefon:s.telefon||null,email:s.email||null,notizen:s.notizen||null,
+  ik_nummer:s.ikNummer||null,handelsregister:s.handelsregister||null,ust_id:s.ustId||null,geschaeftsfuehrer:s.geschaeftsfuehrer||null,
+  unterschrift:safeDataUrl(s.unterschrift,true)||null,
+  anerkennung_name:s.anerkennungName||null,anerkennung_data:safeDataUrl(s.anerkennungData)||null,anerkennung_date:s.anerkennungDate||null
+};}
+function rowToStandort(r){return {id:r.id,name:r.name,firma:r.firma,strasse:r.strasse,plz:r.plz,ort:r.ort,telefon:r.telefon,email:r.email,notizen:r.notizen,
+  ikNummer:r.ik_nummer,handelsregister:r.handelsregister,ustId:r.ust_id,geschaeftsfuehrer:r.geschaeftsfuehrer,
+  unterschrift:r.unterschrift,
+  anerkennungName:r.anerkennung_name,anerkennungData:r.anerkennung_data,anerkennungDate:r.anerkennung_date
+};}
 function lkToRow(l){return {name:l.name,preis:l.preis,einheit:l.einheit, standort_id:currentStandortId};}
 function rowToLk(r){return {id:r.id,name:r.name,preis:r.preis,einheit:r.einheit};}
 /* ============ KOMMUNIKATION (CRM) / AUFGABEN: DB-Mapping ============ */
@@ -706,11 +715,11 @@ function rowToKomm(r){return {
 };}
 function aufgabeToRow(a){return {
   mitarbeiter_id:a.mitarbeiterId, customer_id:a.customerId||null, title:a.title, beschreibung:a.beschreibung||null,
-  status:a.status||'offen', faellig_am:a.faelligAm||null, standort_id:currentStandortId
+  status:a.status||'offen', faellig_am:a.faelligAm||null, kommunikation_id:a.kommunikationId||null, standort_id:currentStandortId
 };}
 function rowToAufgabe(r){return {
   id:r.id, mitarbeiterId:r.mitarbeiter_id, customerId:r.customer_id, title:r.title, beschreibung:r.beschreibung,
-  status:r.status, faelligAm:r.faellig_am
+  status:r.status, faelligAm:r.faellig_am, kommunikationId:r.kommunikation_id
 };}
 function ktToRow(k){return {name:k.name,strasse:k.strasse||null,plz:k.plz||null,ort:k.ort||null,email:k.email||null, standort_id:currentStandortId};}
 function rowToKt(r){return {id:r.id,name:r.name,strasse:r.strasse,plz:r.plz,ort:r.ort,email:r.email};}
@@ -1551,12 +1560,12 @@ function renderAdmin(view){
 
   if(view==='aufgaben'){
     const filtered=aufgaben.filter(a=>!aufgabeFilter||aufgabeFilter==='alle'||a.status===aufgabeFilter);
-    c.innerHTML=head('Aufgaben','Aufgaben, die ihr Mitarbeiter:innen zuweist. Sie erscheinen dort unter „Meine Aufgaben" und können als erledigt markiert werden.')+
+    c.innerHTML=head('Aufgaben','Aufgaben, die ihr Mitarbeiter:innen zuweist – auch direkt aus der Kundenkommunikation heraus. Sie erscheinen dort unter „Meine Aufgaben".')+
     '<div class="panel"><div class="panel-head"><h3>'+filtered.length+' Aufgaben</h3><button class="btn-primary btn-sm" style="width:auto" onclick="openAufgabeModal(null)">＋ Aufgabe zuweisen</button></div>'+
-    '<div class="list-toolbar"><div class="filter-chips">'+[['alle','Alle'],['offen','Offen'],['erledigt','Erledigt']].map(([v,l])=>'<span class="chip '+((aufgabeFilter||'alle')===v?'on':'')+'" onclick="aufgabeFilter=\''+v+'\';renderAdmin(\'aufgaben\')">'+l+'</span>').join('')+'</div></div>'+
+    '<div class="list-toolbar"><div class="filter-chips">'+[['alle','Alle']].concat(AUFGABE_STATUS).map(([v,l])=>'<span class="chip '+((aufgabeFilter||'alle')===v?'on':'')+'" onclick="aufgabeFilter=\''+v+'\';renderAdmin(\'aufgaben\')">'+l+'</span>').join('')+'</div></div>'+
     '<div class="panel-body" style="padding-top:8px">'+
     (filtered.length?'<table><thead><tr><th>Titel</th><th>Mitarbeiter</th><th>Kunde</th><th>Fällig</th><th>Status</th><th></th></tr></thead><tbody>'+
-      filtered.map(a=>{const cu=a.customerId?custById(a.customerId):null;return '<tr><td class="clickable" onclick="openAufgabeModal('+a.id+')"><b>'+(a.title||'')+'</b></td><td>'+staffName(a.mitarbeiterId)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+(a.faelligAm?fmtDate(a.faelligAm):'—')+'</td><td>'+(a.status==='erledigt'?'<span class="tag green">erledigt</span>':'<span class="tag amber">offen</span>')+'</td>'+
+      filtered.map(a=>{const cu=a.customerId?custById(a.customerId):null;return '<tr><td class="clickable" onclick="openAufgabeModal('+a.id+')"><b>'+(a.title||'')+'</b>'+(a.kommunikationId?' <span class="tag blue" style="font-size:10px">CRM</span>':'')+'</td><td>'+staffName(a.mitarbeiterId)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+(a.faelligAm?fmtDate(a.faelligAm):'—')+'</td><td>'+aufgabeStatusTag(a.status)+'</td>'+
       '<td style="text-align:right"><button class="btn-danger-ghost btn-sm" onclick="deleteAufgabe('+a.id+')">Löschen</button></td></tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">☑</div><b>Noch keine Aufgaben</b><p style="margin-top:6px">Weise hier Mitarbeiter:innen Aufgaben zu, optional mit Kundenbezug.</p></div>')+
     '</div></div>';
@@ -2204,18 +2213,21 @@ function renderStaff(view){
     (mine.length?'<div class="cards grid-2">'+mine.map(mineCard).join('')+'</div>':placeholder('✓','Noch keine Kunden angenommen','Geh zur Auftragsbörse und nimm einen Auftrag an – die vollständigen Daten erscheinen dann hier.'));
   }
   if(view==='aufgaben'){
-    const mine=aufgaben.filter(a=>a.mitarbeiterId===myId).sort((x,y)=>(x.status==='erledigt')-(y.status==='erledigt'));
-    c.innerHTML=head('Meine Aufgaben','Vom Büro zugewiesene Aufgaben. Markiere sie als erledigt, sobald du fertig bist.')+
-    '<div class=”panel”><div class=”panel-body” style=”padding-top:8px”>'+
+    const all=aufgaben.filter(a=>a.mitarbeiterId===myId);
+    const mine=all.filter(a=>!aufgabeFilter||aufgabeFilter==='alle'||a.status===aufgabeFilter)
+      .sort((x,y)=>(x.status==='erledigt')-(y.status==='erledigt'));
+    c.innerHTML=head('Meine Aufgaben','Vom Büro zugewiesene Aufgaben. Markiere den Fortschritt, sobald du daran arbeitest oder fertig bist.')+
+    '<div class="list-toolbar" style="margin-bottom:14px"><div class="filter-chips">'+[['alle','Alle']].concat(AUFGABE_STATUS).map(([v,l])=>'<span class="chip '+((aufgabeFilter||'alle')===v?'on':'')+'" onclick="aufgabeFilter=\''+v+'\';renderStaff(\'aufgaben\')">'+l+'</span>').join('')+'</div></div>'+
+    '<div class="panel"><div class="panel-body" style="padding-top:8px">'+
     (mine.length?mine.map(a=>{const cu=a.customerId?custById(a.customerId):null;
-      return '<div class=”list-row” style=”padding:13px 0;border-bottom:1px solid var(--line)”>'+
-        '<div class=”li-main” style=”flex:1”><b style=”'+(a.status==='erledigt'?'text-decoration:line-through;color:var(--muted)':'')+'”>'+a.title+'</b>'+
-        (a.beschreibung?'<div class=”li-sub”>'+a.beschreibung+'</div>':'')+
-        '<div class=”li-sub”>'+(a.faelligAm?'Fällig: '+fmtDate(a.faelligAm)+' · ':'')+(cu?'Kunde: '+fullName(cu):'')+'</div></div>'+
-        '<div style=”display:flex;gap:7px;align-items:center”>'+
-        (cu?'<button class=”btn-ghost btn-sm” onclick=”showCustomerForTask('+cu.id+')”>Kunde ansehen</button>':'')+
-        '<button class=”btn-primary btn-sm” style=”width:auto” onclick=”toggleAufgabeStatus('+a.id+')”>'+(a.status==='erledigt'?'Wieder öffnen':'✓ Erledigt')+'</button>'+
-        '</div></div>';}).join(''):placeholder('☑','Keine Aufgaben','Aktuell hat dir das Büro keine Aufgaben zugewiesen.'))+
+      return '<div class="list-row" style="padding:13px 0;border-bottom:1px solid var(--line)">'+
+        '<div class="li-main" style="flex:1"><b style="'+(a.status==='erledigt'?'text-decoration:line-through;color:var(--muted)':'')+'">'+a.title+'</b> '+aufgabeStatusTag(a.status)+
+        (a.beschreibung?'<div class="li-sub">'+a.beschreibung+'</div>':'')+
+        '<div class="li-sub">'+(a.faelligAm?'Fällig: '+fmtDate(a.faelligAm)+' · ':'')+(cu?'Kunde: '+fullName(cu):'')+'</div></div>'+
+        '<div style="display:flex;gap:7px;align-items:center">'+
+        (cu?'<button class="btn-ghost btn-sm" onclick="showCustomerForTask('+cu.id+')">Kunde ansehen</button>':'')+
+        '<button class="btn-primary btn-sm" style="width:auto" onclick="toggleAufgabeStatus('+a.id+')">'+(a.status==='erledigt'?'↺ Wieder öffnen':(a.status==='in_arbeit'?'✓ Erledigt':'▶ In Arbeit'))+'</button>'+
+        '</div></div>';}).join(''):placeholder('☑','Keine Aufgaben','Aktuell hat dir das Büro keine Aufgaben mit diesem Status zugewiesen.'))+
     '</div></div>';
   }
   if(view==='calendar'){ c.innerHTML=head('Meine Termine','Deine vereinbarten Einsätze. Termine entstehen, wenn du bei „Meine Kunden” einen Termin vereinbarst.')+calendarHTML(myId); }
@@ -3753,30 +3765,114 @@ function startLeistungsnachweis(customerId){
    KOSTENTRÄGER: Verwaltung (Krankenkassen/Pflegekassen als
    Rechnungsempfänger)
    ============================================================ */
+let __standortDraft=null;
 function openStandortModal(id){
   if(id!==null && !requireAdminAction()) return;
-  const s=id!==null?standorte.find(x=>x.id===id):{name:'',firma:'',strasse:'',plz:'',ort:'',telefon:'',email:'',notizen:''};
+  const s=id!==null?standorte.find(x=>x.id===id):{};
+  __standortDraft={
+    name:s.name||'',firma:s.firma||'',strasse:s.strasse||'',plz:s.plz||'',ort:s.ort||'',telefon:s.telefon||'',email:s.email||'',notizen:s.notizen||'',
+    ikNummer:s.ikNummer||'',handelsregister:s.handelsregister||'',ustId:s.ustId||'',geschaeftsfuehrer:s.geschaeftsfuehrer||'',
+    unterschrift:s.unterschrift||null,
+    anerkennungName:s.anerkennungName||null,anerkennungData:s.anerkennungData||null,anerkennungDate:s.anerkennungDate||null
+  };
+  renderStandortModalBody(id);
+}
+function captureStandortDraftFields(){
+  const d=__standortDraft; if(!d) return;
+  d.name=val('st_name');d.firma=val('st_firma');d.strasse=val('st_strasse');d.plz=val('st_plz');d.ort=val('st_ort');
+  d.telefon=val('st_telefon');d.email=val('st_email');d.notizen=val('st_notizen');
+  d.ikNummer=val('st_ik');d.handelsregister=val('st_handelsregister');d.ustId=val('st_ust');d.geschaeftsfuehrer=val('st_gf');
+}
+function standortSigPreviewHTML(id){
+  const d=__standortDraft;
+  return d.unterschrift
+    ? '<div style="display:flex;align-items:center;gap:10px"><img src="'+d.unterschrift+'" style="height:46px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:2px 6px"><button class="btn-ghost btn-sm" type="button" onclick="captureStandortSignature('+(id!==null?id:'null')+')">Neu erfassen</button></div>'
+    : '<p style="color:var(--muted);font-size:13px;padding:2px 0">Noch keine Unterschrift hinterlegt.</p>';
+}
+function standortAnerkennungPreviewHTML(id){
+  const d=__standortDraft;
+  return d.anerkennungData
+    ? '<div class="list-row" style="padding:9px 0"><div class="li-main"><b>📄 '+(d.anerkennungName||'Anerkennung')+'</b>'+(d.anerkennungDate?'<div class="li-sub">Hochgeladen am '+fmtDate(d.anerkennungDate)+'</div>':'')+'</div>'+
+      '<div style="display:flex;gap:7px"><button class="btn-ghost btn-sm" type="button" onclick="viewStandortAnerkennung()">Ansehen</button><button class="btn-danger-ghost btn-sm" type="button" onclick="removeStandortAnerkennung('+(id!==null?id:'null')+')">Entfernen</button></div></div>'
+    : '<p style="color:var(--muted);font-size:13px;padding:2px 0">Noch keine Anerkennung hochgeladen.</p>';
+}
+function renderStandortModalBody(id){
+  const d=__standortDraft;
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent=id!==null?'Standort bearbeiten':'Neuer Standort';
   document.getElementById('modalBody').innerHTML=
     '<div class="section-label" style="margin-top:0">Stammdaten</div>'+
-    '<div class="form-row"><div><label>Name (intern) *</label><input id="st_name" value="'+(s.name||'')+'" placeholder="z. B. Alltagshilfe Hannover"></div>'+
-    '<div><label>Firmierung</label><input id="st_firma" value="'+(s.firma||'')+'" placeholder="z. B. Alltagshilfe Hannover UG"></div></div>'+
+    '<div class="form-row"><div><label>Name (intern) *</label><input id="st_name" value="'+d.name+'" placeholder="z. B. Alltagshilfe Hannover"></div>'+
+    '<div><label>Firmierung</label><input id="st_firma" value="'+d.firma+'" placeholder="z. B. Alltagshilfe Hannover UG"></div></div>'+
     '<div class="section-label">Adresse</div>'+
-    '<label>Straße + Hausnr.</label><input id="st_strasse" value="'+(s.strasse||'')+'">'+
-    '<div class="form-row"><div><label>PLZ</label><input id="st_plz" value="'+(s.plz||'')+'"></div><div><label>Ort</label><input id="st_ort" value="'+(s.ort||'')+'"></div></div>'+
+    '<label>Straße + Hausnr.</label><input id="st_strasse" value="'+d.strasse+'">'+
+    '<div class="form-row"><div><label>PLZ</label><input id="st_plz" value="'+d.plz+'"></div><div><label>Ort</label><input id="st_ort" value="'+d.ort+'"></div></div>'+
     '<div class="section-label">Kontakt</div>'+
-    '<div class="form-row"><div><label>Telefon</label><input id="st_telefon" value="'+(s.telefon||'')+'"></div><div><label>E-Mail</label><input id="st_email" value="'+(s.email||'')+'"></div></div>'+
+    '<div class="form-row"><div><label>Telefon</label><input id="st_telefon" value="'+d.telefon+'"></div><div><label>E-Mail</label><input id="st_email" value="'+d.email+'"></div></div>'+
+    '<div class="section-label">Unternehmensdaten für Verträge</div>'+
+    '<p style="color:var(--muted);font-size:12.5px;margin:-4px 0 12px">Diese Angaben werden künftig automatisch in Kundenverträge übernommen, die beim Onboarding bzw. beim ersten Termin erstellt werden.</p>'+
+    '<label>IK-Nummer (Institutionskennzeichen) *</label><input id="st_ik" value="'+d.ikNummer+'" placeholder="z. B. 460123456">'+
+    '<div class="form-row" style="margin-top:14px"><div><label>Handelsregisternummer</label><input id="st_handelsregister" value="'+d.handelsregister+'" placeholder="z. B. HRB 123456"></div>'+
+    '<div><label>USt-IdNr.</label><input id="st_ust" value="'+d.ustId+'" placeholder="z. B. DE123456789"></div></div>'+
+    '<label style="margin-top:14px;display:block">Geschäftsführer:in / Inhaber:in</label><input id="st_gf" value="'+d.geschaeftsfuehrer+'" placeholder="z. B. Daniel Dmytrov">'+
+    '<label style="margin-top:14px;display:block">Unterschrift (wird auf Verträgen eingefügt)</label>'+
+    '<div id="st_sig_preview">'+standortSigPreviewHTML(id)+'</div>'+
+    (d.unterschrift?'':'<button class="btn-primary btn-sm" type="button" style="width:auto;margin-top:6px" onclick="captureStandortSignature('+(id!==null?id:'null')+')">✎ Unterschrift erfassen</button>')+
+    '<label style="margin-top:18px;display:block">Anerkennung nach §45a SGB XI</label>'+
+    '<div id="st_anerkennung_preview">'+standortAnerkennungPreviewHTML(id)+'</div>'+
+    (d.anerkennungData?'':'<div class="upload-box" style="margin-top:8px" onclick="document.getElementById(\'st_anerkennung_input\').click()"><div class="ub-ic">⬆️</div><div class="ub-t">Anerkennungsbescheid hochladen</div><div class="ub-s">PDF, JPG oder PNG</div></div>')+
+    '<input type="file" id="st_anerkennung_input" accept="application/pdf,image/*" style="display:none" onchange="uploadStandortAnerkennung('+(id!==null?id:'null')+',this)">'+
     '<div class="section-label">Interne Daten (nur Büro)</div>'+
-    '<label>Notizen (z. B. Steuernummer, IK, Bankverbindung, Ansprechpartner)</label><textarea id="st_notizen" rows="3">'+(s.notizen||'')+'</textarea>';
+    '<label>Notizen (z. B. Bankverbindung, Ansprechpartner)</label><textarea id="st_notizen" rows="3">'+d.notizen+'</textarea>';
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
     '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveStandort('+(id!==null?id:'null')+')">Speichern</button>';
   openModal();
 }
+function captureStandortSignature(id){
+  captureStandortDraftFields();
+  openSignatureModal('Unterschrift hinterlegen','Diese Unterschrift wird künftig automatisch in Kundenverträge für diesen Standort eingefügt.',function(dataUrl){
+    __standortDraft.unterschrift=dataUrl;
+    renderStandortModalBody(id);
+    toast('Unterschrift erfasst – bitte „Speichern“ nicht vergessen');
+  });
+}
+function uploadStandortAnerkennung(id,input){
+  const file=input.files&&input.files[0]; if(!file) return;
+  if(!validateUploadFile(file,{maxSize:6*1024*1024})){ input.value=''; return; }
+  captureStandortDraftFields();
+  const reader=new FileReader();
+  reader.onload=function(e){
+    __standortDraft.anerkennungData=safeDataUrl(e.target.result);
+    __standortDraft.anerkennungName=cleanInput(file.name,180);
+    __standortDraft.anerkennungDate=todayISO();
+    renderStandortModalBody(id);
+    toast('Anerkennung hochgeladen – bitte „Speichern“ nicht vergessen');
+  };
+  reader.readAsDataURL(file);
+}
+function removeStandortAnerkennung(id){
+  captureStandortDraftFields();
+  __standortDraft.anerkennungData=null;__standortDraft.anerkennungName=null;__standortDraft.anerkennungDate=null;
+  renderStandortModalBody(id);
+}
+function viewStandortAnerkennung(){
+  const d=__standortDraft; if(!d||!d.anerkennungData) return;
+  const isPdf=(d.anerkennungData||'').indexOf('application/pdf')>-1;
+  const w=window.open();
+  if(w){
+    if(isPdf){ w.document.write('<title>'+(d.anerkennungName||'Anerkennung')+'</title><iframe src="'+d.anerkennungData+'" style="border:0;width:100vw;height:100vh"></iframe>'); }
+    else { w.document.write('<title>'+(d.anerkennungName||'Anerkennung')+'</title><body style="margin:0;background:#111"><img src="'+d.anerkennungData+'" style="max-width:100%;display:block;margin:auto"></body>'); }
+  }
+}
 function saveStandort(id){
-  const name=val('st_name'); if(!name){toast('Bitte einen Namen eingeben',true);return;}
-  const data={name:name,firma:val('st_firma'),strasse:val('st_strasse'),plz:val('st_plz'),ort:val('st_ort'),telefon:val('st_telefon'),email:val('st_email'),notizen:val('st_notizen')};
+  captureStandortDraftFields();
+  const d=__standortDraft;
+  if(!d.name){toast('Bitte einen Namen eingeben',true);return;}
+  if(!d.ikNummer){toast('Bitte die IK-Nummer eingeben',true);return;}
+  const data={name:d.name,firma:d.firma,strasse:d.strasse,plz:d.plz,ort:d.ort,telefon:d.telefon,email:d.email,notizen:d.notizen,
+    ikNummer:d.ikNummer,handelsregister:d.handelsregister,ustId:d.ustId,geschaeftsfuehrer:d.geschaeftsfuehrer,
+    unterschrift:d.unterschrift,anerkennungName:d.anerkennungName,anerkennungData:d.anerkennungData,anerkennungDate:d.anerkennungDate};
   if(id!==null){
     if(!requireAdminAction()) return;
     const s=standorte.find(x=>x.id===id);
@@ -3985,12 +4081,10 @@ function deleteLk(id){
 /* ============ KOMMUNIKATION (CRM) ============ */
 const KOMM_TYPEN=[['anruf','📞 Anruf'],['email','✉ E-Mail'],['brief','✉ Brief'],['persoenlich','👤 Persönlich'],['sonstiges','✱ Weiteres']];
 function kommTypeLabel(t){const f=KOMM_TYPEN.find(x=>x[0]===t);return f?f[1]:(t||'—');}
-let __kommTasks=[];
 function openKommModal(custId, id){
   if(!requireRoleAction('admin','buero','callcenter')) return;
   const isEdit=id!==null;
-  const k=isEdit?kommunikationen.find(x=>x.id===id):{customerId:custId,title:'',type:'anruf',date:todayISO(),time:'',status:'offen',note:'',tasks:[]};
-  __kommTasks=(k.tasks||[]).slice();
+  const k=isEdit?kommunikationen.find(x=>x.id===id):{customerId:custId,title:'',type:'anruf',date:todayISO(),time:'',status:'offen',note:''};
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent='Kommunikation '+(isEdit?'bearbeiten':'hinzufügen');
   const fixedCustomer=custId!==null;
@@ -4008,31 +4102,53 @@ function openKommModal(custId, id){
       '<input value="'+(custById(custId)?fullName(custById(custId)):'')+'" disabled>'
       :'<select id="komm_customer"><option value="">Klient auswählen</option>'+customers.map(c=>'<option value="'+c.id+'" '+(k.customerId===c.id?'selected':'')+'>'+fullName(c)+'</option>').join('')+'</select>')+
     '<div class="section-label">Aufgabenliste</div>'+
-    '<div id="komm_tasklist">'+kommTaskListHTML()+'</div>'+
-    '<div style="display:flex;gap:8px;margin-top:8px"><input id="komm_newtask" placeholder="Aufgabe hinzufügen…" style="flex:1" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addKommTask();}"><button class="btn-primary btn-sm" style="width:auto" onclick="addKommTask()">+ Hinzufügen</button></div>'+
+    '<div id="komm_tasklist">'+kommAufgabenListHTML(isEdit?id:null)+'</div>'+
+    (isEdit?
+      '<div class="form-row" style="margin-top:8px"><input id="komm_newtask" placeholder="Aufgabe hinzufügen…">'+
+      '<select id="komm_newtask_staff"><option value="">Mitarbeiter wählen</option>'+staff.map(s=>'<option value="'+s.id+'">'+fullName(s)+'</option>').join('')+'</select></div>'+
+      '<button class="btn-primary btn-sm" style="width:auto;margin-top:6px" onclick="addKommAufgabe('+id+')">+ Aufgabe hinzufügen</button>'
+      :'<p style="color:var(--muted);font-size:12.5px;margin-top:6px">Speichere die Kommunikation zuerst, dann kannst du hier direkt Aufgaben mit Mitarbeiter-Zuweisung anlegen.</p>')+
     '<div class="section-label">Notiz</div>'+
     '<textarea id="komm_note" rows="4" placeholder="Was wurde besprochen / vereinbart?">'+(k.note||'')+'</textarea>';
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
     (isEdit?'<button class="btn-danger-ghost" style="width:auto" onclick="deleteKomm('+id+')">Löschen</button>':'')+
-    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveKomm('+(isEdit?id:'null')+','+(fixedCustomer?custId:'null')+')">Hinzufügen</button>';
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveKomm('+(isEdit?id:'null')+','+(fixedCustomer?custId:'null')+')">'+(isEdit?'Speichern':'Hinzufügen')+'</button>';
   openModal();
 }
-function kommTaskListHTML(){
-  if(!__kommTasks.length) return '<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine Aufgaben.</p>';
-  return '<ul style="list-style:none;display:flex;flex-direction:column;gap:6px">'+__kommTasks.map((t,i)=>
-    '<li style="display:flex;align-items:center;gap:8px"><input type="checkbox" '+(t.done?'checked':'')+' onchange="toggleKommTaskDraft('+i+')">'+
-    '<span style="flex:1;'+(t.done?'text-decoration:line-through;color:var(--muted)':'')+'">'+t.text+'</span>'+
-    '<button class="btn-ghost btn-sm" onclick="removeKommTaskDraft('+i+')">✕</button></li>').join('')+'</ul>';
+function kommAufgabenListHTML(kommId){
+  if(kommId===null) return '<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine Aufgaben.</p>';
+  const list=aufgaben.filter(a=>a.kommunikationId===kommId);
+  if(!list.length) return '<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine Aufgaben.</p>';
+  return '<ul style="list-style:none;display:flex;flex-direction:column;gap:6px">'+list.map(a=>
+    '<li style="display:flex;align-items:center;gap:8px"><span style="flex:1;'+(a.status==='erledigt'?'text-decoration:line-through;color:var(--muted)':'')+'">'+a.title+' <span style="color:var(--muted);font-size:12px">– '+staffName(a.mitarbeiterId)+'</span></span>'+
+    '<span class="clickable" onclick="cycleKommAufgabe('+a.id+','+kommId+')">'+aufgabeStatusTag(a.status)+'</span>'+
+    '<button class="btn-ghost btn-sm" onclick="removeKommAufgabe('+a.id+','+kommId+')">✕</button></li>').join('')+'</ul>';
 }
-function addKommTask(){
-  const v=val('komm_newtask'); if(!v) return;
-  __kommTasks.push({text:v,done:false});
+function addKommAufgabe(kommId){
+  const k=kommunikationen.find(x=>x.id===kommId); if(!k) return;
+  const title=val('komm_newtask'); if(!title){toast('Bitte einen Aufgabentext eingeben',true);return;}
+  const mitarbeiterId=document.getElementById('komm_newtask_staff').value?+document.getElementById('komm_newtask_staff').value:null;
+  if(!mitarbeiterId){toast('Bitte einen Mitarbeiter auswählen',true);return;}
+  const a={id:nextAufgabeId++,title,mitarbeiterId,customerId:k.customerId,beschreibung:null,status:'offen',faelligAm:null,kommunikationId:kommId};
+  aufgaben.push(a);
+  if(CLOUD){ cloudInsert('aufgaben',aufgabeToRow(a)).then(r=>{ if(r) a.id=r.id; }); }
   document.getElementById('komm_newtask').value='';
-  document.getElementById('komm_tasklist').innerHTML=kommTaskListHTML();
+  document.getElementById('komm_newtask_staff').value='';
+  document.getElementById('komm_tasklist').innerHTML=kommAufgabenListHTML(kommId);
+  toast('Aufgabe an '+staffName(mitarbeiterId)+' zugewiesen');
 }
-function toggleKommTaskDraft(i){ __kommTasks[i].done=!__kommTasks[i].done; document.getElementById('komm_tasklist').innerHTML=kommTaskListHTML(); }
-function removeKommTaskDraft(i){ __kommTasks.splice(i,1); document.getElementById('komm_tasklist').innerHTML=kommTaskListHTML(); }
+function cycleKommAufgabe(id,kommId){
+  const a=aufgaben.find(x=>x.id===id); if(!a) return;
+  a.status=nextAufgabeStatus(a.status||'offen');
+  if(CLOUD) cloudUpdate('aufgaben',a.id,aufgabeToRow(a));
+  document.getElementById('komm_tasklist').innerHTML=kommAufgabenListHTML(kommId);
+}
+function removeKommAufgabe(id,kommId){
+  aufgaben=aufgaben.filter(x=>x.id!==id);
+  if(CLOUD) cloudDelete('aufgaben',id);
+  document.getElementById('komm_tasklist').innerHTML=kommAufgabenListHTML(kommId);
+}
 function saveKomm(id, fixedCustId){
   if(!requireRoleAction('admin','buero','callcenter')) return;
   const title=val('komm_title'); if(!title){toast('Bitte einen Titel eingeben',true);return;}
@@ -4042,18 +4158,22 @@ function saveKomm(id, fixedCustId){
   const date=val('komm_date'), time=val('komm_time'), status=(document.querySelector('#komm_status button.on')||{}).dataset?.v||'offen', note=val('komm_note');
   if(!date||!time){toast('Bitte Datum und Uhrzeit angeben',true);return;}
   if(!note){toast('Bitte eine Notiz eingeben',true);return;}
-  const tasks=__kommTasks.slice();
   if(id!==null){
     const k=kommunikationen.find(x=>x.id===id);
-    Object.assign(k,{title,type,date,time,status,note,customerId,tasks});
+    Object.assign(k,{title,type,date,time,status,note,customerId});
     if(CLOUD) cloudUpdate('kommunikation',k.id,kommToRow(k));
-  }else{
-    const k={id:nextKommId++,title,type,date,time,status,note,customerId,tasks,createdBy:myId||null};
-    kommunikationen.unshift(k);
-    if(CLOUD){ cloudInsert('kommunikation',kommToRow(k)).then(r=>{ if(r) k.id=r.id; }); }
+    closeModal();toast('Kommunikation gespeichert');
+    if(hasRole('admin','buero','callcenter')) renderAdmin('kommunikation');
+    return;
   }
-  closeModal();toast('Kommunikation gespeichert');
-  if(hasRole('admin','buero','callcenter')) renderAdmin('kommunikation');
+  const k={id:nextKommId++,title,type,date,time,status,note,customerId,createdBy:myId||null};
+  kommunikationen.unshift(k);
+  const afterSave=()=>{
+    toast('Kommunikation gespeichert – jetzt können Aufgaben zugewiesen werden');
+    openKommModal(customerId,k.id);
+  };
+  if(CLOUD){ cloudInsert('kommunikation',kommToRow(k)).then(r=>{ if(r) k.id=r.id; afterSave(); }); }
+  else { afterSave(); }
 }
 function deleteKomm(id){
   if(!requireRoleAction('admin','buero','callcenter')) return;
@@ -4087,7 +4207,7 @@ function openAufgabeModal(id){
     '<div><label>Kunde (optional)</label><select id="auf_customer"><option value="">—</option>'+customers.map(c=>'<option value="'+c.id+'" '+(a.customerId===c.id?'selected':'')+'>'+fullName(c)+'</option>').join('')+'</select></div></div>'+
     '<div class="section-label">Termin & Status</div>'+
     '<label>Fällig am</label><input id="auf_faellig" type="date" value="'+(a.faelligAm||'')+'">'+
-    '<label style="margin-top:14px;display:block">Status</label><div class="seg status" id="auf_status">'+['offen','erledigt'].map(v=>'<button type="button" data-v="'+v+'" class="'+((a.status||'offen')===v?'on':'')+'" onclick="segPick(this,\'auf_status\')">'+(v==='offen'?'Offen':'Erledigt')+'</button>').join('')+'</div>'+
+    '<label style="margin-top:14px;display:block">Status</label><div class="seg status" id="auf_status">'+AUFGABE_STATUS.map(([v,l])=>'<button type="button" data-v="'+v+'" class="'+((a.status||'offen')===v?'on':'')+'" onclick="segPick(this,\'auf_status\')">'+l+'</button>').join('')+'</div>'+
     '<div class="section-label">Beschreibung</div>'+
     '<textarea id="auf_beschreibung" rows="4" placeholder="Details zur Aufgabe…">'+(a.beschreibung||'')+'</textarea>';
   document.getElementById('modalFoot').innerHTML=
@@ -4125,10 +4245,10 @@ function deleteAufgabe(id){
 function toggleAufgabeStatus(id){
   const a=aufgaben.find(x=>x.id===id); if(!a) return;
   if(currentRole==='staff'&&a.mitarbeiterId!==myId){ toast('Keine Berechtigung für diese Aktion',true); return; }
-  a.status=a.status==='erledigt'?'offen':'erledigt';
+  a.status=nextAufgabeStatus(a.status||'offen');
   if(CLOUD) cloudUpdate('aufgaben',a.id,aufgabeToRow(a));
-  toast(a.status==='erledigt'?'Aufgabe als erledigt markiert':'Aufgabe wieder geöffnet');
-  if(currentRole==='admin') renderAdmin('aufgaben'); else renderStaff('aufgaben');
+  toast('Status: '+aufgabeStatusLabel(a.status));
+  if(currentRole==='staff') renderStaff('aufgaben'); else renderAdmin('aufgaben');
 }
 function showCustomerForTask(custId){
   const cu=custById(custId); if(!cu) return;
@@ -4374,6 +4494,14 @@ function statClick(l,v,f,fn){return '<div class="stat click" onclick="'+fn+'"><d
 function placeholder(icon,t,s){return '<div class="panel"><div class="empty"><div class="big">'+icon+'</div><b>'+t+'</b><p style="margin-top:6px;max-width:46ch;margin-inline:auto">'+s+'</p></div></div>';}
 function jobStatusTag(j){return j.status==='available'?'<span class="tag amber">verfügbar</span>':'<span class="tag green">angenommen</span>';}
 function statusTag(s){s=cleanInput(s,40);return s==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag amber">'+s+'</span>';}
+const AUFGABE_STATUS=[['offen','Offen'],['in_arbeit','In Arbeit'],['erledigt','Erledigt']];
+function aufgabeStatusLabel(s){const f=AUFGABE_STATUS.find(x=>x[0]===s);return f?f[1]:'Offen';}
+function aufgabeStatusTag(s){
+  if(s==='erledigt') return '<span class="tag green">erledigt</span>';
+  if(s==='in_arbeit') return '<span class="tag blue">in Arbeit</span>';
+  return '<span class="tag amber">offen</span>';
+}
+function nextAufgabeStatus(s){return s==='offen'?'in_arbeit':(s==='in_arbeit'?'erledigt':'offen');}
 function statusBanner(s){return '<div class="panel" style="margin-bottom:18px"><div style="padding:14px 18px;display:flex;align-items:center;gap:10px;background:var(--amber-soft)"><span style="font-size:18px">⏸</span><div><b>Status: '+s+'</b> <span style="color:var(--muted)">– du nimmst aktuell keine neuen Aufträge an. Im Profil änderbar.</span></div></div></div>';}
 function val(id){const e=document.getElementById(id);return e?cleanInput(e.value):'';}
 let toastTimer;
