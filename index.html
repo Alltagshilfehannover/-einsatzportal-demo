@@ -784,7 +784,24 @@ function hannoverStandortId(){
 function rowToApp(r){return {id:r.id,first:r.first,last:r.last,gender:r.gender,email:r.email,phone:r.phone,area:r.area,citizenship:r.citizenship,skills:r.skills||[],motivation:r.motivation,status:r.status,docs:r.docs||{},signatures:r.signatures||{},questionnaire:r.questionnaire||{},declaration:r.declaration||{},idFront:r.id_front,idBack:r.id_back,selfie:r.selfie,agb:r.agb,isStudent:r.is_student,enrollmentFile:r.enrollment_file,pets:r.pets||[],docImages:r.doc_images||{}};}
 
 /* ---- Speicher-Helfer: schreiben einzelne Objekte zurück ---- */
-async function cloudInsert(table,row){ if(!CLOUD)return null; row=sanitizeDeep(row); try{const{data,error}=await sb.from(table).insert(row).select().single(); if(error){console.warn('insert',table,error.message);toast('Speichern fehlgeschlagen ('+table+'): '+error.message,true);return null;} return data;}catch(e){console.warn(e);toast('Speichern fehlgeschlagen ('+table+'): '+(e&&e.message||e),true);return null;} }
+async function cloudInsert(table,row,opts){
+  if(!CLOUD)return null; row=sanitizeDeep(row);
+  // needsReturn=false: kein .select() nach dem Insert anhängen. Wichtig für Schreibvorgänge
+  // von NICHT eingeloggten Nutzern (z.B. öffentliche Bewerbung): .select() verlangt zusätzlich
+  // Lese-Rechte (RLS), die ein anonymer Nutzer aus Datenschutzgründen nicht hat – sonst schlägt
+  // der gesamte Insert mit "row-level security policy"-Fehler fehl, obwohl das Einfügen selbst erlaubt wäre.
+  const needsReturn=!opts||opts.needsReturn!==false;
+  try{
+    if(!needsReturn){
+      const{error}=await sb.from(table).insert(row);
+      if(error){console.warn('insert',table,error.message);toast('Speichern fehlgeschlagen ('+table+'): '+error.message,true);return null;}
+      return {};
+    }
+    const{data,error}=await sb.from(table).insert(row).select().single();
+    if(error){console.warn('insert',table,error.message);toast('Speichern fehlgeschlagen ('+table+'): '+error.message,true);return null;}
+    return data;
+  }catch(e){console.warn(e);toast('Speichern fehlgeschlagen ('+table+'): '+(e&&e.message||e),true);return null;}
+}
 async function cloudUpdate(table,id,row){ if(!CLOUD)return; row=sanitizeDeep(row); try{const{error}=await sb.from(table).update(row).eq('id',id); if(error){console.warn('update',table,error.message);toast('Speichern fehlgeschlagen ('+table+'): '+error.message,true);}}catch(e){console.warn(e);toast('Speichern fehlgeschlagen ('+table+'): '+(e&&e.message||e),true);} }
 async function cloudDelete(table,id){ if(!CLOUD)return; try{const{error}=await sb.from(table).delete().eq('id',id); if(error){console.warn('delete',table,error.message);toast('Löschen fehlgeschlagen ('+table+'): '+error.message,true);}}catch(e){console.warn(e);toast('Löschen fehlgeschlagen ('+table+'): '+(e&&e.message||e),true);} }
 
@@ -2892,14 +2909,14 @@ async function submitApplication(){
     docImages:{idFront:wizData.idFrontImg||null, idBack:wizData.idBackImg||null, selfie:wizData.selfieImg||null, enrollment:wizData.enrollmentImg||null}};
   const safeApp=sanitizeDeep(app);
   if(CLOUD){
-    const r=await cloudInsert('bewerbungen',appToRow(safeApp));
+    const r=await cloudInsert('bewerbungen',appToRow(safeApp),{needsReturn:false});
     if(!r){
       // Speichern fehlgeschlagen – NICHT zur „Danke“-Seite weiterspringen, sonst denkt der Bewerber fälschlich, alles sei angekommen.
       if(btn){ btn.disabled=false; btn.textContent='Bewerbung absenden'; }
       toast('Bewerbung konnte nicht gespeichert werden – bitte versuche es erneut oder kontaktiere uns telefonisch.', true);
       return;
     }
-    safeApp.id=r.id;
+    // Kein r.id verfügbar (anonymer Insert ohne Rückgabe) – lokale ID bleibt bis zum nächsten Laden bestehen.
   }
   applications.unshift(safeApp);
   wizNext();
