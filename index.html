@@ -161,8 +161,8 @@
   .seg{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
   .seg button{padding:9px 15px;border:1.5px solid var(--line);border-radius:9px;font-weight:600;font-size:14px;color:var(--muted)}
   .seg button.on{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol-dark)}
-  .seg.status button.on[data-v="aktiv"]{border-color:var(--good);background:var(--good-soft);color:var(--good)}
-  .seg.status button.on[data-v="Urlaub"],.seg.status button.on[data-v="krank"]{border-color:var(--amber);background:var(--amber-soft);color:var(--amber)}
+  .seg.status button.on[data-v="aktiv"],.seg.status button.on[data-v="erledigt"]{border-color:var(--good);background:var(--good-soft);color:var(--good)}
+  .seg.status button.on[data-v="Urlaub"],.seg.status button.on[data-v="krank"],.seg.status button.on[data-v="offen"]{border-color:var(--amber);background:var(--amber-soft);color:var(--amber)}
   .day-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-bottom:6px}
   .day{padding:10px 4px;text-align:center;border:1.5px solid var(--line);border-radius:9px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
   .day.on{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol-dark)}
@@ -3759,12 +3759,16 @@ function openStandortModal(id){
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent=id!==null?'Standort bearbeiten':'Neuer Standort';
   document.getElementById('modalBody').innerHTML=
-    '<label>Name (intern, z. B. „Alltagshilfe Hannover") *</label><input id="st_name" value="'+(s.name||'')+'">'+
-    '<label>Firmierung</label><input id="st_firma" value="'+(s.firma||'')+'" placeholder="z. B. Alltagshilfe Hannover UG (haftungsbeschränkt)">'+
-    '<div class="form-row"><div style="flex:3"><label>Straße/Hausnr.</label><input id="st_strasse" value="'+(s.strasse||'')+'"></div></div>'+
+    '<div class="section-label" style="margin-top:0">Stammdaten</div>'+
+    '<div class="form-row"><div><label>Name (intern) *</label><input id="st_name" value="'+(s.name||'')+'" placeholder="z. B. Alltagshilfe Hannover"></div>'+
+    '<div><label>Firmierung</label><input id="st_firma" value="'+(s.firma||'')+'" placeholder="z. B. Alltagshilfe Hannover UG"></div></div>'+
+    '<div class="section-label">Adresse</div>'+
+    '<label>Straße + Hausnr.</label><input id="st_strasse" value="'+(s.strasse||'')+'">'+
     '<div class="form-row"><div><label>PLZ</label><input id="st_plz" value="'+(s.plz||'')+'"></div><div><label>Ort</label><input id="st_ort" value="'+(s.ort||'')+'"></div></div>'+
+    '<div class="section-label">Kontakt</div>'+
     '<div class="form-row"><div><label>Telefon</label><input id="st_telefon" value="'+(s.telefon||'')+'"></div><div><label>E-Mail</label><input id="st_email" value="'+(s.email||'')+'"></div></div>'+
-    '<label>Interne Notizen (z. B. Steuernummer, IK, Bankverbindung, Ansprechpartner)</label><textarea id="st_notizen" rows="3">'+(s.notizen||'')+'</textarea>';
+    '<div class="section-label">Interne Daten (nur Büro)</div>'+
+    '<label>Notizen (z. B. Steuernummer, IK, Bankverbindung, Ansprechpartner)</label><textarea id="st_notizen" rows="3">'+(s.notizen||'')+'</textarea>';
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
     '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveStandort('+(id!==null?id:'null')+')">Speichern</button>';
@@ -3802,10 +3806,13 @@ function openKtModal(id){
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent=id!==null?'Kostenträger bearbeiten':'Neuer Kostenträger';
   document.getElementById('modalBody').innerHTML=
+    '<div class="section-label" style="margin-top:0">Stammdaten</div>'+
     '<label>Name *</label><input id="kt_name" value="'+(k.name||'')+'" placeholder="z. B. AOK Niedersachsen">'+
-    '<div class="form-row"><div style="flex:2"><label>Straße + Hausnr.</label><input id="kt_strasse" value="'+(k.strasse||'')+'"></div></div>'+
+    '<div class="section-label">Adresse</div>'+
+    '<label>Straße + Hausnr.</label><input id="kt_strasse" value="'+(k.strasse||'')+'">'+
     '<div class="form-row"><div><label>PLZ</label><input id="kt_plz" value="'+(k.plz||'')+'"></div>'+
     '<div><label>Ort</label><input id="kt_ort" value="'+(k.ort||'')+'"></div></div>'+
+    '<div class="section-label">Kontakt</div>'+
     '<label>E-Mail (für Rechnungsversand, optional)</label><input id="kt_email" value="'+(k.email||'')+'" placeholder="rechnung@kasse.de">';
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
@@ -3937,7 +3944,9 @@ function openLkModal(id){
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent=id!==null?'Leistung bearbeiten':'Neue Leistung';
   document.getElementById('modalBody').innerHTML=
+    '<div class="section-label" style="margin-top:0">Stammdaten</div>'+
     '<label>Bezeichnung *</label><input id="lk_name" value="'+(l.name||'')+'" placeholder="z. B. Haushaltshilfe">'+
+    '<div class="section-label">Preis & Abrechnung</div>'+
     '<div class="form-row"><div><label>Preis (€) *</label><input id="lk_preis" type="number" min="0" step="0.01" value="'+(l.preis||'')+'"></div>'+
     '<div><label>Abrechnungseinheit *</label><select id="lk_einheit">'+LEISTUNGS_EINHEITEN.map(e=>'<option '+(l.einheit===e?'selected':'')+'>'+e+'</option>').join('')+'</select></div></div>';
   document.getElementById('modalFoot').innerHTML=
@@ -3986,19 +3995,23 @@ function openKommModal(custId, id){
   document.getElementById('modalTitle').textContent='Kommunikation '+(isEdit?'bearbeiten':'hinzufügen');
   const fixedCustomer=custId!==null;
   document.getElementById('modalBody').innerHTML=
+    '<div class="section-label" style="margin-top:0">Details</div>'+
     '<label>Titel *</label><input id="komm_title" value="'+(k.title||'')+'" placeholder="z. B. Beschwerde Pünktlichkeit">'+
-    '<div class="form-row" style="margin-top:8px">'+KOMM_TYPEN.map(([v,l])=>'<label style="display:flex;align-items:center;gap:5px;font-weight:400"><input type="radio" name="komm_type" value="'+v+'" '+((k.type||'anruf')===v?'checked':'')+'> '+l+'</label>').join('')+'</div>'+
-    '<div class="form-row" style="margin-top:8px"><div><label>Datum *</label><input id="komm_date" type="date" value="'+(k.date||todayISO())+'"></div>'+
+    '<label style="margin-top:14px;display:block">Art</label>'+
+    '<div class="seg" id="komm_type">'+KOMM_TYPEN.map(([v,l])=>'<button type="button" data-v="'+v+'" class="'+((k.type||'anruf')===v?'on':'')+'" onclick="segPick(this,\'komm_type\')">'+l+'</button>').join('')+'</div>'+
+    '<div class="section-label">Termin</div>'+
+    '<div class="form-row"><div><label>Datum *</label><input id="komm_date" type="date" value="'+(k.date||todayISO())+'"></div>'+
     '<div><label>Uhrzeit *</label><input id="komm_time" type="time" value="'+(k.time||'')+'"></div></div>'+
-    '<div class="form-row"><div><label>Status *</label><select id="komm_status"><option value="offen" '+(k.status!=='erledigt'?'selected':'')+'>Offen</option><option value="erledigt" '+(k.status==='erledigt'?'selected':'')+'>Erledigt</option></select></div>'+
-    '<div><label>Klientin zuweisen *</label>'+(fixedCustomer?
+    '<div class="section-label">Status & Klient:in</div>'+
+    '<label>Status *</label><div class="seg status" id="komm_status">'+['offen','erledigt'].map(v=>'<button type="button" data-v="'+v+'" class="'+((k.status||'offen')===v?'on':'')+'" onclick="segPick(this,\'komm_status\')">'+(v==='offen'?'Offen':'Erledigt')+'</button>').join('')+'</div>'+
+    '<label style="margin-top:14px;display:block">Klientin zuweisen *</label>'+(fixedCustomer?
       '<input value="'+(custById(custId)?fullName(custById(custId)):'')+'" disabled>'
       :'<select id="komm_customer"><option value="">Klient auswählen</option>'+customers.map(c=>'<option value="'+c.id+'" '+(k.customerId===c.id?'selected':'')+'>'+fullName(c)+'</option>').join('')+'</select>')+
-    '</div></div>'+
-    '<div class="section-label" style="margin-top:6px">Aufgabenliste</div>'+
+    '<div class="section-label">Aufgabenliste</div>'+
     '<div id="komm_tasklist">'+kommTaskListHTML()+'</div>'+
     '<div style="display:flex;gap:8px;margin-top:8px"><input id="komm_newtask" placeholder="Aufgabe hinzufügen…" style="flex:1" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addKommTask();}"><button class="btn-primary btn-sm" style="width:auto" onclick="addKommTask()">+ Hinzufügen</button></div>'+
-    '<label style="margin-top:14px;display:block">Notiz *</label><textarea id="komm_note" rows="4">'+(k.note||'')+'</textarea>';
+    '<div class="section-label">Notiz</div>'+
+    '<textarea id="komm_note" rows="4" placeholder="Was wurde besprochen / vereinbart?">'+(k.note||'')+'</textarea>';
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
     (isEdit?'<button class="btn-danger-ghost" style="width:auto" onclick="deleteKomm('+id+')">Löschen</button>':'')+
@@ -4025,8 +4038,8 @@ function saveKomm(id, fixedCustId){
   const title=val('komm_title'); if(!title){toast('Bitte einen Titel eingeben',true);return;}
   const customerId=fixedCustId!==null?fixedCustId:(document.getElementById('komm_customer')?+document.getElementById('komm_customer').value:null);
   if(!customerId){toast('Bitte eine Klientin zuweisen',true);return;}
-  const type=(document.querySelector('input[name="komm_type"]:checked')||{}).value||'anruf';
-  const date=val('komm_date'), time=val('komm_time'), status=document.getElementById('komm_status').value, note=val('komm_note');
+  const type=(document.querySelector('#komm_type button.on')||{}).dataset?.v||'anruf';
+  const date=val('komm_date'), time=val('komm_time'), status=(document.querySelector('#komm_status button.on')||{}).dataset?.v||'offen', note=val('komm_note');
   if(!date||!time){toast('Bitte Datum und Uhrzeit angeben',true);return;}
   if(!note){toast('Bitte eine Notiz eingeben',true);return;}
   const tasks=__kommTasks.slice();
@@ -4067,12 +4080,16 @@ function openAufgabeModal(id){
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent='Aufgabe '+(isEdit?'bearbeiten':'zuweisen');
   document.getElementById('modalBody').innerHTML=
+    '<div class="section-label" style="margin-top:0">Details</div>'+
     '<label>Titel *</label><input id="auf_title" value="'+(a.title||'')+'" placeholder="z. B. Pflegegrad-Unterlagen abholen">'+
-    '<div class="form-row" style="margin-top:8px"><div><label>Mitarbeiter *</label><select id="auf_staff"><option value="">Auswählen</option>'+staff.map(s=>'<option value="'+s.id+'" '+(a.mitarbeiterId===s.id?'selected':'')+'>'+fullName(s)+'</option>').join('')+'</select></div>'+
+    '<div class="section-label">Zuweisung</div>'+
+    '<div class="form-row"><div><label>Mitarbeiter *</label><select id="auf_staff"><option value="">Auswählen</option>'+staff.map(s=>'<option value="'+s.id+'" '+(a.mitarbeiterId===s.id?'selected':'')+'>'+fullName(s)+'</option>').join('')+'</select></div>'+
     '<div><label>Kunde (optional)</label><select id="auf_customer"><option value="">—</option>'+customers.map(c=>'<option value="'+c.id+'" '+(a.customerId===c.id?'selected':'')+'>'+fullName(c)+'</option>').join('')+'</select></div></div>'+
-    '<div class="form-row"><div><label>Fällig am</label><input id="auf_faellig" type="date" value="'+(a.faelligAm||'')+'"></div>'+
-    '<div><label>Status</label><select id="auf_status"><option value="offen" '+(a.status!=='erledigt'?'selected':'')+'>Offen</option><option value="erledigt" '+(a.status==='erledigt'?'selected':'')+'>Erledigt</option></select></div></div>'+
-    '<label>Beschreibung</label><textarea id="auf_beschreibung" rows="4">'+(a.beschreibung||'')+'</textarea>';
+    '<div class="section-label">Termin & Status</div>'+
+    '<label>Fällig am</label><input id="auf_faellig" type="date" value="'+(a.faelligAm||'')+'">'+
+    '<label style="margin-top:14px;display:block">Status</label><div class="seg status" id="auf_status">'+['offen','erledigt'].map(v=>'<button type="button" data-v="'+v+'" class="'+((a.status||'offen')===v?'on':'')+'" onclick="segPick(this,\'auf_status\')">'+(v==='offen'?'Offen':'Erledigt')+'</button>').join('')+'</div>'+
+    '<div class="section-label">Beschreibung</div>'+
+    '<textarea id="auf_beschreibung" rows="4" placeholder="Details zur Aufgabe…">'+(a.beschreibung||'')+'</textarea>';
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
     '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveAufgabe('+(isEdit?id:'null')+')">Speichern</button>';
@@ -4084,7 +4101,7 @@ function saveAufgabe(id){
   const mitarbeiterId=document.getElementById('auf_staff').value?+document.getElementById('auf_staff').value:null;
   if(!mitarbeiterId){toast('Bitte einen Mitarbeiter auswählen',true);return;}
   const customerId=document.getElementById('auf_customer').value?+document.getElementById('auf_customer').value:null;
-  const faelligAm=val('auf_faellig'), status=document.getElementById('auf_status').value, beschreibung=val('auf_beschreibung');
+  const faelligAm=val('auf_faellig'), status=(document.querySelector('#auf_status button.on')||{}).dataset?.v||'offen', beschreibung=val('auf_beschreibung');
   if(id!==null){
     const a=aufgaben.find(x=>x.id===id);
     Object.assign(a,{title,mitarbeiterId,customerId,faelligAm,status,beschreibung});
