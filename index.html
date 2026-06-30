@@ -438,7 +438,7 @@
   </div>
 </div>
 
-<div class="toast" id="toast"><span class="dot"></span><span id="toastMsg"></span></div>
+<div class="toast" id="toast"><span class="dot"></span><span id="toastMsg"></span><span id="toastClose" onclick="document.getElementById('toast').classList.remove('show')" style="margin-left:10px;cursor:pointer;font-weight:700;display:none">✕</span></div>
 
 <script>
 /* ============ DEMO-DATEN ============ */
@@ -2852,13 +2852,24 @@ function viewLegal(which){
   openModal();
 }
 function checkAgb(){document.getElementById('agbNext').disabled=!document.getElementById('agbChk').checked;}
-function submitApplication(){
+async function submitApplication(){
+  const btn=document.getElementById('agbNext');
+  if(btn){ btn.disabled=true; btn.textContent='Wird gesendet …'; }
   const app={id:nextAppId++,first:wizData.first,last:wizData.last,gender:wizData.gender,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),questionnaire:Object.assign({},wizData.questionnaire||{}),declaration:Object.assign({},wizData.declaration||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true,isStudent:!!wizData.isStudent,enrollmentFile:!!wizData.enrollmentFile,pets:wizData.pets||[],
     // Bilddaten der eingereichten Dokumente (zur Prüfung im Büro)
     docImages:{idFront:wizData.idFrontImg||null, idBack:wizData.idBackImg||null, selfie:wizData.selfieImg||null, enrollment:wizData.enrollmentImg||null}};
   const safeApp=sanitizeDeep(app);
+  if(CLOUD){
+    const r=await cloudInsert('bewerbungen',appToRow(safeApp));
+    if(!r){
+      // Speichern fehlgeschlagen – NICHT zur „Danke“-Seite weiterspringen, sonst denkt der Bewerber fälschlich, alles sei angekommen.
+      if(btn){ btn.disabled=false; btn.textContent='Bewerbung absenden'; }
+      toast('Bewerbung konnte nicht gespeichert werden – bitte versuche es erneut oder kontaktiere uns telefonisch.', true);
+      return;
+    }
+    safeApp.id=r.id;
+  }
   applications.unshift(safeApp);
-  if(CLOUD){ cloudInsert('bewerbungen',appToRow(safeApp)).then(r=>{ if(r)app.id=r.id; }); }
   wizNext();
 }
 function wizDone(){
@@ -4593,11 +4604,45 @@ function nextAufgabeStatus(s){return s==='offen'?'in_arbeit':(s==='in_arbeit'?'e
 function statusBanner(s){return '<div class="panel" style="margin-bottom:18px"><div style="padding:14px 18px;display:flex;align-items:center;gap:10px;background:var(--amber-soft)"><span style="font-size:18px">⏸</span><div><b>Status: '+s+'</b> <span style="color:var(--muted)">– du nimmst aktuell keine neuen Aufträge an. Im Profil änderbar.</span></div></div></div>';}
 function val(id){const e=document.getElementById(id);return e?cleanInput(e.value):'';}
 let toastTimer;
+let lastErrors=[];
 function toast(msg,warn){
   const t=document.getElementById('toast');
   document.getElementById('toastMsg').textContent=msg;
   t.classList.toggle('warn',!!warn);t.classList.add('show');
-  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
+  document.getElementById('toastClose').style.display=warn?'inline':'none';
+  clearTimeout(toastTimer);
+  if(warn){
+    lastErrors.unshift({time:new Date().toLocaleString('de-DE'),msg:msg});
+    if(lastErrors.length>20) lastErrors.length=20;
+    showErrorBadge();
+    // Fehler bleiben stehen, bis man sie selbst wegklickt (✕) – verschwinden NICHT automatisch.
+  }else{
+    toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
+  }
+}
+function showErrorBadge(){
+  let b=document.getElementById('errorBadge');
+  if(!b){
+    b=document.createElement('div'); b.id='errorBadge';
+    b.style.cssText='position:fixed;bottom:12px;left:12px;z-index:9999;font-size:12px;font-weight:700;padding:7px 13px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.2);cursor:pointer;background:#c0392b;color:#fff';
+    b.title='Klicken, um die letzten Fehler zu sehen';
+    b.onclick=showLastErrors;
+    document.body.appendChild(b);
+  }
+  b.textContent='⚠ '+lastErrors.length+' Fehler – klicken zum Ansehen';
+  b.style.display='block';
+}
+function showLastErrors(){
+  let d=document.getElementById('errorBox');
+  if(d){ d.remove(); return; }
+  d=document.createElement('div');
+  d.id='errorBox';
+  d.style.cssText='position:fixed;bottom:48px;right:12px;z-index:10001;background:#fff;border:2px solid #c0392b;border-radius:12px;padding:14px 16px;font-size:13px;max-width:360px;max-height:60vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,.25);line-height:1.6';
+  const rows=(lastErrors.length?lastErrors:[{time:'',msg:'Keine Fehler protokolliert.'}]).map(e=>
+    '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee"><div style="color:#999;font-size:11px">'+e.time+'</div><div style="color:#c0392b">'+e.msg+'</div></div>').join('');
+  d.innerHTML='<div style="font-weight:700;margin-bottom:8px;color:#c0392b">Letzte Fehler</div>'+rows+
+    '<div style="margin-top:6px;text-align:right"><button onclick="document.getElementById(\'errorBox\').remove()" style="background:#c0392b;color:#fff;border:0;border-radius:7px;padding:6px 12px;font-weight:600;cursor:pointer">Schließen</button></div>';
+  document.body.appendChild(d);
 }
 document.getElementById('pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 
