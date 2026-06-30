@@ -3228,6 +3228,9 @@ function signTermin(){
       if(CLOUD){ cloudInsert('abtretungen',{customer_id:cu.id, signed_date:date, signature:sig}); }
       // 4) Leistungsnachweis-PDF zum Download anbieten
       if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+      // 4b) Abtretungserklärung-PDF mit derselben Unterschrift/​demselben Datum erzeugen und ebenfalls anbieten
+      const abDoc=buildAbtretungPdf(cu, sig, date);
+      if(abDoc) abDoc.save(('Abtretung_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
       // 5) Termin als erledigt entfernen (lokal + Datenbank)
       if(t.apptId){ appointments=appointments.filter(a=>a.id!==t.apptId); if(CLOUD) cloudDelete('termine',t.apptId); }
       window.__termin=null;
