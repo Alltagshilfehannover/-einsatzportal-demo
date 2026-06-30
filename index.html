@@ -642,7 +642,8 @@ function custToRow(c){return {
   no_contact:!!c.noContact,no_notes:!!c.noNotes,notes:c.notes,
   insurance_type:c.insuranceType||'gesetzlich',beihilfe_pct:c.beihilfePct||null,
   kv_nr:(c.intern&&c.intern.kvNr)||null,kasse:(c.intern&&c.intern.kasse)||null,budget:(c.intern&&c.intern.budget)||null,budget_used:(c.intern&&c.intern.budgetUsed)||null,
-  kostentraeger_id:c.kostentraegerId||null, leistungen:c.leistungen||[], standort_id:currentStandortId
+  kostentraeger_id:c.kostentraegerId||null, leistungen:c.leistungen||[], standort_id:currentStandortId,
+  bedarfsanalyse:c.bedarfsanalyse||null, vertrag:c.vertrag||null
 };}
 function rowToCust(r){return {
   id:r.id,first:r.first,last:r.last,area:r.area,address:r.address,
@@ -655,7 +656,8 @@ function rowToCust(r){return {
   noContact:r.no_contact,noNotes:r.no_notes,notes:r.notes,
   insuranceType:r.insurance_type||'gesetzlich',beihilfePct:r.beihilfe_pct,
   intern:{kvNr:r.kv_nr,kasse:r.kasse,budget:r.budget,budgetUsed:r.budget_used},
-  kostentraegerId:r.kostentraeger_id||null, leistungen:r.leistungen||[]
+  kostentraegerId:r.kostentraeger_id||null, leistungen:r.leistungen||[],
+  bedarfsanalyse:r.bedarfsanalyse||null, vertrag:r.vertrag||null
 };}
 /* ============ KOSTENTRÄGER / RECHNUNGEN: DB-Mapping ============ */
 function standortToRow(s){return {name:s.name,firma:s.firma||null,strasse:s.strasse||null,plz:s.plz||null,ort:s.ort||null,telefon:s.telefon||null,email:s.email||null,notizen:s.notizen||null};}
@@ -802,7 +804,7 @@ async function loadFromCloud(){
   if(staff.length){ myId=staff[0].id; }
 }
 function rowToTimesheet(r){
-  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, start:r.start, end:r.ende, task:r.task, status:r.status||'offen', proof:r.proof, signature:r.signature, signedAt:r.signed_at, hasAbtretung:!!r.signature };
+  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, start:r.start, end:r.ende, task:r.task, status:r.status||'offen', proof:r.proof, signature:r.signature, signedAt:r.signed_at, hasAbtretung:!!r.signature, billable:r.billable!==false };
 }
 // Sichtbarer Diagnose-Kasten (per Klick auf das Status-Badge aufrufbar)
 function showDiag(){
@@ -1256,6 +1258,7 @@ function renderAdmin(view){
         '<td>'+statusTag+'</td>'+
         '<td>'+(t.signature?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ LN</button>'+(t.hasAbtretung?' <button class="btn-ghost btn-sm" onclick="downloadAbtretung('+t.customerId+')">⬇ Abtretung</button>':''):'<span style="color:var(--muted);font-size:12px">—</span>')+'</td>'+
         '<td>'+(()=>{ const re=rechnungen.find(r=>r.stundenzettelId===t.id);
+          if(t.billable===false) return '<span class="tag grey" style="font-size:11px">kostenlos / nicht abrechenbar</span>';
           if(re) return '<span class="tag green" style="font-size:11px">'+re.nummer+'</span>';
           if(t.status==='freigegeben') return '<span class="tag amber" style="font-size:11px">bereit (siehe Rechnungen)</span>';
           return '<span style="color:var(--muted);font-size:12px">—</span>';
@@ -1314,7 +1317,7 @@ function renderAdmin(view){
     '</div></div>';
   }
   if(view==='rechnungen'){
-    const ready=timesheets.filter(t=>t.status==='freigegeben' && !rechnungen.find(r=>r.stundenzettelId===t.id));
+    const ready=timesheets.filter(t=>t.status==='freigegeben' && t.billable!==false && !rechnungen.find(r=>r.stundenzettelId===t.id));
     c.innerHTML=head('Rechnungen','Stundenzettel, die abgerechnet werden können, und bereits erstellte Rechnungen.')+
     '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Bereit zur Abrechnung ('+ready.length+')</h3></div>'+
     '<div class="panel-body" style="padding-top:10px">'+
@@ -2627,9 +2630,12 @@ function quickAddInfo(){
 }
 function addAppointment(customerId){
   const cu=custById(customerId);
+  const isKennenlernen = cu.status==='Interessent' && !cu.vertrag;
   document.getElementById('modalTitle').textContent='Termin vereinbaren';
   document.getElementById('modalBody').innerHTML=
     '<div class="content-form"><p style="color:var(--muted);font-size:14px;margin-bottom:14px">Mit <b>'+fullName(cu)+'</b> · '+cu.area+'</p>'+
+    (isKennenlernen?'<div class="summary" style="margin-bottom:14px"><div class="sh">Kennenlerngespräch</div>Dieser Kunde ist noch „Interessent". Der Termin wird automatisch als kostenloses Kennenlerngespräch angelegt (Bedarfsanalyse + Vertragsunterschrift).</div>'
+      :(cu.bedarfsanalyse?'<div class="summary" style="margin-bottom:14px"><div class="sh">Bekannter Bedarf</div>'+(cu.bedarfsanalyse.skills||[]).join(', ')+(cu.bedarfsanalyse.notes?'<br>'+cu.bedarfsanalyse.notes:'')+'</div>':''))+
     '<div class="form-row"><div><label>Datum</label><input id="ap_date" type="date" value="2026-06-13"></div>'+
     '<div><label>Uhrzeit</label><input id="ap_time" type="time" value="09:00"></div></div>'+
     '<label>Dauer (Minuten)</label><input id="ap_dur" type="number" value="90">'+
@@ -2642,7 +2648,9 @@ function saveAppointment(customerId){
   if(!requireStaffAction()) return;
   const date=val('ap_date'),time=val('ap_time');
   if(!date||!time){toast('Bitte Datum und Uhrzeit angeben',true);return;}
-  const appt={id:nextApptId++,staffId:myId,customerId,date,time,duration:parseInt(val('ap_dur'))||60,note:val('ap_note')};
+  const cu=custById(customerId);
+  const type=(cu.status==='Interessent' && !cu.vertrag)?'kennenlernen':'einsatz';
+  const appt={id:nextApptId++,staffId:myId,customerId,date,time,duration:parseInt(val('ap_dur'))||60,note:val('ap_note'),type:type};
   appointments.push(appt);
   // Auch in der Datenbank speichern, damit der Termin nach Neuladen erhalten bleibt
   if(CLOUD){
@@ -2652,17 +2660,20 @@ function saveAppointment(customerId){
   renderStaff('calendar');
 }
 function apptToRow(a){
-  return { mitarbeiter_id:a.staffId, customer_id:a.customerId, date:a.date, time:a.time, duration:a.duration||60, note:a.note||null, status:a.status||'geplant', cancel_reason:a.cancelReason||null, cancel_detail:a.cancelDetail||null };
+  return { mitarbeiter_id:a.staffId, customer_id:a.customerId, date:a.date, time:a.time, duration:a.duration||60, note:a.note||null, status:a.status||'geplant', cancel_reason:a.cancelReason||null, cancel_detail:a.cancelDetail||null, type:a.type||'einsatz' };
 }
 function rowToAppt(r){
-  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, time:r.time, duration:r.duration||60, note:r.note||'', status:r.status||'geplant', cancelReason:r.cancel_reason||'', cancelDetail:r.cancel_detail||'' };
+  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, time:r.time, duration:r.duration||60, note:r.note||'', status:r.status||'geplant', cancelReason:r.cancel_reason||'', cancelDetail:r.cancel_detail||'', type:r.type||'einsatz' };
 }
 function showAppt(id){
   const a=appointments.find(x=>x.id===id);const cu=custById(a.customerId);
   const cancelled=a.status==='abgesagt';
-  document.getElementById('modalTitle').textContent= cancelled?'Termin (abgesagt)':'Termin-Details';
+  const isKennenlernen=a.type==='kennenlernen';
+  document.getElementById('modalTitle').textContent= cancelled?'Termin (abgesagt)':(isKennenlernen?'Kennenlerngespräch':'Termin-Details');
   document.getElementById('modalBody').innerHTML=
     (cancelled?'<div class="cancel-banner">✕ Dieser Termin wurde abgesagt</div>':'')+
+    (isKennenlernen&&!cancelled?'<div class="summary" style="margin-bottom:12px"><div class="sh">Kennenlerngespräch (kostenlos)</div>Bedarfsanalyse durchführen und Vertrag unterschreiben lassen. Kunde wird danach automatisch aktiv.</div>':'')+
+    (!isKennenlernen&&cu&&cu.bedarfsanalyse?'<div class="summary" style="margin-bottom:12px"><div class="sh">Bekannter Bedarf</div>'+(cu.bedarfsanalyse.skills||[]).join(', ')+(cu.bedarfsanalyse.notes?'<br>'+cu.bedarfsanalyse.notes:'')+'</div>':'')+
     '<div class="reveal-row"><span class="k">Kunde</span><span class="v">'+(cu?fullName(cu):'—')+'</span></div>'+
     '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+(cu?cu.address:'—')+'</span></div>'+
     '<div class="reveal-row"><span class="k">Datum</span><span class="v">'+fmtDateLong(a.date)+'</span></div>'+
@@ -2677,7 +2688,9 @@ function showAppt(id){
   // Aktionen nur für den eigenen Mitarbeiter UND nur wenn nicht abgesagt
   if(currentRole==='staff'&&a.staffId===myId&&!cancelled){
     foot+='<button class="btn-danger-ghost" onclick="deleteAppt('+id+')">Absagen</button>';
-    foot+='<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="startTermin('+id+')">▶ Termin starten</button>';
+    foot+= isKennenlernen
+      ? '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="startKennenlernen('+id+')">▶ Kennenlerngespräch starten</button>'
+      : '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="startTermin('+id+')">▶ Termin starten</button>';
   }
   // Admin darf einen abgesagten Termin endgültig aus dem Kalender entfernen
   if(currentRole==='admin'&&cancelled){
@@ -2705,7 +2718,9 @@ function startTermin(id){
   document.getElementById('modalTitle').textContent='Einsatz bei '+fullName(cu);
   document.getElementById('modalBody').innerHTML=
     '<div class="summary" style="margin-bottom:14px"><div class="sh">Einsatz</div>'+
-      '<b>'+fullName(cu)+'</b> · '+(cu.address||cu.area||'')+'<br>Geplant: '+a.time+' Uhr · '+(a.duration||60)+' Min.</div>'+
+      '<b>'+fullName(cu)+'</b> · '+(cu.address||cu.area||'')+'<br>Geplant: '+a.time+' Uhr · '+(a.duration||60)+' Min.'+
+      (cu.bedarfsanalyse?('<br><b>Bedarf:</b> '+(cu.bedarfsanalyse.skills||[]).join(', ')+(cu.bedarfsanalyse.notes?' – '+cu.bedarfsanalyse.notes:'')):'')+
+    '</div>'+
     '<p style="color:var(--muted);font-size:13.5px;margin-bottom:10px">Passe die Zeiten an, falls der Einsatz kürzer oder länger war.</p>'+
     '<div class="content-form">'+
       '<input type="hidden" id="te_appt" value="'+id+'"><input type="hidden" id="te_cust" value="'+cu.id+'">'+
@@ -2789,7 +2804,106 @@ function signTermin(){
     }
   );
 }
+/* ============================================================
+   KENNENLERNGESPRÄCH: Bedarfsanalyse + Vertrag für Interessenten
+   ============================================================ */
+const KENNENLERNEN_VERTRAGSTEXT =
+  'DIENSTLEISTUNGSVERTRAG\n\n'+
+  'zwischen Alltagshilfe Hannover UG (haftungsbeschränkt), Bahnhofstraße 85, 31515 Wunstorf ("Anbieter")\n'+
+  'und [Kunde], [Anschrift] ("Auftraggeber")\n\n'+
+  '1. Vertragsgegenstand\n'+
+  'Der Anbieter erbringt für den Auftraggeber Leistungen der Alltagshilfe gemäß der im Rahmen der Bedarfsanalyse festgelegten Tätigkeiten: [Leistungen].\n\n'+
+  '2. Beginn und Häufigkeit\n'+
+  'Die Leistungserbringung beginnt nach Unterzeichnung dieses Vertrags. Häufigkeit und Umfang werden individuell mit dem Auftraggeber abgestimmt und können einvernehmlich angepasst werden.\n\n'+
+  '3. Vergütung\n'+
+  'Die Abrechnung erfolgt nach den jeweils gültigen Sätzen des Anbieters, ggf. im Rahmen einer Abtretungserklärung direkt mit der zuständigen Kasse, andernfalls als Privatrechnung an den Auftraggeber.\n\n'+
+  '4. Kündigung\n'+
+  'Der Vertrag kann von beiden Seiten mit einer Frist von 14 Tagen zum Monatsende gekündigt werden.\n\n'+
+  '5. Schlussbestimmungen\n'+
+  'Änderungen bedürfen der Textform. Es gilt deutsches Recht.\n\n'+
+  '(Demo-Text – die endgültige Vertragsfassung wird vor dem Echtbetrieb juristisch geprüft.)';
+
+function startKennenlernen(id){
+  const a=appointments.find(x=>x.id===id); const cu=custById(a.customerId); if(!cu)return;
+  window.__kennenlernen={apptId:id, cid:cu.id, date:a.date||todayISO(), start:a.time||'10:00', skills:[], notes:''};
+  kennenlernenBedarf();
+}
+function kennenlernenBedarf(){
+  const ctx=window.__kennenlernen; if(!ctx)return;
+  const cu=custById(ctx.cid);
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Bedarfsanalyse – '+fullName(cu);
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin-bottom:12px">Schritt 1 von 2: Welche Leistungen werden benötigt?</p>'+
+    '<label>Benötigte Leistungen</label>'+
+    '<div class="checks" id="kl_skills">'+SKILLS.map(s=>'<span class="check '+(ctx.skills.includes(s)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+s+'</span>').join('')+'</div>'+
+    '<label>Notizen zur Bedarfsanalyse</label><textarea id="kl_notes" rows="4" placeholder="z. B. Wünsche, Besonderheiten, Tagesablauf">'+(ctx.notes||'')+'</textarea>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="kennenlernenWeiterZuVertrag()">Weiter zum Vertrag →</button>';
+  openModal();
+}
+function kennenlernenWeiterZuVertrag(){
+  const ctx=window.__kennenlernen; if(!ctx)return;
+  ctx.skills=[...document.querySelectorAll('#kl_skills .check.on')].map(e=>e.textContent);
+  ctx.notes=val('kl_notes');
+  if(!ctx.skills.length){ toast('Bitte mindestens eine Leistung auswählen',true); return; }
+  kennenlernenVertrag();
+}
+function kennenlernenVertrag(){
+  const ctx=window.__kennenlernen; if(!ctx)return;
+  const cu=custById(ctx.cid);
+  const text=KENNENLERNEN_VERTRAGSTEXT
+    .split('[Kunde]').join(fullName(cu))
+    .split('[Anschrift]').join(cu.address||'')
+    .split('[Leistungen]').join(ctx.skills.join(', '));
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Vertrag – '+fullName(cu);
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin-bottom:12px">Schritt 2 von 2: Vertrag vom Kunden unterschreiben lassen.</p>'+
+    '<div style="white-space:pre-wrap;font-size:12.5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:16px;max-height:260px;overflow:auto;margin-bottom:14px">'+text+'</div>'+
+    '<div class="sign-pad" id="klSignPad" data-idx="kl"><canvas></canvas><div class="sign-hint" id="signhint-kl">Hier unterschreiben</div></div>'+
+    '<div class="sign-actions" style="margin-top:8px"><button class="btn-ghost btn-sm" onclick="clearSign(\'kl\')">Löschen</button></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="kennenlernenBedarf()">← Zurück</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" id="klSignConfirm">Vertrag bestätigen</button>';
+  openModal();
+  setTimeout(initSignPads,40);
+  document.getElementById('klSignConfirm').onclick=function(){
+    const canvas=document.querySelector('#klSignPad canvas');
+    if(!signatureLooksValid(canvas.toDataURL())){ toast('Bitte erst unterschreiben',true); return; }
+    finishKennenlernen(canvas.toDataURL(), text);
+  };
+}
+function finishKennenlernen(sig, vertragText){
+  const ctx=window.__kennenlernen; if(!ctx)return;
+  const cu=custById(ctx.cid); if(!cu)return;
+  const date=ctx.date;
+  // 1) Bedarfsanalyse + Vertrag beim Kunden hinterlegen, Status aktivieren
+  cu.bedarfsanalyse={skills:ctx.skills, notes:ctx.notes, date:date};
+  cu.vertrag={signature:sig, date:date, text:vertragText};
+  cu.status='aktiv';
+  if(CLOUD) cloudUpdate('kunden',cu.id,custToRow(cu));
+  // 2) Stundenzettel anlegen, damit der Mitarbeiter bezahlt wird – aber NICHT abrechenbar
+  const start=ctx.start||'10:00';
+  const [sh,sm]=start.split(':').map(Number);
+  const endMin=sh*60+sm+45; // Kennenlerngespräch pauschal mit 45 Min angesetzt, falls keine Endzeit erfasst wurde
+  const end=String(Math.floor(endMin/60)).padStart(2,'0')+':'+String(endMin%60).padStart(2,'0');
+  const ts={id:nextTsId++, staffId:myId, customerId:cu.id, date:date, start:start, end:end, task:'Kennenlerngespräch (Bedarfsanalyse & Vertrag)', status:'offen', proof:true, signature:sig, signedAt:date, hasAbtretung:false, billable:false};
+  timesheets.push(ts);
+  if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:cu.id,date:date,start:start,ende:end,task:ts.task,status:'offen',proof:true,signature:sig,signed_at:date,billable:false}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
+  // 3) Vertrag als PDF herunterladen
+  const doc=buildContractPdf({name:'Dienstleistungsvertrag', text:vertragText, signature:sig, person:fullName(cu), date:date});
+  if(doc) doc.save(('Vertrag_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+  // 4) Termin entfernen
+  if(ctx.apptId){ appointments=appointments.filter(a=>a.id!==ctx.apptId); if(CLOUD) cloudDelete('termine',ctx.apptId); }
+  window.__kennenlernen=null;
+  closeModal();
+  toast('Kennenlerngespräch abgeschlossen – Kunde ist jetzt aktiv');
+  renderStaff('hours');
+}
 function downloadTsLN(tsId){
+
   const t=timesheets.find(x=>x.id===tsId); if(!t)return;
   const cu=custById(t.customerId); if(!cu)return;
   const mins=tsMinutes(t);
