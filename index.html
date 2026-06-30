@@ -2816,19 +2816,51 @@ function wizIdSelfie(){
   (wizData.isStudent?'<div class="section-label" style="margin-top:6px">Als Student erforderlich</div>'+box('enrollment','🎓','Immatrikulationsbescheinigung','Bescheinigung hochgeladen',true,false):'')+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="checkIds()">Weiter →</button></div></div>';
 }
-function handleIdFile(which, input){
+/* Kamerafotos (Ausweis/Selfie) können roh mehrere MB groß sein – mehrere Fotos zusammen
+   überschreiten dann leicht das Datengrößen-Limit von Supabase und die Bewerbung kann
+   nicht gespeichert werden. Deshalb hier vor dem Speichern auf eine vernünftige Größe
+   verkleinern (max. 1400px Kante, JPEG-Qualität 0.75) – Ausweis bleibt gut lesbar,
+   die Datenmenge sinkt aber meist auf einen Bruchteil. */
+function compressImageFile(file, maxDim, quality){
+  return new Promise((resolve)=>{
+    if((file.type||'').indexOf('image/')!==0){ resolve(null); return; }
+    const img=new Image();
+    const reader=new FileReader();
+    reader.onload=function(e){
+      img.onload=function(){
+        let w=img.width, h=img.height;
+        if(w>maxDim||h>maxDim){
+          if(w>h){ h=Math.round(h*maxDim/w); w=maxDim; } else { w=Math.round(w*maxDim/h); h=maxDim; }
+        }
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror=function(){ resolve(null); };
+      img.src=e.target.result;
+    };
+    reader.onerror=function(){ resolve(null); };
+    reader.readAsDataURL(file);
+  });
+}
+async function handleIdFile(which, input){
   const file=input.files&&input.files[0]; if(!file)return;
   if(!validateUploadFile(file,{maxSize:SECURITY_MAX_FILE, imagesOnly:(which==='selfie'||which==='idFront'||which==='idBack')})){ input.value=''; return; }
   const labels={idFront:'Vorderseite',idBack:'Rückseite',selfie:'Selfie',enrollment:'Immatrikulationsbescheinigung'};
-  const reader=new FileReader();
-  reader.onload=function(e){
-    wizData[which]=true;
-    wizData[which+'Img']=safeDataUrl(e.target.result, (which==='selfie'||which==='idFront'||which==='idBack'));
-    if(which==='enrollment'){ wizData.enrollmentFile=true; }
-    renderWizard();
-    toast(labels[which]+' hochgeladen');
-  };
-  reader.readAsDataURL(file);
+  const isImage=(which==='selfie'||which==='idFront'||which==='idBack')||(file.type||'').indexOf('image/')===0;
+  let dataUrl=null;
+  if(isImage){ dataUrl=await compressImageFile(file, 1400, 0.75); }
+  if(!dataUrl){
+    // Kein Bild (z. B. PDF bei der Immatrikulationsbescheinigung) oder Komprimierung fehlgeschlagen -> Originaldatei lesen
+    dataUrl=await new Promise(res=>{ const r=new FileReader(); r.onload=e=>res(safeDataUrl(e.target.result)); r.onerror=()=>res(null); r.readAsDataURL(file); });
+  }
+  if(!dataUrl){ toast('Datei konnte nicht gelesen werden',true); return; }
+  wizData[which]=true;
+  wizData[which+'Img']=dataUrl;
+  if(which==='enrollment'){ wizData.enrollmentFile=true; }
+  renderWizard();
+  toast(labels[which]+' hochgeladen');
 }
 function checkIds(){
   if(!wizData.idFront||!wizData.idBack||!wizData.selfie){toast('Bitte Vorderseite, Rückseite und Selfie hochladen',true);return;}
