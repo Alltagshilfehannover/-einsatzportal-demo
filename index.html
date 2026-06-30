@@ -681,7 +681,7 @@ function rowToRechnung(r){return {
 };}
 function jobToRow(j){return {customer_id:j.customerId,title:j.title,skills:j.skills||[],status:j.status,assigned_to:j.assignedTo,rejected_by:j.rejectedBy||[],commit_deadline:j.commitDeadline?new Date(j.commitDeadline).toISOString():null, standort_id:currentStandortId};}
 function rowToJob(r){return {id:r.id,customerId:r.customer_id,title:r.title,skills:r.skills||[],status:r.status,assignedTo:r.assigned_to,rejectedBy:r.rejected_by||[],commitDeadline:r.commit_deadline?new Date(r.commit_deadline).getTime():null};}
-function appToRow(a){const q=a.questionnaire||{};return {first:a.first,last:a.last,gender:a.gender||null,email:a.email,phone:a.phone,area:a.area,citizenship:a.citizenship,skills:a.skills||[],motivation:a.motivation,status:a.status,docs:a.docs||{},signatures:a.signatures||{},questionnaire:a.questionnaire||{},declaration:a.declaration||{},id_front:!!a.idFront,id_back:!!a.idBack,selfie:!!a.selfie,agb:!!a.agb,street:q.street||null,house_no:q.houseNo||null,plz:q.plz||null,city:q.city||null,employment:q.employment||null,other_job:q.otherJob||null,is_student:!!a.isStudent,enrollment_file:!!a.enrollmentFile,pets:a.pets||[]};}
+function appToRow(a){const q=a.questionnaire||{};return {first:a.first,last:a.last,gender:a.gender||null,email:a.email,phone:a.phone,area:a.area,citizenship:a.citizenship,skills:a.skills||[],motivation:a.motivation,status:a.status,docs:a.docs||{},signatures:a.signatures||{},questionnaire:a.questionnaire||{},declaration:a.declaration||{},id_front:!!a.idFront,id_back:!!a.idBack,selfie:!!a.selfie,agb:!!a.agb,street:q.street||null,house_no:q.houseNo||null,plz:q.plz||null,city:q.city||null,employment:q.employment||null,other_job:q.otherJob||null,is_student:!!a.isStudent,enrollment_file:!!a.enrollmentFile,pets:a.pets||[],standort_id:currentStandortId};}
 function rowToApp(r){return {id:r.id,first:r.first,last:r.last,gender:r.gender,email:r.email,phone:r.phone,area:r.area,citizenship:r.citizenship,skills:r.skills||[],motivation:r.motivation,status:r.status,docs:r.docs||{},signatures:r.signatures||{},questionnaire:r.questionnaire||{},declaration:r.declaration||{},idFront:r.id_front,idBack:r.id_back,selfie:r.selfie,agb:r.agb,isStudent:r.is_student,enrollmentFile:r.enrollment_file,pets:r.pets||[]};}
 
 /* ---- Speicher-Helfer: schreiben einzelne Objekte zurück ---- */
@@ -752,7 +752,7 @@ async function loadFromCloud(){
 
   // Bewerbungen
   try{
-    const {data,error}=await sb.from('bewerbungen').select('*').order('id');
+    const {data,error}=await sb.from('bewerbungen').select('*').eq('standort_id',currentStandortId).order('id');
     if(error) throw error;
     if(data) applications=data.map(rowToApp);
     DIAG.push('bewerbungen: '+(data?data.length:0)+' geladen');
@@ -760,7 +760,7 @@ async function loadFromCloud(){
 
   // Termine
   try{
-    const {data,error}=await sb.from('termine').select('*').order('id');
+    const {data,error}=await sb.from('termine').select('*').eq('standort_id',currentStandortId).order('id');
     if(error) throw error;
     if(data) appointments=data.map(rowToAppt);
     DIAG.push('termine: '+(data?data.length:0)+' geladen');
@@ -768,7 +768,7 @@ async function loadFromCloud(){
 
   // Stundenzettel (inkl. abgeschlossene Einsätze mit Unterschrift)
   try{
-    const {data,error}=await sb.from('stundenzettel').select('*').order('id');
+    const {data,error}=await sb.from('stundenzettel').select('*').eq('standort_id',currentStandortId).order('id');
     if(error) throw error;
     if(data) timesheets=data.map(rowToTimesheet);
     DIAG.push('stundenzettel: '+(data?data.length:0)+' geladen');
@@ -2660,7 +2660,7 @@ function saveAppointment(customerId){
   renderStaff('calendar');
 }
 function apptToRow(a){
-  return { mitarbeiter_id:a.staffId, customer_id:a.customerId, date:a.date, time:a.time, duration:a.duration||60, note:a.note||null, status:a.status||'geplant', cancel_reason:a.cancelReason||null, cancel_detail:a.cancelDetail||null, type:a.type||'einsatz' };
+  return { mitarbeiter_id:a.staffId, customer_id:a.customerId, date:a.date, time:a.time, duration:a.duration||60, note:a.note||null, status:a.status||'geplant', cancel_reason:a.cancelReason||null, cancel_detail:a.cancelDetail||null, type:a.type||'einsatz', standort_id:currentStandortId };
 }
 function rowToAppt(r){
   return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, time:r.time, duration:r.duration||60, note:r.note||'', status:r.status||'geplant', cancelReason:r.cancel_reason||'', cancelDetail:r.cancel_detail||'', type:r.type||'einsatz' };
@@ -2778,7 +2778,7 @@ function signTermin(){
       //    (wird nur im Admin-Bereich und im Kunden-Ordner angezeigt, NICHT beim Mitarbeiter)
       const ts={id:nextTsId++, staffId:myId, customerId:t.cid, date:date, start:t.start, end:t.end, task:t.task, status:'offen', proof:true, signature:sig, signedAt:date, hasAbtretung:true};
       timesheets.push(ts);
-      if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:t.cid,date:date,start:t.start,ende:t.end,task:t.task,status:'offen',proof:true,signature:sig,signed_at:date}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
+      if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:t.cid,date:date,start:t.start,ende:t.end,task:t.task,status:'offen',proof:true,signature:sig,signed_at:date,standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
       // 2) Leistungsnachweis-PDF erzeugen (eine Zeile = dieser Einsatz)
       const rows=[{date:fmtDate(date), leistung:t.task, stunden:t.mins/60, preis:STUNDENSATZ}];
       const doc=buildLeistungsnachweisPdf({
@@ -2891,7 +2891,7 @@ function finishKennenlernen(sig, vertragText){
   const end=String(Math.floor(endMin/60)).padStart(2,'0')+':'+String(endMin%60).padStart(2,'0');
   const ts={id:nextTsId++, staffId:myId, customerId:cu.id, date:date, start:start, end:end, task:'Kennenlerngespräch (Bedarfsanalyse & Vertrag)', status:'offen', proof:true, signature:sig, signedAt:date, hasAbtretung:false, billable:false};
   timesheets.push(ts);
-  if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:cu.id,date:date,start:start,ende:end,task:ts.task,status:'offen',proof:true,signature:sig,signed_at:date,billable:false}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
+  if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:cu.id,date:date,start:start,ende:end,task:ts.task,status:'offen',proof:true,signature:sig,signed_at:date,billable:false,standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
   // 3) Vertrag als PDF herunterladen
   const doc=buildContractPdf({name:'Dienstleistungsvertrag', text:vertragText, signature:sig, person:fullName(cu), date:date});
   if(doc) doc.save(('Vertrag_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
