@@ -516,6 +516,12 @@ let kostentraeger=[
   {id:2,name:'Techniker Krankenkasse',strasse:'Bahnhofsallee 19',plz:'30159',ort:'Hannover',email:''},
 ];
 let rechnungen=[];
+let emailTemplates=[];   // E-Mail-Vorlagen (aus Supabase geladen)
+let mailingTarget='kunden';   // 'kunden' | 'mitarbeiter' | 'einzeln'
+let mailingSelected={};       // Einzelauswahl: {'k<id>':true,'m<id>':true}
+let mailingSubject='';
+let mailingText='';
+let mailingTemplateKey='marketing';
 let nextKostentraegerId=3, nextRechnungId=1;
 let leistungenKatalog=[];
 let nextLeistungId=1;
@@ -605,9 +611,9 @@ function requireAdminAction(){
    buchhaltung (Abrechnung & kaufmännische Übersicht). */
 const ROLE_VIEWS={
   admin:null, // null = alle Views erlaubt
-  buero:['dashboard','staff','customers','newcustomer','applications','kommunikation','hours','leistungen','calendar','mylogin'],
-  callcenter:['dashboard','customers','newcustomer','kommunikation','calendar','mylogin'],
-  buchhaltung:['dashboard','rechnungen','hours','customers','staff','kostentraeger','leistungen','standorte','calendar','mylogin']
+  buero:['dashboard','staff','customers','newcustomer','applications','kommunikation','hours','leistungen','calendar','vorlagen','mailing','schulung','mylogin'],
+  callcenter:['dashboard','customers','newcustomer','kommunikation','calendar','schulung','mylogin'],
+  buchhaltung:['dashboard','rechnungen','hours','customers','staff','kostentraeger','leistungen','standorte','calendar','schulung','mylogin']
 };
 const ROLE_LABELS={admin:'Büro',buero:'Büro',callcenter:'CallCenter',buchhaltung:'Buchhaltung',staff:'Mitarbeiter'};
 function hasRole(...roles){ return roles.includes(currentRole); }
@@ -668,7 +674,7 @@ function rowToStaff(r){return {
 function custToRow(c){return {
   first:c.first,last:c.last,area:c.area,address:c.address,
   street:c.street||null,house_no:c.houseNo||null,plz:c.plz||null,city:c.city||null,
-  phone:c.phone,phone_mobile:c.phoneMobile||null,phone_landline:c.phoneLandline||null,
+  phone:c.phone,phone_mobile:c.phoneMobile||null,phone_landline:c.phoneLandline||null,email:c.email||null,
   need:c.need||[],
   freq_num:c.freqNum||1,freq_unit:c.freqUnit||'pro Woche',time_window:c.window||null,
   pet:c.pet,pets:c.pets||[],pgrad:c.pgrad,status:c.status,
@@ -682,7 +688,7 @@ function custToRow(c){return {
 function rowToCust(r){return {
   id:r.id,first:r.first,last:r.last,area:r.area,address:r.address,
   street:r.street,houseNo:r.house_no,plz:r.plz,city:r.city,
-  phone:r.phone,phoneMobile:r.phone_mobile,phoneLandline:r.phone_landline,
+  phone:r.phone,phoneMobile:r.phone_mobile,phoneLandline:r.phone_landline,email:r.email,
   need:r.need||[],
   freqNum:r.freq_num,freqUnit:r.freq_unit,window:r.time_window,timeWindows:(r.time_window?String(r.time_window).split(', '):[]),
   pet:r.pet,pets:r.pets||[],pgrad:r.pgrad,status:r.status,
@@ -930,6 +936,9 @@ async function loadFromCloud(){
     DIAG.push('aufgaben: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER aufgaben: '+(e.message||e)); console.error('Laden aufgaben fehlgeschlagen:', e.message||e); }
 
+  // E-Mail-Vorlagen
+  await loadEmailTemplates();
+
   // Geladene Inhalte entschärfen, bevor sie per innerHTML gerendert werden
   sanitizeAllLocalData();
   // myId auf ersten Mitarbeiter setzen
@@ -953,6 +962,373 @@ function showDiag(){
     '<div style="margin-top:10px;border-top:1px solid #eee;padding-top:8px;color:#555">CLOUD: '+(typeof CLOUD!=='undefined'?CLOUD:'?')+' · in App: '+customers.length+' Kunden, '+staff.length+' Mitarbeiter</div>'+
     '<div style="margin-top:8px;text-align:right"><button onclick="document.getElementById(\'diagBox\').remove()" style="background:#6d28d9;color:#fff;border:0;border-radius:7px;padding:6px 12px;font-weight:600;cursor:pointer">Schließen</button></div>';
   document.body.appendChild(d);
+}
+
+/* =====================================================================
+   E-MAIL-VERSAND (Resend über Edge Function "send-email")
+   ===================================================================== */
+
+// Name der Firma für Vorlagen/Absender-Signatur (aus aktuellem Standort)
+function firmaName(){
+  const st=standorte.find(s=>s.id===currentStandortId);
+  return (st&&(st.firma||st.name))||'Alltagshilfe Hannover UG';
+}
+
+// Standard-Vorlagen. Werden beim ersten Start in die DB geschrieben und
+// sind Fallback, falls die DB (noch) keine Vorlage hat.
+// Platzhalter in {geschweiften Klammern} werden beim Versand ersetzt.
+const DEFAULT_EMAIL_TEMPLATES=[
+  {key:'rechnung', name:'Rechnung an Kostenträger/Kunde',
+   betreff:'Rechnung {nummer} – {firma}',
+   text:'Sehr geehrte Damen und Herren,\n\nanbei erhalten Sie die Rechnung {nummer} vom {datum} über {betrag} €.\nDie Rechnung sowie die zugehörigen Nachweise finden Sie im Anhang.\n\nMit freundlichen Grüßen\n{firma}'},
+  {key:'bewerbung_zusage', name:'Bewerbung – Zusage',
+   betreff:'Ihre Bewerbung bei {firma}',
+   text:'Hallo {vorname},\n\nvielen Dank für Ihre Bewerbung. Wir freuen uns sehr, Ihnen mitteilen zu können, dass wir Sie gerne in unserem Team begrüßen möchten.\nWir melden uns in Kürze mit den nächsten Schritten bei Ihnen.\n\nHerzliche Grüße\n{firma}'},
+  {key:'bewerbung_absage', name:'Bewerbung – Absage',
+   betreff:'Ihre Bewerbung bei {firma}',
+   text:'Hallo {vorname},\n\nvielen Dank für Ihr Interesse an einer Mitarbeit und für die Zeit, die Sie in Ihre Bewerbung investiert haben.\nNach sorgfältiger Prüfung müssen wir Ihnen leider mitteilen, dass wir Ihre Bewerbung derzeit nicht berücksichtigen können.\nWir wünschen Ihnen für Ihren weiteren Weg alles Gute.\n\nFreundliche Grüße\n{firma}'},
+  {key:'neuer_kunde', name:'Neuer Auftrag – Mitarbeiter-Info',
+   betreff:'Neuer Auftrag verfügbar in {gebiet}',
+   text:'Hallo {vorname},\n\nes ist ein neuer Auftrag verfügbar:\n{titel} in {gebiet}.\n\nSchau gern in der Daily-Do-App in der Auftragsbörse vorbei und nimm ihn an, wenn er zu dir passt.\n\nViele Grüße\n{firma}'},
+  {key:'termin', name:'Terminbestätigung / -erinnerung',
+   betreff:'Terminbestätigung am {datum}',
+   text:'Hallo {name},\n\nhiermit bestätigen wir Ihren Termin am {datum} um {uhrzeit} Uhr.\nSollten Sie den Termin nicht wahrnehmen können, geben Sie uns bitte rechtzeitig Bescheid.\n\nFreundliche Grüße\n{firma}'},
+  {key:'marketing', name:'Rundmail / Marketing',
+   betreff:'Neuigkeiten von {firma}',
+   text:'Hallo {name},\n\nhier Ihr Text …\n\nFreundliche Grüße\n{firma}'}
+];
+
+function emailTemplateToRow(t){return {vorlage_key:t.key, name:t.name||null, betreff:t.betreff||null, text:t.text||null, standort_id:currentStandortId, updated_at:new Date().toISOString()};}
+function rowToEmailTemplate(r){return {id:r.id, key:r.vorlage_key, name:r.name, betreff:r.betreff, text:r.text};}
+
+// Vorlage nach Schlüssel holen (DB-Vorlage bevorzugt, sonst Standard)
+function getTemplate(key){
+  return emailTemplates.find(t=>t.key===key)
+      || DEFAULT_EMAIL_TEMPLATES.find(t=>t.key===key)
+      || {key:key, name:key, betreff:'', text:''};
+}
+
+// Platzhalter {xyz} durch Werte ersetzen
+function fillTemplate(str, vars){
+  vars=vars||{};
+  if(vars.firma===undefined) vars.firma=firmaName();
+  return String(str||'').replace(/\{(\w+)\}/g,(m,k)=> (vars[k]!==undefined&&vars[k]!==null)?String(vars[k]):m);
+}
+
+// Reintext -> einfache HTML-Mail (Zeilenumbrüche + HTML-Escape)
+function textToHtml(str){
+  const esc=String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#222">'+esc.replace(/\n/g,'<br>')+'</div>';
+}
+
+// jsPDF-Dokument -> Base64 (für Anhang), ohne "data:...;base64,"-Präfix
+function pdfToBase64(doc){
+  try{ const uri=doc.output('datauristring'); const i=uri.indexOf('base64,'); return i>=0?uri.slice(i+7):null; }
+  catch(e){ console.warn('pdfToBase64',e); return null; }
+}
+
+// Versand-Protokoll (best effort, blockiert nie)
+function logEmail(art, betreff, empfaenger, zahl, status, fehler){
+  if(!CLOUD) return;
+  try{ cloudInsert('email_log',{art:art,betreff:betreff||null,empfaenger:empfaenger||null,empfaenger_zahl:zahl||1,status:status||'gesendet',fehler:fehler||null,created_by:currentUserLabel,standort_id:currentStandortId}); }
+  catch(e){ /* egal */ }
+}
+
+// Platzhalter je Vorlage (nur zur Anzeige im Bearbeiten-Dialog)
+const TEMPLATE_PLACEHOLDERS={
+  rechnung:['nummer','datum','betrag','name','firma'],
+  bewerbung_zusage:['vorname','name','firma'],
+  bewerbung_absage:['vorname','name','firma'],
+  neuer_kunde:['vorname','name','titel','gebiet','firma'],
+  termin:['name','datum','uhrzeit','firma'],
+  marketing:['name','firma']
+};
+// Escaping für Attribut-Werte bzw. Textarea-Inhalt
+function tplEscAttr(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');}
+function tplEscHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+// Vorlagentext säubern, ABER Zeilenumbrüche erhalten (anders als cleanInput)
+function cleanTemplateText(v, maxLen){
+  if(v==null) return '';
+  const s=String(v); let out='';
+  for(let i=0;i<s.length;i++){ const code=s.charCodeAt(i); if(code===10||code===13||code>=32){ out+=s[i]; } }
+  return out.slice(0,maxLen||4000);
+}
+function openTemplateModal(key){
+  if(!requireRoleAction('admin','buero')) return;
+  const t=getTemplate(key);
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Vorlage bearbeiten – '+(t.name||key);
+  const ph=TEMPLATE_PLACEHOLDERS[key]||[];
+  document.getElementById('modalBody').innerHTML=
+    (ph.length?'<div class="summary" style="margin-bottom:12px"><div class="sh">Verfügbare Platzhalter</div>'+ph.map(p=>'<code style="background:#eef3f3;padding:2px 6px;border-radius:5px;margin:0 6px 4px 0;display:inline-block">{'+p+'}</code>').join('')+'</div>':'')+
+    '<label>Betreff</label><input id="tpl_betreff" value="'+tplEscAttr(t.betreff||'')+'">'+
+    '<label>Text</label><textarea id="tpl_text" rows="12" style="font-family:inherit;line-height:1.5">'+tplEscHtml(t.text||'')+'</textarea>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveTemplate(\''+key+'\')">Speichern</button>';
+  openModal();
+}
+function saveTemplate(key){
+  if(!requireRoleAction('admin','buero')) return;
+  const betreff=cleanTemplateText(document.getElementById('tpl_betreff').value,300).replace(/\n/g,' ');
+  const text=cleanTemplateText(document.getElementById('tpl_text').value,4000);
+  let t=emailTemplates.find(x=>x.key===key);
+  if(t){
+    t.betreff=betreff; t.text=text;
+    if(CLOUD){ if(t.id) cloudUpdate('email_templates',t.id,{betreff:betreff,text:text,updated_at:new Date().toISOString()});
+               else cloudInsert('email_templates',emailTemplateToRow(t)).then(r=>{if(r)t.id=r.id;}); }
+  }else{
+    const def=DEFAULT_EMAIL_TEMPLATES.find(x=>x.key===key)||{key:key,name:key};
+    t={id:null,key:key,name:def.name,betreff:betreff,text:text};
+    emailTemplates.push(t);
+    if(CLOUD) cloudInsert('email_templates',emailTemplateToRow(t)).then(r=>{if(r)t.id=r.id;});
+  }
+  logActivity('E-Mail-Vorlage bearbeitet: '+(t.name||key));
+  closeModal(); document.getElementById('modalBox').classList.remove('wide');
+  toast('Vorlage gespeichert'); renderAdmin('vorlagen');
+}
+
+/* ---- E-Mail-Marketing (Rundmails) ---- */
+function captureMailingCompose(){
+  const s=document.getElementById('mail_subject'); const t=document.getElementById('mail_text');
+  if(s) mailingSubject=s.value; if(t) mailingText=t.value;
+}
+function mailingSetTarget(v){ captureMailingCompose(); mailingTarget=v; renderAdmin('mailing'); }
+function mailingToggle(k){ mailingSelected[k]=!mailingSelected[k]; captureMailingCompose(); renderAdmin('mailing'); }
+function mailingApplyTemplate(){
+  const sel=document.getElementById('mail_tpl'); if(!sel) return;
+  const t=getTemplate(sel.value); mailingTemplateKey=sel.value;
+  mailingSubject=t.betreff||''; mailingText=t.text||'';
+  renderAdmin('mailing');
+}
+function mailingRecipientObjects(){
+  const custWith=customers.filter(c=>c.email&&isValidEmail(c.email));
+  const staffWith=staff.filter(s=>s.email&&isValidEmail(s.email));
+  let people=[];
+  if(mailingTarget==='kunden') people=custWith.map(c=>({email:c.email,name:fullName(c)}));
+  else if(mailingTarget==='mitarbeiter') people=staffWith.map(s=>({email:s.email,name:fullName(s)}));
+  else { custWith.forEach(c=>{ if(mailingSelected['k'+c.id]) people.push({email:c.email,name:fullName(c)}); });
+         staffWith.forEach(s=>{ if(mailingSelected['m'+s.id]) people.push({email:s.email,name:fullName(s)}); }); }
+  const seen={}; return people.filter(p=>{const k=p.email.toLowerCase(); if(seen[k])return false; seen[k]=true; return true;});
+}
+function mailingHTML(){
+  const custWith=customers.filter(c=>c.email&&isValidEmail(c.email));
+  const staffWith=staff.filter(s=>s.email&&isValidEmail(s.email));
+  const count=mailingRecipientObjects().length;
+  const targets=[['kunden','Alle Kunden ('+custWith.length+')'],['mitarbeiter','Alle Mitarbeiter ('+staffWith.length+')'],['einzeln','Einzeln auswählen']];
+  let html=head('E-Mail-Marketing','Rundmails an Kunden oder Mitarbeiter. Es werden nur Empfänger mit hinterlegter, gültiger E-Mail angeschrieben. Jede Person erhält eine eigene Mail – keine sichtbaren Verteiler.')+
+  '<div class="panel" style="margin-bottom:16px"><div class="panel-head"><h3>1 · Empfänger</h3></div><div class="panel-body" style="padding-top:12px">'+
+  '<div class="filter-chips">'+targets.map(([v,l])=>'<span class="chip '+(mailingTarget===v?'on':'')+'" onclick="mailingSetTarget(\''+v+'\')">'+l+'</span>').join('')+'</div>';
+  if(mailingTarget==='einzeln'){
+    html+='<div style="margin-top:12px;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px 12px">'+
+      '<div style="font-weight:600;margin-bottom:6px">Kunden</div>'+
+      (custWith.length?custWith.map(c=>'<label style="display:flex;gap:8px;align-items:center;padding:3px 0;cursor:pointer"><input type="checkbox" style="width:auto;margin:0" '+(mailingSelected['k'+c.id]?'checked':'')+' onchange="mailingToggle(\'k'+c.id+'\')"> '+fullName(c)+' <span style="color:var(--muted);font-size:12px">'+c.email+'</span></label>').join(''):'<div style="color:var(--muted);font-size:13px">Keine Kunden mit E-Mail</div>')+
+      '<div style="font-weight:600;margin:12px 0 6px">Mitarbeiter</div>'+
+      (staffWith.length?staffWith.map(s=>'<label style="display:flex;gap:8px;align-items:center;padding:3px 0;cursor:pointer"><input type="checkbox" style="width:auto;margin:0" '+(mailingSelected['m'+s.id]?'checked':'')+' onchange="mailingToggle(\'m'+s.id+'\')"> '+fullName(s)+' <span style="color:var(--muted);font-size:12px">'+s.email+'</span></label>').join(''):'<div style="color:var(--muted);font-size:13px">Keine Mitarbeiter mit E-Mail</div>')+
+    '</div>';
+  }
+  html+='<div style="margin-top:12px;font-weight:700;color:var(--petrol-dark,#0f5b63)">→ '+count+' Empfänger'+(count?'':' – bitte mindestens einen auswählen')+'</div></div></div>';
+  const tplOpts=emailTemplates.map(t=>'<option value="'+t.key+'" '+(mailingTemplateKey===t.key?'selected':'')+'>'+(t.name||t.key)+'</option>').join('');
+  html+='<div class="panel"><div class="panel-head"><h3>2 · Inhalt</h3></div><div class="panel-body" style="padding-top:12px">'+
+  '<label>Vorlage übernehmen</label><div style="display:flex;gap:8px"><select id="mail_tpl">'+tplOpts+'</select><button class="btn-ghost btn-sm" style="width:auto;white-space:nowrap" onclick="mailingApplyTemplate()">Übernehmen</button></div>'+
+  '<label style="margin-top:12px">Betreff</label><input id="mail_subject" value="'+tplEscAttr(mailingSubject)+'" oninput="mailingSubject=this.value" placeholder="Betreff der E-Mail">'+
+  '<label>Text</label><textarea id="mail_text" rows="10" style="font-family:inherit;line-height:1.5" oninput="mailingText=this.value" placeholder="Ihr Text …">'+tplEscHtml(mailingText)+'</textarea>'+
+  '<div style="margin-top:8px;color:var(--muted);font-size:13px">Platzhalter: <code>{name}</code> (Name des Empfängers), <code>{firma}</code> – werden je Empfänger ersetzt.</div>'+
+  '<div style="margin-top:16px;display:flex;justify-content:flex-end"><button class="btn-primary" style="width:auto;padding:12px 22px" onclick="sendMailing()">📣 An '+count+' Empfänger senden</button></div>'+
+  '</div></div>';
+  return html;
+}
+async function sendMailing(){
+  if(!requireRoleAction('admin','buero')) return;
+  captureMailingCompose();
+  const subject=(mailingSubject||'').trim();
+  const text=(mailingText||'').trim();
+  if(!subject){ toast('Bitte einen Betreff eingeben',true); return; }
+  if(!text){ toast('Bitte einen Text eingeben',true); return; }
+  const people=mailingRecipientObjects();
+  if(!people.length){ toast('Keine gültigen Empfänger ausgewählt',true); return; }
+  if(!confirm('Rundmail an '+people.length+' Empfänger senden?')) return;
+  toast('Rundmail wird gesendet … (bei vielen Empfängern etwas Geduld)');
+  let sent=0, failed=0;
+  for(const p of people){
+    const vars={name:p.name, firma:firmaName()};
+    const res=await sendEmail({to:p.email, subject:fillTemplate(subject,vars), text:fillTemplate(text,vars), html:textToHtml(fillTemplate(text,vars))}, true);
+    if(res.ok) sent++; else failed++;
+    await new Promise(r=>setTimeout(r,350)); // freundlich zum Resend-Rate-Limit
+  }
+  toast(sent+' von '+people.length+' E-Mails gesendet'+(failed?' ('+failed+' fehlgeschlagen)':''));
+  logEmail('marketing', subject, 'Rundmail: '+people.length+' Empfänger', sent, failed?'fehler':'gesendet', failed?(failed+' fehlgeschlagen'):null);
+}
+
+/* =====================================================================
+   SCHULUNGEN (In-App-Betrachter + PowerPoint-Download)
+   Die PPTX liegen im Unterordner „schulungen/" neben dieser Datei.
+   ===================================================================== */
+const SCHULUNGEN=[
+  { id:"app", num:"1", color:"#0F5B63", file:"schulungen/1_Bedienung_Mitarbeiter_App.pptx",
+    title:"Bedienung der Mitarbeiter-App",
+    subtitle:"So nutzt du Daily Do sicher im Arbeitsalltag.",
+    slides:[
+      { h:"Bedienung der Mitarbeiter-App", sub:"So nutzt du Daily Do sicher im Arbeitsalltag", points:[] },
+      { h:"Anmelden", points:["Mit deiner geschäftlichen E-Mail und Passwort anmelden","„Passwort vergessen?“ schickt dir einen Link per E-Mail","Auf fremden Geräten immer wieder abmelden – Zugangsdaten sind vertraulich"] },
+      { h:"Dein Dashboard", points:["Bestätigte und voraussichtliche Stunden im Monat","Dein Verdienst auf Basis deines Stundenlohns","Bonus: bereits erhalten und noch ausstehend","70-Tage-Regel: verbleibende Tage kurzfristiger Beschäftigung"] },
+      { h:"Aufträge annehmen", points:["Die Auftragsbörse zeigt verfügbare Einsätze in deinem Gebiet","Auftrag antippen: Bedarf, Häufigkeit und Zeitfenster prüfen","Auf „Annehmen“ – der Kunde wird dir zugeordnet","Angenommene Einsätze sind verbindlich"] },
+      { h:"Meine Kunden", points:["Alle dir zugeordneten Kunden an einem Ort","Adresse, Telefon, Anfahrt und wichtige Hinweise","Kontaktperson für Rückfragen","Kundendaten sind streng vertraulich"] },
+      { h:"Termine & Einsatz", points:["Geplante Termine im Kalender","Vor Ort „Termin starten“ – Zeiten werden erfasst","Bei neuen Kunden: Kennenlerngespräch","Pünktlich sein, Verspätung sofort melden"] },
+      { h:"Stundenzettel & Nachweis", points:["Start, Ende und Tätigkeit eintragen","Der Kunde unterschreibt den Leistungsnachweis in der App","Stundenzettel absenden – das Büro gibt frei und rechnet ab"] },
+      { h:"Aufgaben, Lohn & Verträge", points:["Zugewiesene Aufgaben abarbeiten und erledigen","Lohnabrechnungen einsehen und herunterladen","Unterschriebene Verträge als PDF"] },
+      { h:"Das läuft gut – das nicht", points:["✓ Pünktlich und zuverlässig sein","✓ Zeiten sofort nach dem Einsatz erfassen","✓ Bei Problemen früh Bescheid geben","✗ Einsätze ohne Grund absagen","✗ Kundendaten weitergeben"] },
+      { h:"Hilfe & Notfall", points:["Notfallnummer in der App hinterlegt","Technisches Problem: App neu starten, dann Büro","Diese Schulung jederzeit hier nachlesen"] },
+      { h:"Zusammenfassung", points:["Anmelden und Dashboard verstehen","Aufträge verbindlich annehmen","Einsatz starten, Stundenzettel + Unterschrift","Bei Fragen immer das Büro"] }
+    ] },
+  { id:"komm", num:"2", color:"#6D2E46", file:"schulungen/2_Kommunikation_mit_Kunden.pptx",
+    title:"Kommunikation mit Kunden",
+    subtitle:"Wie wir sprechen, handeln und auftreten.",
+    slides:[
+      { h:"Kommunikation mit Kunden", sub:"Wie wir sprechen, handeln und auftreten", points:[] },
+      { h:"Unsere Grundhaltung", points:["Respekt: jeden Kunden mit Würde und Höflichkeit behandeln","Empathie: sich in die Menschen hineinversetzen","Verlässlichkeit: halten, was wir zusagen"] },
+      { h:"Der erste Eindruck", points:["Freundlich begrüßen, mit Namen, Blickkontakt","Pünktlich sein, Verspätung ankündigen","Saubere Kleidung, gepflegt, Ausweis dabei"] },
+      { h:"Wie spreche ich?", points:["Grundsätzlich siezen – außer der Kunde bietet das Du an","Langsam und deutlich, besonders bei älteren Menschen","Einfache, klare Sätze ohne Fachjargon","Ruhiger, freundlicher Tonfall – ein Lächeln hört man"] },
+      { h:"Zuhören & Nähe", points:["Aktiv zuhören, ausreden lassen, nachfragen","Privatsphäre achten – nichts ohne Erlaubnis anfassen","Nähe nur so weit, wie Aufgabe und Kunde es zulassen"] },
+      { h:"Eingeschränkte Kunden", points:["Bei Demenz: Geduld, ruhige Stimme, nicht widersprechen","Orientierung geben (Name, Tag, nächster Schritt)","Nicht bevormunden – Selbstständigkeit fördern","Auffälligkeiten dem Büro melden"] },
+      { h:"Schwierige Situationen", points:["Ruhig bleiben, Stimme senken, zuhören","Ernst nehmen und eine Lösung anbieten","Nicht diskutieren oder rechtfertigen","Nichts persönlich nehmen"] },
+      { h:"Klare Grenzen", points:["Dazu gehört: Haushaltshilfe, Betreuung, Begleitung, Gespräch","NICHT: Geld annehmen oder verwahren","NICHT: Medikamente verabreichen","NICHT: private Gefallen oder Bankgeschäfte"] },
+      { h:"Datenschutz & Schweigepflicht", points:["Was du beim Kunden erfährst, bleibt vertraulich","Keine Fotos, keine Kundendaten an Dritte","Wichtiges sachlich im Büro/CRM festhalten"] },
+      { h:"Notfälle", points:["Gesundheitlicher Notfall: Ruhe bewahren, 112 rufen, Erste Hilfe","Danach immer das Büro informieren","Im Zweifel lieber einmal zu viel anrufen"] },
+      { h:"Zusammenfassung", points:["Respekt, Empathie, Verlässlichkeit","Klar und freundlich sprechen","Grenzen und Schweigepflicht einhalten","Im Notfall: 112 und Büro"] }
+    ] },
+  { id:"clean", num:"3", color:"#2C5F2D", file:"schulungen/3_Reinigung_und_Betreuung.pptx",
+    title:"Reinigung & Betreuung",
+    subtitle:"Sauberkeit und Alltagsbegleitung richtig gemacht.",
+    slides:[
+      { h:"Reinigung & Betreuung", sub:"Sauberkeit und Alltagsbegleitung richtig gemacht", points:[] },
+      { h:"Vorbereitung", points:["Material prüfen: Mittel, Tücher, Handschuhe","Hygiene: Handschuhe tragen, Tücher nach Bereich trennen","Ablauf planen: erst grob, dann fein, von oben nach unten"] },
+      { h:"Reihenfolge beim Reinigen", points:["Von oben nach unten (Staub fällt nach unten)","Von hinten nach vorne (nicht über Gereinigtes laufen)","Trocken vor nass (erst Staub, dann feucht)","Schmutzigstes zuletzt: Bad und Boden"] },
+      { h:"Küche", points:["Arbeitsflächen und Spüle reinigen und desinfizieren","Herd, Fronten und Griffe abwischen","Bei Bedarf Kühlschrank/Mikrowelle innen","Boden zuletzt – eigene Tücher für Küche!"] },
+      { h:"Bad & Sanitär", points:["WC, Waschbecken, Dusche/Wanne gründlich reinigen","Armaturen entkalken, Spiegel streifenfrei","Kontaktflächen desinfizieren","Handschuhe danach wechseln, gut lüften"] },
+      { h:"Wohnräume", points:["Staub wischen: Oberflächen, Regale, Fensterbänke","Erst saugen, dann feucht wischen","Ordnung nur nach Absprache","Nichts wegwerfen oder umräumen ohne Rücksprache"] },
+      { h:"Fenster & Glas", points:["Streifenfrei von oben nach unten, mit Abzieher","Rahmen und Falze nicht vergessen","Möglichst umweltschonende Mittel (No-Chemix)"] },
+      { h:"Sicherheit & Ergonomie", points:["Rückenschonend heben und bücken","Auf Rutschgefahr bei nassem Boden achten","Reiniger niemals mischen, Etiketten beachten","Nicht auf wacklige Stühle/Leitern steigen"] },
+      { h:"Betreuung – was heißt das?", points:["Alltagsbegleitung (§ 45a SGB XI), keine medizinische Pflege","Gesellschaft: Gespräche, Vorlesen, Aktivitäten","Begleitung: Spaziergang, Einkauf, Arzttermine"] },
+      { h:"Aktivierung & Grenzen", points:["Zu Bewegung und Selbstständigkeit motivieren","Erinnerungen, Spiele, Musik nach Interesse","Tagesstruktur unterstützen","Grenze: keine Pflege, keine Medikamente"] },
+      { h:"Einsatz abschließen", points:["Kontrolle: sauber, ordentlich, Fenster zu, Geräte aus","Leistungsnachweis in der App unterschreiben lassen","Freundlich verabschieden, nächsten Termin bestätigen","Besonderheiten dem Büro melden"] },
+      { h:"Zusammenfassung", points:["Vorbereiten und von oben nach unten arbeiten","Küche & Bad hygienisch trennen","Sicher und rückenschonend arbeiten","Betreuung heißt Alltag – keine Pflege"] }
+    ] }
+];
+let __schulung={id:null, idx:0};
+function schulungHTML(){
+  return head('Schulung','Kurze Einführungen für neue und bestehende Mitarbeiter:innen – direkt in der App ansehen oder als PowerPoint herunterladen.')+
+  '<div class="cards grid-3">'+SCHULUNGEN.map(t=>
+    '<div class="panel" style="cursor:pointer" onclick="openSchulung(\''+t.id+'\')"><div class="panel-body" style="padding:20px">'+
+      '<div style="width:48px;height:48px;border-radius:13px;background:'+t.color+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">'+t.num+'</div>'+
+      '<h3 style="margin:14px 0 5px;font-size:18px">'+t.title+'</h3>'+
+      '<div style="color:var(--muted);font-size:13.5px;min-height:40px">'+t.subtitle+'</div>'+
+      '<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">'+t.slides.length+' Folien</div>'+
+      '<div style="margin-top:14px;display:flex;gap:8px">'+
+        '<button class="btn-primary btn-sm" style="width:auto" onclick="event.stopPropagation();openSchulung(\''+t.id+'\')">▶ Ansehen</button>'+
+        '<a class="btn-ghost btn-sm" style="width:auto;text-decoration:none" href="'+t.file+'" download onclick="event.stopPropagation()">⬇ PPTX</a>'+
+      '</div>'+
+    '</div></div>').join('')+'</div>';
+}
+function openSchulung(id){ __schulung={id:id, idx:0}; renderSchulungSlide(); }
+function schulungNav(delta){
+  const t=SCHULUNGEN.find(x=>x.id===__schulung.id); if(!t) return;
+  __schulung.idx=Math.max(0, Math.min(t.slides.length-1, __schulung.idx+delta));
+  renderSchulungSlide();
+}
+function renderSchulungSlide(){
+  const t=SCHULUNGEN.find(x=>x.id===__schulung.id); if(!t) return;
+  const i=__schulung.idx, sl=t.slides[i], isCover=(i===0);
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent=t.title;
+  document.getElementById('modalBody').innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
+      '<div style="font-size:12px;color:var(--muted);font-weight:600">Folie '+(i+1)+' / '+t.slides.length+'</div>'+
+      '<div style="height:6px;flex:1;margin-left:12px;background:#eef3f3;border-radius:4px;overflow:hidden"><div style="height:100%;width:'+Math.round((i+1)/t.slides.length*100)+'%;background:'+t.color+'"></div></div>'+
+    '</div>'+
+    '<div style="border:1px solid var(--line);border-radius:14px;padding:24px 26px;min-height:280px;'+(isCover?('background:'+t.color+';color:#fff'):'background:#fff')+'">'+
+      '<h2 style="margin:0;font-size:'+(isCover?'26':'22')+'px;'+(isCover?'color:#fff':('color:'+t.color))+'">'+sl.h+'</h2>'+
+      (sl.sub?'<div style="opacity:.92;margin-top:6px;font-size:16px">'+sl.sub+'</div>':'')+
+      (sl.points&&sl.points.length?'<ul style="margin:16px 0 0;padding-left:20px;line-height:1.75;font-size:16px">'+sl.points.map(p=>'<li style="margin-bottom:7px">'+p+'</li>').join('')+'</ul>':'')+
+    '</div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<a class="btn-ghost" style="width:auto;text-decoration:none" href="'+t.file+'" download>⬇ PPTX</a>'+
+    '<button class="btn-ghost" style="width:auto'+(i===0?';opacity:.4':'')+'" '+(i===0?'disabled':'')+' onclick="schulungNav(-1)">← Zurück</button>'+
+    (i<t.slides.length-1
+      ? '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="schulungNav(1)">Weiter →</button>'
+      : '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="closeModal()">Fertig ✓</button>');
+  openModal();
+}
+
+/* Zentrale Sende-Funktion. payload:
+   { to, subject, text?, html?, replyTo?, attachments?:[{filename,content(base64)}] }
+   ODER für Rundmails: { recipients:[...], subject, text?/html? }
+   Gibt {ok:boolean, ...} zurück und zeigt bei Fehlern einen Toast. */
+async function sendEmail(payload, quiet){
+  if(!CLOUD || !sb || !sb.functions){ if(!quiet) toast('Kein Cloud-Zugang – E-Mail kann nicht gesendet werden',true); return {ok:false,error:'offline'}; }
+  try{
+    const {data,error}=await sb.functions.invoke('send-email',{ body: payload });
+    if(error){
+      let msg=error.message||'Versand fehlgeschlagen';
+      try{ if(error.context && error.context.json){ const j=await error.context.json(); if(j&&j.error) msg=j.error; } }catch(_e){}
+      if(!quiet) toast('E-Mail-Fehler: '+msg,true);
+      return {ok:false,error:msg};
+    }
+    if(data && data.error){ if(!quiet) toast('E-Mail-Fehler: '+data.error,true); return {ok:false,error:data.error}; }
+    return {ok:true, data:data||{}};
+  }catch(e){
+    if(!quiet) toast('E-Mail konnte nicht gesendet werden: '+(e.message||e),true);
+    return {ok:false,error:String(e.message||e)};
+  }
+}
+
+// Benachrichtigt passende aktive Mitarbeiter per E-Mail über einen neuen Auftrag.
+// Personalisierte Einzelmails (kein Rundmail-Recht nötig), Fehler bleiben leise.
+async function notifyStaffNewJob(job, cu){
+  if(!CLOUD) return;
+  try{
+    const gebiet=(cu&&cu.area)||'';
+    const matches=staff.filter(m=>
+      m.status==='aktiv' && m.email && isValidEmail(m.email) &&
+      ( !(job.skills&&job.skills.length)
+        || job.skills.some(sk=>(m.skills||[]).includes(sk))
+        || (cu&&cu.area&&m.area&&m.area===cu.area) )
+    );
+    if(!matches.length) return;
+    const tpl=getTemplate('neuer_kunde');
+    let sent=0;
+    for(const m of matches){
+      const vars={vorname:m.first, name:fullName(m), titel:job.title, gebiet:gebiet, firma:firmaName()};
+      const res=await sendEmail({to:m.email, subject:fillTemplate(tpl.betreff,vars), text:fillTemplate(tpl.text,vars), html:textToHtml(fillTemplate(tpl.text,vars))}, true);
+      if(res.ok) sent++;
+    }
+    if(sent){
+      toast(sent+' Mitarbeiter per E-Mail über den neuen Auftrag informiert');
+      logEmail('neuer_kunde', fillTemplate(tpl.betreff,{titel:job.title,gebiet:gebiet,firma:firmaName()}), matches.map(m=>m.email).join(', '), sent, 'gesendet');
+    }
+  }catch(e){ console.warn('notifyStaffNewJob',e); }
+}
+
+// Vorlagen laden; wenn für diesen Standort noch keine da sind, Standard säen
+async function loadEmailTemplates(){
+  try{
+    const {data,error}=await sb.from('email_templates').select('*').eq('standort_id',currentStandortId).order('id');
+    if(error) throw error;
+    if(data && data.length){ emailTemplates=data.map(rowToEmailTemplate); }
+    else {
+      emailTemplates=[];
+      for(const t of DEFAULT_EMAIL_TEMPLATES){
+        const d=await cloudInsert('email_templates',emailTemplateToRow(t));
+        emailTemplates.push(d?rowToEmailTemplate(d):{id:null,...t});
+      }
+    }
+    DIAG.push('email_templates: '+emailTemplates.length+' geladen');
+  }catch(e){
+    // Fällt weich zurück auf die Standard-Vorlagen (App bleibt nutzbar)
+    emailTemplates=DEFAULT_EMAIL_TEMPLATES.map(t=>({id:null,...t}));
+    DIAG.push('FEHLER email_templates: '+(e.message||e));
+    console.error('Laden email_templates fehlgeschlagen:', e.message||e);
+  }
 }
 
 async function loadStandorte(){
@@ -1342,8 +1718,13 @@ function buildAdminNav(active){
     ['Einstellungen',[
       viewAllowed('leistungen')?navItem('leistungen','📋','Leistungen',active==='leistungen'):'',
       viewAllowed('kostentraeger')?navItem('kostentraeger','🏦','Kostenträger',active==='kostentraeger'):'',
+      viewAllowed('vorlagen')?navItem('vorlagen','✉','E-Mail-Vorlagen',active==='vorlagen'):'',
+      viewAllowed('mailing')?navItem('mailing','📣','E-Mail-Marketing',active==='mailing'):'',
       viewAllowed('aktivitaeten')?navItem('aktivitaeten','📜','Aktivitätsprotokoll',active==='aktivitaeten'):'',
       viewAllowed('zugaenge')?navItem('zugaenge','👥','Zugänge & Rollen',active==='zugaenge'):''
+    ]],
+    ['Schulung',[
+      viewAllowed('schulung')?navItem('schulung','🎓','Schulung',active==='schulung'):''
     ]],
     ['Konto',[
       viewAllowed('mylogin')?navItem('mylogin','🔑','Meine Zugangsdaten',active==='mylogin'):''
@@ -1369,6 +1750,7 @@ function buildStaffNav(active){
     navItem('calendar','▦','Meine Termine',active==='calendar')+
     navItem('hours','⏱','Stundenzettel',active==='hours')+
     navItem('payroll','€','Lohnabrechnung',active==='payroll')+
+    navItem('schulung','🎓','Schulung',active==='schulung')+
     '<div class="nav-group">Konto</div>'+
     navItem('profile','☺','Mein Profil',active==='profile')+
     navItem('contracts','📄','Meine Verträge',active==='contracts')+
@@ -1674,6 +2056,18 @@ function renderAdmin(view){
       '</tbody></table>':'<div class="empty"><div class="big">🧾</div><b>Noch keine Rechnungen</b><p style="margin-top:6px">Erstelle oben eine Rechnung aus einem bereiten Stundenzettel.</p></div>')+
     '</div></div>';
   }
+  if(view==='vorlagen'){
+    const canManage=hasRole('admin','buero');
+    c.innerHTML=head('E-Mail-Vorlagen','Betreff und Text der automatischen E-Mails. Platzhalter in {geschweiften Klammern} werden beim Versand automatisch ersetzt – z. B. {nummer}, {betrag}, {vorname}, {name}, {firma}.')+
+    '<div class="panel"><div class="panel-body" style="padding-top:14px">'+
+    (emailTemplates.length?'<table><thead><tr><th>Vorlage</th><th>Betreff</th><th></th></tr></thead><tbody>'+
+      emailTemplates.map(t=>'<tr><td><b>'+(t.name||t.key)+'</b><div style="color:var(--muted);font-size:12px">'+t.key+'</div></td><td>'+(t.betreff||'—')+'</td>'+
+      '<td style="text-align:right">'+(canManage?'<button class="btn-ghost btn-sm" onclick="openTemplateModal(\''+t.key+'\')">Bearbeiten</button>':'')+'</td></tr>').join('')+
+      '</tbody></table>':'<div class="empty"><div class="big">✉</div><b>Keine Vorlagen geladen</b><p style="margin-top:6px">Die Standard-Vorlagen werden beim ersten Start automatisch angelegt.</p></div>')+
+    '</div></div>';
+  }
+  if(view==='mailing'){ c.innerHTML=mailingHTML(); }
+  if(view==='schulung'){ c.innerHTML=schulungHTML(); }
   if(view==='notes'){ c.innerHTML=head('Notizen','Bemerkungen zu Mitarbeitern und Kunden. Intern = nur Büro, Mitarbeiter = für die Person sichtbar.')+notesAdminHTML(); }
   if(view==='calendar'){ c.innerHTML=head('Kalender','Alle Einsätze zentral. Klick auf einen Termin für Details.')+calendarHTML(null); }
 }
@@ -1840,6 +2234,7 @@ function customerFormHTML(c){
     '<label>Gebiet / Stadtteil</label><input id="nc_area" value="'+(c.area||'')+'" placeholder="z. B. Hannover-Linden">'+
     '<div class="form-row"><div><label>Telefon (Mobil)</label><input id="nc_mobile" value="'+(c.phoneMobile||'')+'"></div>'+
     '<div><label>Telefon (Festnetz)</label><input id="nc_landline" value="'+(c.phoneLandline||'')+'"></div></div>'+
+    '<label>E-Mail (für Terminbestätigungen &amp; Rundmails, optional)</label><input id="nc_email" value="'+(c.email||'')+'" placeholder="kunde@example.de">'+
     '<div class="form-row"><div><label>Pflegegrad</label><select id="nc_pgrad">'+['1','2','3','4','5'].map(p=>'<option '+(c.pgrad===p?'selected':'')+'>'+p+'</option>').join('')+'</select></div>'+
     '<div><label>Geburtsdatum</label><input id="nc_birth" type="date" value="'+(c.birth||'')+'"></div></div>'+
 
@@ -1918,7 +2313,7 @@ function gatherCustomer(c){
   c.street=val('nc_street');c.houseNo=val('nc_houseno');c.plz=val('nc_plz');c.city=val('nc_city');
   c.address=((c.street+' '+c.houseNo).trim()+', '+(c.plz+' '+c.city).trim()).replace(/^, |, $/,'')||'—';
   c.area=val('nc_area')||c.city||'—';
-  c.phoneMobile=val('nc_mobile');c.phoneLandline=val('nc_landline');
+  c.phoneMobile=val('nc_mobile');c.phoneLandline=val('nc_landline');c.email=val('nc_email');
   c.phone=c.phoneMobile||c.phoneLandline||'—';
   c.pgrad=document.getElementById('nc_pgrad').value;
   c.birth=val('nc_birth');
@@ -1972,6 +2367,7 @@ function createCustomer(){
       customers.unshift(c);jobs.unshift(job);
       logActivity('Kunde angelegt: '+fullName(c));
       toast('Kunde gespeichert & als Auftrag freigegeben');renderAdmin('jobs');
+      notifyStaffNewJob(job, c);
     })();
   }else{
     customers.unshift(c);jobs.unshift(job);
@@ -2124,8 +2520,43 @@ function showApplication(id){
   if(a.status==='neu') foot+='<button class="btn-primary" style="width:auto;padding:11px 18px" onclick="approveApp('+id+')">✓ Genehmigen</button>';
   if(a.status==='geprüft') foot+='<button class="btn-primary" style="width:auto;padding:11px 18px;background:var(--blue)" onclick="sendAppLogin('+id+')">🔑 Zugangsdaten erstellen & senden</button>';
   if(a.status==='versendet') foot+='<span style="font-size:13.5px;color:var(--good);align-self:center">✓ Mitarbeiter ist aktiv – kann sich anmelden</span>';
+  if(a.status==='abgelehnt') foot+='<span style="font-size:13.5px;color:var(--danger);align-self:center">✕ Absage gesendet</span>';
+  if(a.email && isValidEmail(a.email) && a.status!=='versendet' && a.status!=='abgelehnt'){
+    foot+='<button class="btn-ghost" style="width:auto" onclick="sendBewerbungZusage('+id+')">✉ Zusage senden</button>';
+    foot+='<button class="btn-danger-ghost" style="width:auto" onclick="sendBewerbungAbsage('+id+')">✉ Absage senden</button>';
+  }
   document.getElementById('modalFoot').innerHTML=foot;
   openModal();
+}
+// Zusage per E-Mail an den Bewerber
+async function sendBewerbungZusage(id){
+  if(!requireRoleAction('admin','buero')) return;
+  const a=applications.find(x=>x.id===id); if(!a){toast('Bewerbung nicht gefunden',true);return;}
+  if(!a.email||!isValidEmail(a.email)){toast('Keine gültige E-Mail hinterlegt',true);return;}
+  const tpl=getTemplate('bewerbung_zusage');
+  const vars={vorname:a.first, name:(a.first+' '+a.last).trim(), firma:firmaName()};
+  const subject=fillTemplate(tpl.betreff,vars), text=fillTemplate(tpl.text,vars);
+  toast('Zusage wird gesendet …');
+  const res=await sendEmail({to:a.email, subject:subject, text:text, html:textToHtml(text)});
+  if(res.ok){ toast('Zusage an '+a.email+' gesendet'); logEmail('bewerbung', subject, a.email, 1, 'gesendet'); }
+  else logEmail('bewerbung', subject, a.email, 1, 'fehler', res.error);
+}
+// Absage per E-Mail an den Bewerber (setzt Status auf "abgelehnt")
+async function sendBewerbungAbsage(id){
+  if(!requireRoleAction('admin','buero')) return;
+  const a=applications.find(x=>x.id===id); if(!a){toast('Bewerbung nicht gefunden',true);return;}
+  if(!a.email||!isValidEmail(a.email)){toast('Keine gültige E-Mail hinterlegt',true);return;}
+  const tpl=getTemplate('bewerbung_absage');
+  const vars={vorname:a.first, name:(a.first+' '+a.last).trim(), firma:firmaName()};
+  const subject=fillTemplate(tpl.betreff,vars), text=fillTemplate(tpl.text,vars);
+  toast('Absage wird gesendet …');
+  const res=await sendEmail({to:a.email, subject:subject, text:text, html:textToHtml(text)});
+  if(res.ok){
+    a.status='abgelehnt';
+    if(CLOUD) cloudUpdate('bewerbungen',id,{status:'abgelehnt'});
+    logEmail('bewerbung', subject, a.email, 1, 'gesendet');
+    toast('Absage an '+a.email+' gesendet'); closeModal(); renderAdmin('applications');
+  } else logEmail('bewerbung', subject, a.email, 1, 'fehler', res.error);
 }
 function deleteApplication(id){
   if(!requireRoleAction('admin','buero')) return;
@@ -2388,6 +2819,7 @@ function renderStaff(view){
       '<div style="color:var(--muted);font-size:14px">Erreichbar Mo–Fr 7–20 Uhr · außerhalb: Bereitschaft</div>'+
     '</div></div>';
   }
+  if(view==='schulung'){ c.innerHTML=schulungHTML(); }
 }
 function saveProfile(){
   const m=me();
@@ -3128,8 +3560,33 @@ function showAppt(id){
   if(currentRole==='admin'&&cancelled){
     foot+='<button class="btn-danger-ghost" onclick="removeCancelledAppt('+id+')">Endgültig entfernen</button>';
   }
+  // Terminbestätigung / -erinnerung per E-Mail (Büro/Admin)
+  if((currentRole==='admin'||currentRole==='buero'||currentRole==='callcenter') && !cancelled){
+    const cuHasMail=cu&&cu.email&&isValidEmail(cu.email);
+    const stObj=staff.find(s=>s.id===a.staffId);
+    const stHasMail=stObj&&stObj.email&&isValidEmail(stObj.email);
+    if(cuHasMail||stHasMail) foot+='<button class="btn-ghost" style="width:auto" onclick="sendTerminMail('+id+')">✉ Terminbestätigung senden</button>';
+  }
   document.getElementById('modalFoot').innerHTML=foot;
   openModal();
+}
+// Terminbestätigung/-erinnerung an Kunde (bevorzugt) oder Mitarbeiter
+async function sendTerminMail(id){
+  if(!requireRoleAction('admin','buero','callcenter')) return;
+  const a=appointments.find(x=>x.id===id); if(!a){toast('Termin nicht gefunden',true);return;}
+  const cu=custById(a.customerId);
+  const st=staff.find(s=>s.id===a.staffId);
+  let to='', name='';
+  if(cu && cu.email && isValidEmail(cu.email)){ to=cu.email; name=fullName(cu); }
+  else if(st && st.email && isValidEmail(st.email)){ to=st.email; name=fullName(st); }
+  if(!to){ toast('Weder Kunde noch Mitarbeiter hat eine hinterlegte E-Mail',true); return; }
+  const tpl=getTemplate('termin');
+  const vars={name:name, datum:fmtDateLong(a.date), uhrzeit:a.time, firma:firmaName()};
+  const subject=fillTemplate(tpl.betreff,vars), text=fillTemplate(tpl.text,vars);
+  toast('Termin-Mail wird gesendet …');
+  const res=await sendEmail({to:to, subject:subject, text:text, html:textToHtml(text)});
+  if(res.ok){ toast('Termin-Mail an '+to+' gesendet'); logEmail('termin', subject, to, 1, 'gesendet'); }
+  else logEmail('termin', subject, to, 1, 'fehler', res.error);
 }
 function removeCancelledAppt(id){
   appointments=appointments.filter(a=>a.id!==id);
@@ -4439,6 +4896,9 @@ function openInvoiceModal(tsId){
   const mins=tsMinutes(t);
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent='Rechnung erstellen – '+fullName(cu);
+  // E-Mail-Empfänger ermitteln (nur bei gesetzlich + hinterlegter Kostenträger-Mail)
+  const invKt = cu.insuranceType==='gesetzlich' ? kostentraeger.find(k=>k.id===cu.kostentraegerId) : null;
+  const invRecipientEmail = (invKt && invKt.email && isValidEmail(invKt.email)) ? invKt.email : '';
   const payerInfo = cu.insuranceType==='gesetzlich'
     ? '<div class="summary" style="margin-bottom:14px"><div class="sh">Gesetzlich versichert</div>Rechnung geht an den hinterlegten Kostenträger: <b>'+(kostentraeger.find(k=>k.id===cu.kostentraegerId)||{}).name+'</b></div>'
     : '<div class="summary" style="margin-bottom:14px"><div class="sh">'+(cu.insuranceType==='beihilfe'?'Beihilfeberechtigt':'Privat versichert')+'</div>Rechnung geht direkt an den Kunden (Privatrechnung).</div>';
@@ -4448,7 +4908,10 @@ function openInvoiceModal(tsId){
       mine.map((l,i)=>'<option value="'+i+'">'+l.name+' – '+Number(l.preis).toFixed(2).replace('.',',')+' € '+l.einheit+'</option>').join('')+
     '</select>'+
     '<label>Menge</label><input id="inv_menge" type="number" min="0" step="0.01" value="'+invoiceDefaultMenge(mine[0].einheit,mins)+'" oninput="invoiceRecalc('+mins+')">'+
-    '<div class="reveal-row" style="margin-top:10px"><span class="k"><b>Gesamtbetrag</b></span><span class="v" id="inv_betrag"><b>'+(mine[0].preis*invoiceDefaultMenge(mine[0].einheit,mins)).toFixed(2).replace('.',',')+' €</b></span></div>';
+    '<div class="reveal-row" style="margin-top:10px"><span class="k"><b>Gesamtbetrag</b></span><span class="v" id="inv_betrag"><b>'+(mine[0].preis*invoiceDefaultMenge(mine[0].einheit,mins)).toFixed(2).replace('.',',')+' €</b></span></div>'+
+    (invRecipientEmail
+      ? '<label style="display:flex;align-items:center;gap:9px;margin-top:16px;font-weight:500;cursor:pointer"><input type="checkbox" id="inv_sendmail" checked style="width:auto;margin:0"> Rechnung direkt per E-Mail an <b>'+invRecipientEmail+'</b> senden</label>'
+      : '<p style="margin-top:14px;color:var(--muted);font-size:13px">ℹ Kein E-Mail-Empfänger hinterlegt – die Rechnung wird nur als PDF erstellt. E-Mail beim Kostenträger hinterlegen, um automatisch zu versenden.</p>');
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
     '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="createInvoiceForTimesheet('+tsId+')">Rechnung erstellen</button>';
@@ -4488,13 +4951,17 @@ function createInvoiceForTimesheet(tsId){
     leistungName:l.name, leistungEinheit:l.einheit, menge:menge,
     datum:todayISO(), stunden:tsMinutes(t)/60, preisProStunde:l.preis, betrag:betrag, status:'offen'
   };
+  const wantMail=!!(document.getElementById('inv_sendmail')&&document.getElementById('inv_sendmail').checked);
   rechnungen.push(re);
-  if(CLOUD){ cloudInsert('rechnungen',rechnungToRow(re)).then(r=>{ if(r) re.id=r.id; }); }
+  if(CLOUD){ cloudInsert('rechnungen',rechnungToRow(re)).then(r=>{ if(r) re.id=r.id; if(wantMail && re.empfaengerEmail){ mailRechnung(re.id); } }); }
+  else if(wantMail && re.empfaengerEmail){ mailRechnung(re.id); }
   downloadRechnung(re.id);
   downloadTsLN(t.id);
   downloadAbtretung(cu.id);
   closeModal();
-  toast('Rechnung '+nummer+' erstellt – Rechnung, Leistungsnachweis & Abtretung werden heruntergeladen');
+  toast(wantMail && re.empfaengerEmail
+    ? ('Rechnung '+nummer+' erstellt – wird per E-Mail versendet')
+    : ('Rechnung '+nummer+' erstellt – Rechnung, Leistungsnachweis & Abtretung werden heruntergeladen'));
   renderAdmin('rechnungen');
 }
 function buildRechnungPdf(re, cu){
@@ -4551,13 +5018,48 @@ function downloadRechnung(id){
   const doc=buildRechnungPdf(re,cu);
   if(doc) doc.save(('Rechnung_'+re.nummer).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
 }
-function mailRechnung(id){
-  const re=rechnungen.find(x=>x.id===id); if(!re||!re.empfaengerEmail){toast('Keine E-Mail-Adresse hinterlegt',true);return;}
-  downloadRechnung(id);
-  const subject=encodeURIComponent('Rechnung '+re.nummer+' – Alltagshilfe Hannover UG');
-  const body=encodeURIComponent('Sehr geehrte Damen und Herren,\n\nanbei erhalten Sie die Rechnung '+re.nummer+' über '+re.betrag.toFixed(2).replace('.',',')+' €.\nBitte die soeben heruntergeladene PDF-Datei an diese E-Mail anhängen.\n\nMit freundlichen Grüßen\nAlltagshilfe Hannover UG');
-  window.location.href='mailto:'+re.empfaengerEmail+'?subject='+subject+'&body='+body;
-  toast('E-Mail-Programm wird geöffnet – PDF bitte manuell anhängen');
+// Rechnung per E-Mail (Resend) inkl. PDF-Anhängen versenden
+async function mailRechnung(id){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const re=rechnungen.find(x=>x.id===id); if(!re){toast('Rechnung nicht gefunden',true);return;}
+  if(!re.empfaengerEmail || !isValidEmail(re.empfaengerEmail)){toast('Keine gültige E-Mail-Adresse hinterlegt',true);return;}
+  const cu=custById(re.customerId);
+  const atts=buildRechnungAttachments(re,cu);
+  const tpl=getTemplate('rechnung');
+  const vars={nummer:re.nummer, datum:fmtDate(re.datum), betrag:Number(re.betrag||0).toFixed(2).replace('.',','), name:re.empfaengerName, firma:firmaName()};
+  const subject=fillTemplate(tpl.betreff,vars);
+  const text=fillTemplate(tpl.text,vars);
+  toast('E-Mail wird gesendet …');
+  const res=await sendEmail({to:re.empfaengerEmail, subject:subject, text:text, html:textToHtml(text), attachments:atts});
+  if(res.ok){
+    toast('Rechnung '+re.nummer+' per E-Mail an '+re.empfaengerEmail+' gesendet');
+    logEmail('rechnung', subject, re.empfaengerEmail, 1, 'gesendet');
+    const r2=rechnungen.find(x=>x.id===id);
+    if(r2 && r2.status==='offen'){ r2.status='versendet'; if(CLOUD) cloudUpdate('rechnungen',id,{status:'versendet'}); }
+    if(currentRole==='admin'||currentRole==='buchhaltung') renderAdmin('rechnungen');
+  } else {
+    logEmail('rechnung', subject, re.empfaengerEmail, 1, 'fehler', res.error);
+  }
+}
+// Sammelt Rechnung + (falls vorhanden) Leistungsnachweis + Abtretung als PDF-Anhänge
+function buildRechnungAttachments(re, cu){
+  const atts=[];
+  try{ const inv=buildRechnungPdf(re,cu); const b=inv&&pdfToBase64(inv); if(b) atts.push({filename:('Rechnung_'+re.nummer).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf', content:b}); }catch(e){ console.warn('Rechnungs-PDF',e); }
+  try{
+    const t=re.stundenzettelId?timesheets.find(x=>x.id===re.stundenzettelId):null;
+    if(t&&cu){
+      const mins=tsMinutes(t);
+      const ln=buildLeistungsnachweisPdf({name:fullName(cu), versNr:(cu.intern&&cu.intern.kvNr)||cu.kvNr||'', rows:[{date:fmtDate(t.date), leistung:t.task||'Betreuung', stunden:mins/60, preis:STUNDENSATZ}], signature:t.signature, ort:(cu.city||cu.area||''), date:t.date});
+      const b=ln&&pdfToBase64(ln); if(b) atts.push({filename:('Leistungsnachweis_'+re.nummer).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf', content:b});
+    }
+  }catch(e){ console.warn('LN-PDF',e); }
+  try{
+    if(cu&&cu.abtretung&&cu.abtretung.signature){
+      const ab=buildAbtretungPdf(cu, cu.abtretung.signature, cu.abtretung.date);
+      const b=ab&&pdfToBase64(ab); if(b) atts.push({filename:('Abtretung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf', content:b});
+    }
+  }catch(e){ console.warn('AB-PDF',e); }
+  return atts;
 }
 function setRechnungStatus(id,status){
   if(!requireRoleAction('admin','buchhaltung')) return;
