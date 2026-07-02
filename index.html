@@ -677,7 +677,7 @@ const ROLE_VIEWS={
   admin:null, // null = alle Views erlaubt
   buero:['dashboard','karte','staff','customers','newcustomer','applications','kommunikation','hours','leistungen','calendar','vorlagen','mailing','schulung','mylogin'],
   callcenter:['dashboard','customers','newcustomer','kommunikation','calendar','schulung','mylogin'],
-  buchhaltung:['dashboard','rechnungen','hours','customers','staff','kostentraeger','leistungen','standorte','calendar','schulung','mylogin']
+  buchhaltung:['dashboard','rechnungen','lexware','hours','customers','staff','kostentraeger','leistungen','standorte','calendar','schulung','mylogin']
 };
 const ROLE_LABELS={admin:'Büro',buero:'Büro',callcenter:'CallCenter',buchhaltung:'Buchhaltung',staff:'Mitarbeiter'};
 function hasRole(...roles){ return roles.includes(currentRole); }
@@ -761,7 +761,8 @@ function rowToCust(r){return {
   insuranceType:r.insurance_type||'gesetzlich',beihilfePct:r.beihilfe_pct,
   intern:{kvNr:r.kv_nr,kasse:r.kasse,budget:r.budget,budgetUsed:r.budget_used},
   kostentraegerId:r.kostentraeger_id||null, leistungen:r.leistungen||[],
-  bedarfsanalyse:r.bedarfsanalyse||null, vertrag:r.vertrag||null
+  bedarfsanalyse:r.bedarfsanalyse||null, vertrag:r.vertrag||null,
+  lexwareId:r.lexware_id||null
 };}
 /* ============ KOSTENTRÄGER / RECHNUNGEN: DB-Mapping ============ */
 function standortToRow(s){return {name:s.name,firma:s.firma||null,strasse:s.strasse||null,plz:s.plz||null,ort:s.ort||null,telefon:s.telefon||null,email:s.email||null,notizen:s.notizen||null,
@@ -842,7 +843,8 @@ function rowToRechnung(r){return {
   kostentraegerId:r.kostentraeger_id,
   empfaengerName:r.empfaenger_name, empfaengerAdresse:r.empfaenger_adresse, empfaengerEmail:r.empfaenger_email,
   leistungName:r.leistung_name, leistungEinheit:r.leistung_einheit, menge:r.menge,
-  datum:r.datum, stunden:r.stunden, preisProStunde:r.preis_pro_stunde, betrag:r.betrag, status:r.status||'offen'
+  datum:r.datum, stunden:r.stunden, preisProStunde:r.preis_pro_stunde, betrag:r.betrag, status:r.status||'offen',
+  lexwareId:r.lexware_id||null
 };}
 function jobToRow(j){return {customer_id:j.customerId,title:j.title,skills:j.skills||[],status:j.status,assigned_to:j.assignedTo,rejected_by:j.rejectedBy||[],commit_deadline:j.commitDeadline?new Date(j.commitDeadline).toISOString():null, standort_id:currentStandortId};}
 function rowToJob(r){return {id:r.id,customerId:r.customer_id,title:r.title,skills:r.skills||[],status:r.status,assignedTo:r.assigned_to,rejectedBy:r.rejected_by||[],commitDeadline:r.commit_deadline?new Date(r.commit_deadline).getTime():null};}
@@ -1787,6 +1789,7 @@ const NAV_ICONS=(function(){
     aufgaben:  sv('<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/>'),
     hours:     sv('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>'),
     rechnungen: sv('<path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/>'),
+    lexware:   sv('<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>'),
     payroll:   sv('<circle cx="12" cy="12" r="9"/><path d="M15 8.5a4 4 0 1 0 0 7"/><path d="M7.5 10.5h5"/><path d="M7.5 13.5h5"/>'),
     notes:     sv('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
     calendar:  sv('<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M3 9h18"/>'),
@@ -1831,6 +1834,7 @@ function buildAdminNav(active){
     ['Abwicklung',[
       viewAllowed('hours')?navItem('hours','⏱','Stundenzettel',active==='hours'):'',
       viewAllowed('rechnungen')?navItem('rechnungen','🧾','Rechnungen',active==='rechnungen'):'',
+      viewAllowed('lexware')&&hasRole('admin','buchhaltung')?navItem('lexware','🔗','Lexware Office',active==='lexware'):'',
       viewAllowed('payroll')?navItem('payroll','€','Lohnabrechnung',active==='payroll'):'',
       viewAllowed('notes')?navItem('notes','✎','Notizen',active==='notes'):'',
       viewAllowed('calendar')?navItem('calendar','▦','Kalender',active==='calendar'):''
@@ -2209,15 +2213,48 @@ function renderAdmin(view){
         const statusBadge = ueberfaellig
           ? '<span class="tag red">überfällig ('+tage+' Tage)</span>'
           : (r.status==='bezahlt'?'<span class="tag green">bezahlt</span>':r.status==='versendet'?'<span class="tag blue">versendet</span>':'<span class="tag amber">offen</span>');
-        return '<tr><td><b>'+r.nummer+'</b></td><td>'+fmtDate(r.datum)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+r.empfaengerName+'</td><td>'+Number(r.betrag||0).toFixed(2).replace('.',',')+' €</td>'+
+        return '<tr><td><b>'+r.nummer+'</b>'+(r.lexwareId?' <a href="https://app.lexware.de/permalink/invoices/view/'+r.lexwareId+'" target="_blank" rel="noopener" title="In Lexware Office öffnen" style="text-decoration:none"><span class="tag green">LEX</span></a>':'')+'</td><td>'+fmtDate(r.datum)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+r.empfaengerName+'</td><td>'+Number(r.betrag||0).toFixed(2).replace('.',',')+' €</td>'+
         '<td>'+statusBadge+'<br><select onchange="setRechnungStatus('+r.id+',this.value)" style="margin-top:4px;font-size:12px;padding:3px 5px;border-radius:6px;border:1px solid var(--line)">'+['offen','versendet','bezahlt'].map(s=>'<option value="'+s+'" '+(r.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select></td>'+
         '<td style="display:flex;gap:5px;flex-wrap:wrap"><button class="btn-ghost btn-sm" onclick="downloadRechnung('+r.id+')">RE</button>'+
           (r.stundenzettelId?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+r.stundenzettelId+')">LV</button>':'')+
           '<button class="btn-ghost btn-sm" onclick="downloadAbtretung('+r.customerId+')">AB</button>'+
           (r.empfaengerEmail?'<button class="btn-ghost btn-sm" onclick="mailRechnung('+r.id+')">✉</button>':'')+
+          (lexwareReady()&&!r.lexwareId?'<button class="btn-ghost btn-sm" onclick="lexwareCreateInvoice('+r.id+')" title="In Lexware Office als Entwurf anlegen">LEX↑</button>':'')+
         '</td></tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">🧾</div><b>Noch keine Rechnungen</b><p style="margin-top:6px">Erstelle oben eine Rechnung aus einem bereiten Stundenzettel.</p></div>')+
     '</div></div>';
+  }
+  if(view==='lexware'){
+    const custActive=customers.filter(k=>k.status!=='beendet');
+    const custLinked=custActive.filter(k=>k.lexwareId).length;
+    const reLinked=rechnungen.filter(r=>r.lexwareId).length;
+    c.innerHTML=head('Lexware Office','Buchhaltung anbinden: Kunden übertragen, Rechnungen als Entwurf anlegen und den Zahlungsstatus automatisch abgleichen.')+
+    '<div class="cards grid-4">'+
+      '<div class="stat"><div class="label">Verbindung</div><div class="value" id="lx_status" style="font-size:16px">…</div><div class="foot">Lexware Office Public API</div></div>'+
+      stat('Kunden übertragen',custLinked+' / '+custActive.length,'aktive Kunden mit Lexware-Kontakt')+
+      stat('Rechnungen verknüpft',reLinked+' / '+rechnungen.length,'in Lexware angelegt')+
+      stat('Modus','Entwurf','Rechnungen werden zur Prüfung als Entwurf angelegt')+
+    '</div><div style="height:16px"></div>'+
+    '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Kunden-Abgleich</h3>'+
+      '<button class="btn-primary btn-sm" style="width:auto" onclick="lexwareSyncCustomers()">↑ Aktive Kunden nach Lexware übertragen</button></div>'+
+      '<div class="panel-body" style="padding-top:10px"><p style="color:var(--muted);font-size:13.5px;margin:0 0 8px">Überträgt alle aktiven Kunden ohne Lexware-Verknüpfung als Kontakte (Name, Adresse, E-Mail, Telefon). Bereits übertragene Kunden werden übersprungen. Wegen des Lexware-Limits (2 Anfragen/Sek.) dauert das bei vielen Kunden einige Minuten.</p>'+
+      '<div id="lx_synclog" style="font-size:13.5px;font-weight:600;color:var(--ink)"></div></div></div>'+
+    '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Zahlungs-Abgleich</h3>'+
+      '<button class="btn-primary btn-sm" style="width:auto" onclick="lexwareStatusSync()">⟳ Zahlungsstatus aus Lexware abgleichen</button></div>'+
+      '<div class="panel-body" style="padding-top:10px"><p style="color:var(--muted);font-size:13.5px;margin:0 0 8px">Fragt die Rechnungsliste in Lexware ab. Rechnungen, die dort als bezahlt gebucht sind (z. B. über den Bankabgleich in Lexware), werden hier automatisch auf „bezahlt" gesetzt. Zusätzlich siehst du alle offenen Posten laut Lexware.</p>'+
+      '<div id="lx_payresult" style="font-size:13.5px"></div></div></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Einrichtung</h3></div><div class="panel-body" style="padding-top:10px">'+
+      '<ol style="margin:0;padding-left:20px;line-height:1.8;font-size:13.5px">'+
+      '<li>API-Schlüssel in Lexware Office erzeugen: <b>app.lexware.de/addons/public-api</b></li>'+
+      '<li>In Supabase als Secret hinterlegen: <code>LEXWARE_API_KEY</code> (Edge Functions → Manage secrets)</li>'+
+      '<li>Edge Function <code>lexware-proxy</code> deployen (Code liegt im Ordner <code>supabase-functions/lexware-proxy/</code>)</li>'+
+      '<li>SQL-Migration <code>LEXWARE_MIGRATION.sql</code> im Supabase SQL-Editor ausführen (Spalte <code>lexware_id</code>)</li>'+
+      '<li>Oben auf „Verbindung testen" – Details in <b>ANLEITUNG_LEXWARE.md</b></li>'+
+      '</ol>'+
+      '<div style="margin-top:12px"><button class="btn-ghost btn-sm" onclick="lexwarePing()">Verbindung testen</button></div>'+
+    '</div></div>';
+    if(CLOUD) setTimeout(lexwarePing,60);
+    else { const el=document.getElementById('lx_status'); if(el) el.innerHTML='<span class="tag amber">offline</span>'; }
   }
   if(view==='vorlagen'){
     const canManage=hasRole('admin','buero');
@@ -5088,7 +5125,10 @@ function openInvoiceModal(tsId){
     '<div class="reveal-row" style="margin-top:10px"><span class="k"><b>Gesamtbetrag</b></span><span class="v" id="inv_betrag"><b>'+(mine[0].preis*invoiceDefaultMenge(mine[0].einheit,mins)).toFixed(2).replace('.',',')+' €</b></span></div>'+
     (invRecipientEmail
       ? '<label style="display:flex;align-items:center;gap:9px;margin-top:16px;font-weight:500;cursor:pointer"><input type="checkbox" id="inv_sendmail" checked style="width:auto;margin:0"> Rechnung direkt per E-Mail an <b>'+invRecipientEmail+'</b> senden</label>'
-      : '<p style="margin-top:14px;color:var(--muted);font-size:13px">ℹ Kein E-Mail-Empfänger hinterlegt – die Rechnung wird nur als PDF erstellt. E-Mail beim Kostenträger hinterlegen, um automatisch zu versenden.</p>');
+      : '<p style="margin-top:14px;color:var(--muted);font-size:13px">ℹ Kein E-Mail-Empfänger hinterlegt – die Rechnung wird nur als PDF erstellt. E-Mail beim Kostenträger hinterlegen, um automatisch zu versenden.</p>')+
+    (lexwareReady()
+      ? '<label style="display:flex;align-items:center;gap:9px;margin-top:10px;font-weight:500;cursor:pointer"><input type="checkbox" id="inv_lexware" checked style="width:auto;margin:0"> Rechnung zusätzlich in <b>Lexware Office</b> anlegen (als Entwurf)</label>'
+      : '');
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
     '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="createInvoiceForTimesheet('+tsId+')">Rechnung erstellen</button>';
@@ -5129,9 +5169,10 @@ function createInvoiceForTimesheet(tsId){
     datum:todayISO(), stunden:tsMinutes(t)/60, preisProStunde:l.preis, betrag:betrag, status:'offen'
   };
   const wantMail=!!(document.getElementById('inv_sendmail')&&document.getElementById('inv_sendmail').checked);
+  const wantLexware=!!(document.getElementById('inv_lexware')&&document.getElementById('inv_lexware').checked);
   rechnungen.push(re);
-  if(CLOUD){ cloudInsert('rechnungen',rechnungToRow(re)).then(r=>{ if(r) re.id=r.id; if(wantMail && re.empfaengerEmail){ mailRechnung(re.id); } }); }
-  else if(wantMail && re.empfaengerEmail){ mailRechnung(re.id); }
+  if(CLOUD){ cloudInsert('rechnungen',rechnungToRow(re)).then(r=>{ if(r) re.id=r.id; if(wantMail && re.empfaengerEmail){ mailRechnung(re.id); } if(wantLexware){ lexwareCreateInvoice(re.id); } }); }
+  else { if(wantMail && re.empfaengerEmail){ mailRechnung(re.id); } if(wantLexware){ lexwareCreateInvoice(re.id); } }
   downloadRechnung(re.id);
   downloadTsLN(t.id);
   downloadAbtretung(cu.id);
@@ -5244,6 +5285,191 @@ function setRechnungStatus(id,status){
   re.status=status;
   if(CLOUD) cloudUpdate('rechnungen',id,{status:status});
   toast('Status aktualisiert');
+}
+
+/* ============================================================
+   LEXWARE OFFICE – SCHNITTSTELLE
+   Alle Aufrufe laufen über die Edge Function "lexware-proxy"
+   (der API-Schlüssel bleibt serverseitig). Nur admin/buchhaltung.
+   Rechnungen werden bewusst als ENTWURF angelegt – geprüft,
+   festgeschrieben und versendet wird in Lexware Office.
+   ============================================================ */
+// Merker: Verbindung wurde erfolgreich getestet -> Lexware-Optionen anzeigen
+function lexwareReady(){ try{ return localStorage.getItem('dailydo-lexware')==='on'; }catch(e){ return false; } }
+function setLexwareReady(on){ try{ if(on) localStorage.setItem('dailydo-lexware','on'); else localStorage.removeItem('dailydo-lexware'); }catch(e){} }
+
+// Zentrale Aufruf-Funktion (Muster wie sendEmail)
+async function lexwareCall(action, payload, quiet){
+  if(!CLOUD || !sb || !sb.functions){ if(!quiet) toast('Kein Cloud-Zugang – Lexware nicht erreichbar',true); return {ok:false,error:'offline'}; }
+  try{
+    const {data,error}=await sb.functions.invoke('lexware-proxy',{ body:{action:action, payload:payload||{}} });
+    if(error){
+      let msg=error.message||'Lexware-Aufruf fehlgeschlagen';
+      try{ if(error.context && error.context.json){ const j=await error.context.json(); if(j&&j.error) msg=j.error; } }catch(_e){}
+      if(!quiet) toast('Lexware-Fehler: '+msg,true);
+      console.warn('lexware',action,msg);
+      return {ok:false,error:msg};
+    }
+    if(data && data.error){ if(!quiet) toast('Lexware-Fehler: '+data.error,true); console.warn('lexware',action,data.error); return {ok:false,error:data.error}; }
+    return {ok:true, data:data||{}};
+  }catch(e){
+    if(!quiet) toast('Lexware nicht erreichbar: '+(e.message||e),true);
+    return {ok:false,error:String(e.message||e)};
+  }
+}
+
+// lexware_id still in der DB speichern. Fehlt die Spalte (Migration noch
+// nicht ausgeführt), nur in der Konsole warnen – die App läuft weiter,
+// die Verknüpfung geht dann aber beim Neuladen verloren.
+async function saveLexwareIdQuiet(table,id,lexId){
+  if(!CLOUD) return;
+  try{
+    const {error}=await sb.from(table).update({lexware_id:lexId}).eq('id',id);
+    if(error) console.warn('lexware_id speichern ('+table+'): '+error.message+' – bitte LEXWARE_MIGRATION.sql ausführen');
+  }catch(e){ console.warn('lexware_id speichern',e); }
+}
+
+// Verbindungstest: Profil abrufen, Firmenname anzeigen
+async function lexwarePing(){
+  const el=document.getElementById('lx_status');
+  if(el) el.innerHTML='<span style="color:var(--muted)">prüfe …</span>';
+  const res=await lexwareCall('ping',{},true);
+  if(res.ok){
+    setLexwareReady(true);
+    if(el) el.innerHTML='<span class="tag green">verbunden</span>'+(res.data.companyName?'<div style="font-size:12px;font-weight:500;color:var(--muted);margin-top:4px">'+cleanInput(res.data.companyName,60)+'</div>':'');
+  }else{
+    setLexwareReady(false);
+    if(el) el.innerHTML='<span class="tag red">nicht verbunden</span><div style="font-size:11.5px;font-weight:500;color:var(--muted);margin-top:4px">'+cleanInput(res.error||'',120)+'</div>';
+  }
+}
+
+// Einheiten-Text der Leistung -> Lexware-Mengeneinheit
+function lexwareUnitName(einheit){
+  if(einheit==='pro Stunde') return 'Stunde';
+  if(einheit==='pro 15 Min') return '15 Minuten';
+  if(einheit==='pro 30 Min') return '30 Minuten';
+  return 'Einheit';
+}
+
+// Kunde -> Lexware-Kontakt (Rolle "customer")
+function lexwareContactPayload(cu){
+  const p={
+    roles:{customer:{}},
+    person:{firstName:cu.first||'', lastName:cu.last||cu.first||'Kunde'},
+    note:'Daily-Do Kunde'+(cu.pgrad?' · Pflegegrad '+cu.pgrad:'')+(cu.area?' · Gebiet '+cu.area:'')
+  };
+  const street=(cu.street?(cu.street+' '+(cu.houseNo||'')).trim():'')||cu.address||'';
+  if(street||cu.plz||cu.city) p.addresses={billing:[{street:street, zip:cu.plz||'', city:cu.city||'', countryCode:'DE'}]};
+  if(cu.email&&isValidEmail(cu.email)) p.emailAddresses={business:[cu.email]};
+  const tel=cu.phoneMobile||cu.phone||cu.phoneLandline;
+  if(tel) p.phoneNumbers={private:[String(tel)]};
+  return p;
+}
+
+// Alle aktiven Kunden ohne Verknüpfung als Kontakte übertragen
+async function lexwareSyncCustomers(){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const log=document.getElementById('lx_synclog');
+  const todo=customers.filter(k=>k.status!=='beendet'&&!k.lexwareId);
+  if(!todo.length){ if(log) log.textContent='Alle aktiven Kunden sind bereits übertragen.'; return; }
+  let ok=0,fail=0;
+  for(let i=0;i<todo.length;i++){
+    const cu=todo[i];
+    if(log) log.textContent='Übertrage '+(i+1)+' / '+todo.length+' – '+fullName(cu)+' …';
+    const res=await lexwareCall('syncContact',{contact:lexwareContactPayload(cu)},true);
+    if(res.ok&&res.data&&res.data.id){ cu.lexwareId=res.data.id; saveLexwareIdQuiet('kunden',cu.id,res.data.id); ok++; }
+    else { fail++; console.warn('Lexware Kunden-Sync',fullName(cu),res.error); }
+    await new Promise(r=>setTimeout(r,600)); // Lexware-Limit: max. 2 Anfragen/Sekunde
+  }
+  if(log) log.innerHTML='<b>'+ok+'</b> Kunden übertragen'+(fail?', <b style="color:#b91c1c">'+fail+' fehlgeschlagen</b> (Details in der Browser-Konsole)':'')+'.';
+  toast('Kunden-Abgleich abgeschlossen: '+ok+' übertragen'+(fail?', '+fail+' Fehler':''));
+  if(__lastAdminView==='lexware') renderAdmin('lexware');
+}
+
+// Daily-Do-Rechnung -> Lexware-Rechnungsentwurf
+// (Betreuungs-/Entlastungsleistungen nach SGB XI sind umsatzsteuerfrei -> taxType "vatfree")
+function lexwareInvoicePayload(re, cu){
+  let street='', zip='', city='';
+  if(re.kostentraegerId){
+    const kt=kostentraeger.find(k=>k.id===re.kostentraegerId);
+    if(kt){ street=kt.strasse||''; zip=kt.plz||''; city=kt.ort||''; }
+  }else if(cu){
+    street=(cu.street?(cu.street+' '+(cu.houseNo||'')).trim():'')||cu.address||'';
+    zip=cu.plz||''; city=cu.city||'';
+  }
+  const dat=(re.datum||todayISO())+'T00:00:00.000+01:00';
+  return {
+    voucherDate:dat,
+    address:{name:re.empfaengerName||'Empfänger', street:street, zip:zip, city:city, countryCode:'DE'},
+    lineItems:[{
+      type:'custom',
+      name:(re.leistungName||'Alltagshilfe')+' – Leistung vom '+fmtDate(re.datum),
+      quantity:Number(re.menge||re.stunden||1),
+      unitName:lexwareUnitName(re.leistungEinheit),
+      unitPrice:{currency:'EUR', netAmount:Number(re.preisProStunde||0), taxRatePercentage:0}
+    }],
+    totalPrice:{currency:'EUR'},
+    taxConditions:{taxType:'vatfree'},
+    paymentConditions:{paymentTermLabel:'Zahlbar innerhalb von 14 Tagen ohne Abzug.', paymentTermDuration:14},
+    shippingConditions:{shippingType:'service', shippingDate:dat},
+    title:'Rechnung',
+    introduction:'Rechnung '+re.nummer+(cu?' – Leistungsempfänger/Versicherte(r): '+fullName(cu):''),
+    remark:'Die Abrechnung erfolgt auf Basis der unterschriebenen Abtretungserklärung und des Leistungsnachweises gemäß § 45b SGB XI.'
+  };
+}
+
+// Rechnung in Lexware als Entwurf anlegen und verknüpfen
+async function lexwareCreateInvoice(reId){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const re=rechnungen.find(x=>x.id===reId); if(!re){ toast('Rechnung nicht gefunden',true); return; }
+  if(re.lexwareId){ toast('Rechnung '+re.nummer+' ist bereits mit Lexware verknüpft',true); return; }
+  const cu=custById(re.customerId);
+  toast('Rechnung '+re.nummer+' wird in Lexware angelegt …');
+  const res=await lexwareCall('createInvoice',{invoice:lexwareInvoicePayload(re,cu)});
+  if(res.ok&&res.data&&res.data.id){
+    re.lexwareId=res.data.id;
+    saveLexwareIdQuiet('rechnungen',re.id,res.data.id);
+    logActivity&&logActivity('Rechnung '+re.nummer+' in Lexware Office angelegt (Entwurf)');
+    toast('Rechnung '+re.nummer+' als Entwurf in Lexware Office angelegt');
+    if(__lastAdminView==='rechnungen'||__lastAdminView==='lexware') renderAdmin(__lastAdminView);
+  }
+}
+
+// Zahlungsstatus abgleichen: in Lexware bezahlte Rechnungen hier auf "bezahlt" setzen
+async function lexwareStatusSync(){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const out=document.getElementById('lx_payresult');
+  if(out) out.textContent='Frage Lexware ab …';
+  const res=await lexwareCall('listInvoices',{});
+  if(!res.ok){ if(out) out.innerHTML='<span style="color:#b91c1c">Abfrage fehlgeschlagen: '+cleanInput(res.error||'',200)+'</span>'; return; }
+  const list=(res.data&&res.data.content)||[];
+  const byId={}; list.forEach(v=>{ if(v&&v.id) byId[v.id]=v; });
+  let paid=0;
+  for(const r of rechnungen){
+    if(!r.lexwareId) continue;
+    const v=byId[r.lexwareId]; if(!v) continue;
+    const st=String(v.voucherStatus||'');
+    if((st==='paid'||st==='paidoff') && r.status!=='bezahlt'){
+      r.status='bezahlt';
+      if(CLOUD) cloudUpdate('rechnungen',r.id,{status:'bezahlt'});
+      paid++;
+    }
+  }
+  const open=list.filter(v=>v.voucherStatus==='open'||v.voucherStatus==='overdue');
+  const sum=open.reduce((s,v)=>s+(Number(v.openAmount!=null?v.openAmount:v.totalAmount)||0),0);
+  if(out){
+    out.innerHTML='<p style="margin:6px 0 10px">'+
+      (paid?('<b>'+paid+'</b> Rechnung(en) neu als „bezahlt" übernommen.'):'Keine neuen Zahlungen gefunden.')+
+      ' Offene Posten laut Lexware: <b>'+open.length+'</b> über <b>'+sum.toFixed(2).replace('.',',')+' €</b>.</p>'+
+      (open.length?'<table><thead><tr><th>Nr.</th><th>Empfänger</th><th>Datum</th><th>Fällig</th><th>Betrag</th><th>Status</th></tr></thead><tbody>'+
+        open.slice(0,50).map(v=>'<tr><td><b>'+cleanInput(v.voucherNumber||'—',30)+'</b></td><td>'+cleanInput(v.contactName||'—',60)+'</td>'+
+          '<td>'+(v.voucherDate?fmtDate(String(v.voucherDate).slice(0,10)):'—')+'</td><td>'+(v.dueDate?fmtDate(String(v.dueDate).slice(0,10)):'—')+'</td>'+
+          '<td>'+(Number(v.totalAmount)||0).toFixed(2).replace('.',',')+' €</td>'+
+          '<td>'+(v.voucherStatus==='overdue'?'<span class="tag red">überfällig</span>':'<span class="tag amber">offen</span>')+'</td></tr>').join('')+
+        '</tbody></table>':'');
+  }
+  toast('Zahlungsabgleich abgeschlossen'+(paid?': '+paid+' Rechnung(en) auf „bezahlt" gesetzt':''));
+  if(paid&&__lastAdminView==='rechnungen') renderAdmin('rechnungen');
 }
 
 function fillContractFor(text,s){
