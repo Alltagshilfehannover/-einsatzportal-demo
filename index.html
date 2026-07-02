@@ -423,7 +423,7 @@
 <!-- ============ LOGIN ============ -->
 <div class="login-wrap" id="loginScreen">
   <div class="login-art">
-    <div class="brand"><img class="mark-logo" src="img/bild1_898fe1a00c.png" alt="DailyDo"> DailyDo</div>
+    <div class="brand"><img class="mark-logo" src="img/bild1_898fe1a00c.png" alt="DailyDo" onerror="this.onerror=null;this.src=this.src.split('/').pop()"> DailyDo</div>
     <div class="art-head">
       <h1>Dein Job. Dein Tempo. Dein Alltag.</h1>
       <p>Finde Einsätze in deiner Nähe, nimm sie mit einem Tipp an und teile dir deine Woche selbst ein. Wer zuerst zusagt, ist dabei.</p>
@@ -460,7 +460,7 @@
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:14px">
       <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
-      <div class="brand"><img class="mark-logo" src="img/bild1_898fe1a00c.png" alt="DailyDo"> DailyDo <span class="test-badge">TEST</span></div>
+      <div class="brand"><img class="mark-logo" src="img/bild1_898fe1a00c.png" alt="DailyDo" onerror="this.onerror=null;this.src=this.src.split('/').pop()"> DailyDo <span class="test-badge">TEST</span></div>
     </div>
     <!-- Globale Suche: durchsucht Kunden, Mitarbeiter und Aufträge (Taste "/") -->
     <div class="gsearch" id="gsearchWrap" style="display:none">
@@ -473,7 +473,7 @@
       <select id="standortSwitch" onchange="switchStandort(this.value)" style="display:none;font-size:13px;font-weight:600;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--petrol-dark);margin-right:6px"></select><span class="role-pill" id="rolePill">Büro</span>
       <div class="who"><span class="avatar" id="avatar">D</span>
         <div class="meta"><b id="whoName">Daniel D.</b><span id="whoRole">Büro / Verwaltung</span></div></div>
-      <img class="company-logo-img" title="DailyDo" src="img/bild1_898fe1a00c.png" alt="DailyDo">
+      <img class="company-logo-img" title="DailyDo" src="img/bild1_898fe1a00c.png" alt="DailyDo" onerror="this.onerror=null;this.src=this.src.split('/').pop()">
       <button class="logout" onclick="logout()">Abmelden</button>
     </div>
   </div>
@@ -486,7 +486,7 @@
 <!-- ============ BEWERBUNGS-WIZARD ============ -->
 <div class="wizard" id="wizard">
   <div class="wiz-top">
-    <div class="brand" style="color:var(--petrol)"><img class="mark-logo" src="img/bild1_898fe1a00c.png" alt="DailyDo"> DailyDo</div>
+    <div class="brand" style="color:var(--petrol)"><img class="mark-logo" src="img/bild1_898fe1a00c.png" alt="DailyDo" onerror="this.onerror=null;this.src=this.src.split('/').pop()"> DailyDo</div>
     <button class="logout" onclick="exitWizard()">Abbrechen</button>
   </div>
   <div class="wiz-progress"><div class="bar" id="wizBar" style="width:12.5%"></div></div>
@@ -843,6 +843,23 @@ function fmtDateTime(iso){
   if(isNaN(d.getTime())) return iso;
   return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+d.getFullYear()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
 }
+/* ---- Klickbare Kontaktdaten ----
+   Adresse öffnet die Karten-App (Google Maps als Link, Apple-Karten über
+   das kleine Symbol daneben), Telefonnummer startet direkt den Anruf. */
+function addrLinkHtml(addr){
+  const a=cleanInput(addr,160);
+  if(!a||a==='—') return a||'—';
+  const q=encodeURIComponent(a);
+  return '<a href="https://www.google.com/maps/search/?api=1&query='+q+'" target="_blank" rel="noopener" title="In Google Maps öffnen" style="color:inherit;text-decoration:underline">'+a+'</a>'+
+    ' <a href="https://maps.apple.com/?q='+q+'" target="_blank" rel="noopener" title="In Apple Karten öffnen" style="text-decoration:none">🍎</a>';
+}
+function telLinkHtml(phone){
+  const raw=String(phone||'').trim();
+  if(!raw||raw==='—') return '—';
+  const nummer=raw.replace(/[^\d+]/g,'');
+  if(nummer.length<4) return cleanInput(raw,40);
+  return '<a href="tel:'+nummer+'" title="Anrufen" style="color:inherit;text-decoration:underline">📞 '+cleanInput(raw,40)+'</a>';
+}
 function ktToRow(k){return {name:k.name,strasse:k.strasse||null,plz:k.plz||null,ort:k.ort||null,email:k.email||null, standort_id:currentStandortId};}
 function rowToKt(r){return {id:r.id,name:r.name,strasse:r.strasse,plz:r.plz,ort:r.ort,email:r.email};}
 function rechnungToRow(r){return {
@@ -990,6 +1007,23 @@ async function loadFromCloud(){
     if(data) rechnungen=data.map(rowToRechnung);
     DIAG.push('rechnungen: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER rechnungen: '+(e.message||e)); console.error('Laden rechnungen fehlgeschlagen:', e.message||e); }
+
+  // Abtretungserklärungen den Kunden zuordnen (bisher gingen sie beim
+  // Neuladen der Seite verloren, weil sie nie zurückgelesen wurden)
+  try{
+    const {data,error}=await sb.from('abtretungen').select('*').order('id');
+    if(error) throw error;
+    if(data){ data.forEach(a=>{ const cu=customers.find(c=>c.id===a.customer_id); if(cu) cu.abtretung={date:a.signed_date, signature:a.signature}; }); }
+    DIAG.push('abtretungen: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER abtretungen: '+(e.message||e)); console.error('Laden abtretungen fehlgeschlagen:', e.message||e); }
+
+  // Beratungen (inkl. Unterschriftsprobe) den Kunden zuordnen
+  try{
+    const {data,error}=await sb.from('beratungen').select('*').order('id');
+    if(error) throw error;
+    if(data){ data.forEach(b=>{ const cu=customers.find(c=>c.id===b.customer_id); if(cu) cu.beratung={date:b.datum, signature:b.signature, mitarbeiterId:b.mitarbeiter_id, punkte:b.punkte||[]}; }); }
+    DIAG.push('beratungen: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER beratungen (BERATUNG_MIGRATION.sql ausgeführt?): '+(e.message||e)); }
 
   // Leistungskatalog
   try{
@@ -1477,19 +1511,38 @@ async function ensureDataLoaded(){
    Wechsel in die Stundenzettel-Ansicht zusätzlich sofort einmal.
    ============================================================ */
 let __refreshInFlight=false;
+// Kompakter Fingerabdruck der Kerndaten: nur wenn er sich ändert, wird
+// neu gezeichnet – sonst bleibt der Bildschirm komplett unangetastet
+// (kein sichtbares "Neuladen" mehr alle paar Sekunden).
+function dataSignature(){
+  try{
+    const s=JSON.stringify([customers,staff,jobs,timesheets,rechnungen,appointments,applications,kommunikationen,aufgaben,kostentraeger]);
+    let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; }
+    return s.length+':'+h;
+  }catch(e){ return String(Date.now()); }
+}
 async function refreshCloudDataSilently(){
   if(!CLOUD || __refreshInFlight) return;
   if(!document.getElementById('appScreen').classList.contains('active')) return;
   if(currentRole==='staff') return; // Mitarbeiter-Ansicht bleibt unverändert
   const modalOpen=document.getElementById('modalBg').classList.contains('show');
   const editingForm=__lastAdminView==='newcustomer'; // langes Formular nicht während Eingabe überschreiben
+  const asyncView=__lastAdminView==='lexware'||__lastAdminView==='bank'; // laden ihre Daten selbst
   const ae=document.activeElement;
   const typing=ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT');
   if(modalOpen || editingForm || typing) return;
   __refreshInFlight=true;
   try{
+    const vorher=dataSignature();
     await loadFromCloud();
-    if(__lastAdminView) renderAdmin(__lastAdminView);
+    const nachher=dataSignature();
+    // Nur neu zeichnen, wenn sich wirklich etwas geändert hat –
+    // und dann mit erhaltener Scroll-Position (unsichtbar im Alltag)
+    if(nachher!==vorher && __lastAdminView && !asyncView){
+      const sx=window.scrollX, sy=window.scrollY;
+      renderAdmin(__lastAdminView);
+      window.scrollTo(sx,sy);
+    }
   }catch(e){ console.warn('Automatische Aktualisierung fehlgeschlagen:', e&&(e.message||e)); }
   __refreshInFlight=false;
 }
@@ -2073,6 +2126,7 @@ function adminDashboardHTML(open,newApps){
 /* ============ ADMIN VIEWS ============ */
 let __lastAdminView=null;
 function renderAdmin(view){
+  ensureHilfeWidget();
   if(!standorte.length && view!=='standorte' && currentRole==='admin'){ view='standorte'; toast('Bitte zuerst einen Standort anlegen',true); }
   if(!viewAllowed(view)){ toast('Kein Zugriff auf diesen Bereich', true); view=defaultViewForRole(); }
   __lastAdminView=view;
@@ -2235,8 +2289,14 @@ function renderAdmin(view){
         const statusTag = t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
                         : t.status==='abgelehnt'?'<span class="tag red">abgelehnt</span>'
                         : '<span class="tag amber">zu prüfen</span>';
+        // Neben der Original-Unterschrift die hinterlegte Unterschriftsprobe
+        // des Kunden anzeigen (aus der Erstberatung) – zum direkten Vergleich
+        const probe=(cu&&cu.beratung&&cu.beratung.signature)?cu.beratung.signature:null;
         const sigCell = t.signature
-          ? '<img src="'+t.signature+'" style="height:30px;border:1px solid var(--line);border-radius:5px;background:#fff;vertical-align:middle"> '+(sigOk?'<span class="tag green" style="font-size:10px">vorhanden</span>':'<span class="tag amber" style="font-size:10px">prüfen</span>')
+          ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+            '<span style="text-align:center"><img src="'+t.signature+'" style="height:30px;border:1px solid var(--line);border-radius:5px;background:#fff;vertical-align:middle"><div style="font-size:9px;color:var(--muted)">Einsatz</div></span>'+
+            (probe?'<span style="text-align:center"><img src="'+probe+'" title="Unterschriftsprobe aus der Erstberatung" style="height:30px;border:1px dashed var(--petrol,#0f5b63);border-radius:5px;background:#fff;vertical-align:middle"><div style="font-size:9px;color:var(--muted)">Probe</div></span>':'<span class="tag grey" style="font-size:9px" title="Keine Unterschriftsprobe hinterlegt – Erstberatung durchführen">keine Probe</span>')+
+            (sigOk?'<span class="tag green" style="font-size:10px">vorhanden</span>':'<span class="tag amber" style="font-size:10px">prüfen</span>')+'</div>'
           : '<span style="color:var(--muted);font-size:12px">keine</span>';
         return '<tr><td>'+fmtDate(t.date)+'</td><td><b>'+staffName(t.staffId)+'</b></td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+dur+'</td>'+
         '<td>'+sigCell+'</td>'+
@@ -2435,8 +2495,8 @@ function showJobSummary(jobId){
       'Bedarf: '+cu.need.join(', ')+' · '+freqText(cu)+' · '+cu.window+'<br>'+
       'Pflegegrad '+cu.pgrad+' · Haustier: '+cu.pet+
     '</div>'+
-    '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+cu.address+'</span></div>'+
-    '<div class="reveal-row"><span class="k">Telefon</span><span class="v">'+cu.phone+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+addrLinkHtml(cu.address)+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Telefon</span><span class="v">'+telLinkHtml(cu.phone)+'</span></div>'+
     '<div class="reveal-row"><span class="k">Kontakt</span><span class="v">'+cu.contact+'</span></div>'+
     '<div class="reveal-row"><span class="k">Status</span><span class="v">'+jobStatusTag(j)+(j.status==='assigned'?' '+staffName(j.assignedTo):'')+'</span></div>'+
     '<div style="margin-top:12px"><div class="section-label" style="margin-top:8px">Wichtige Hinweise</div><p style="font-size:14px">'+cu.notes+'</p></div>';
@@ -2759,6 +2819,13 @@ function editCustomer(id){
   if(c.abtretung){
     docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📄 Abtretungserklärung</b><div class="li-sub">Unterschrieben am '+fmtDate(c.abtretung.date)+'</div></div><div style="display:flex;gap:7px;align-items:center"><img src="'+c.abtretung.signature+'" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-primary btn-sm" style="width:auto" onclick="downloadAbtretung('+c.id+')">⬇ PDF</button></div></div>';
   }
+  // Beratungsvereinbarung mit Unterschriftsprobe – NUR für Admin sichtbar
+  if(hasRole('admin') && c.beratung && c.beratung.signature){
+    docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📋 Beratungsvereinbarung + Unterschriftsprobe</b><div class="li-sub">Beratung am '+fmtDate(c.beratung.date)+(c.beratung.mitarbeiterId?' · geführt von '+staffName(c.beratung.mitarbeiterId):'')+' · Referenz für den Leistungsnachweis-Abgleich</div></div><div style="display:flex;gap:7px;align-items:center"><img src="'+c.beratung.signature+'" title="Unterschriftsprobe" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-primary btn-sm" style="width:auto" onclick="downloadBeratungsvertrag('+c.id+')">⬇ PDF</button></div></div>';
+  }
+  if(hasRole('admin') && !(c.beratung&&c.beratung.signature) && c.status==='aktiv'){
+    docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📋 Beratungsvereinbarung</b><div class="li-sub">Noch keine Erstberatung / Unterschriftsprobe vorhanden</div></div><button class="btn-ghost btn-sm" style="width:auto" onclick="openBeratung('+c.id+')">Jetzt durchführen</button></div>';
+  }
   // Leistungsnachweise
   const lns=c.leistungsnachweise||[];
   if(lns.length){
@@ -3044,6 +3111,7 @@ function sendAppLogin(id){
 }
 /* ============ MITARBEITER VIEWS ============ */
 function renderStaff(view){
+  ensureHilfeWidget();
   buildStaffNav(view);
   document.getElementById('sidebar').classList.remove('open');
   const c=document.getElementById('content');const m=me();
@@ -3124,6 +3192,7 @@ function renderStaff(view){
         (a.beschreibung?'<div class="li-sub">'+a.beschreibung+'</div>':'')+
         '<div class="li-sub">'+(a.faelligAm?'Fällig: '+fmtDate(a.faelligAm)+' · ':'')+(cu?'Kunde: '+fullName(cu):'')+'</div></div>'+
         '<div style="display:flex;gap:7px;align-items:center">'+
+        (cu&&/^Erstberatung/.test(a.title||'')&&a.status!=='erledigt'&&!(cu.beratung&&cu.beratung.signature)?'<button class="btn-primary btn-sm" style="width:auto;background:var(--petrol)" onclick="openBeratung('+cu.id+')">📋 Beratung starten</button>':'')+
         (cu?'<button class="btn-ghost btn-sm" onclick="showCustomerForTask('+cu.id+')">Kunde ansehen</button>':'')+
         '<button class="btn-primary btn-sm" style="width:auto" onclick="toggleAufgabeStatus('+a.id+')">'+(a.status==='erledigt'?'↺ Wieder öffnen':(a.status==='in_arbeit'?'✓ Erledigt':'▶ In Arbeit'))+'</button>'+
         '</div></div>';}).join(''):placeholder('☑','Keine Aufgaben','Aktuell hat dir das Büro keine Aufgaben mit diesem Status zugewiesen.'))+
@@ -3257,8 +3326,8 @@ function mineCard(j){
     timerHtml+
     '<div class="reveal"><div class="rh">✓ Vollständige Kundendaten</div>'+
       '<div class="reveal-row"><span class="k">Name</span><span class="v">'+fullName(cu)+'</span></div>'+
-      '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+cu.address+'</span></div>'+
-      '<div class="reveal-row"><span class="k">Telefon</span><span class="v">'+cu.phone+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+addrLinkHtml(cu.address)+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Telefon</span><span class="v">'+telLinkHtml(cu.phone)+'</span></div>'+
       '<div class="reveal-row"><span class="k">Kontakt</span><span class="v">'+cu.contact+'</span></div>'+
       '<div class="reveal-row"><span class="k">Hinweise</span><span class="v" style="max-width:60%">'+cu.notes+'</span></div>'+
     '</div>'+
@@ -3297,8 +3366,17 @@ function confirmAccept(id){
   j.commitDeadline=Date.now()+48*3600*1000;
   const cu=custById(j.customerId);if(cu){cu.status='aktiv'; if(CLOUD)cloudUpdate('kunden',cu.id,custToRow(cu));}
   if(CLOUD) cloudUpdate('auftraege',j.id,jobToRow(j));
+  // Neuer Kunde ohne Beratungsgespräch? Dann automatisch eine Aufgabe
+  // "Erstberatung" für den annehmenden Mitarbeiter anlegen.
+  if(cu && !(cu.beratung&&cu.beratung.signature) && !aufgaben.some(a=>a.customerId===cu.id&&/^Erstberatung/.test(a.title||''))){
+    const auf={mitarbeiterId:myId, customerId:cu.id, title:'Erstberatung: '+fullName(cu),
+      beschreibung:'Neuer Kunde. Beim ersten Termin bitte das Beratungsgespräch nach Leitfaden führen und die Unterschriftsprobe einholen (Knopf „Beratung starten" bei dieser Aufgabe).',
+      status:'offen', faelligAm:new Date(Date.now()+7*86400000).toISOString().slice(0,10)};
+    aufgaben.push(auf);
+    if(CLOUD) cloudInsert('aufgaben',aufgabeToRow(auf)).then(r=>{ if(r) auf.id=r.id; });
+  }
   closeModal();
-  toast('Verbindlich angenommen – Termin innerhalb 48 h vereinbaren');renderStaff('mine');
+  toast('Verbindlich angenommen – Termin innerhalb 48 h vereinbaren'+((cu&&!(cu.beratung&&cu.beratung.signature))?'. Aufgabe „Erstberatung" wurde angelegt.':''));renderStaff('mine');
 }
 function acceptJob(id){ askCommit(id); }
 function rejectJob(id){
@@ -3354,10 +3432,10 @@ function wizNumLabel(n){return '<div class="wiz-num">Schritt '+n+' von '+WIZ_TOT
 function wizAbout(){
   return wizNumLabel(1)+
   '<div class="wiz-card">'+
-  '<div class="wiz-logo"><img src="img/bild2_a1dc1c8f3b.png" alt="DailyDo"></div>'+
+  '<div class="wiz-logo"><img src="img/bild2_a1dc1c8f3b.png" alt="DailyDo" onerror="this.onerror=null;this.src=this.src.split(\'/\').pop()"></div>'+
   '<h2 style="text-align:center">Willkommen bei DailyDo</h2>'+
   '<p class="lead" style="text-align:center">Alltagshilfe leicht gemacht: Unsere Plattform bringt hilfesuchende Menschen und engagierte Helfer zusammen. Nutzer können unkompliziert Aufträge erstellen oder passende Jobs finden – von Haushalt und Einkäufen bis hin zu Begleitdiensten. Schnell, lokal und zuverlässig.</p>'+
-  '<img class="wiz-photo" src="img/bild3_23e4b572a8.jpg" alt="Unser Team">'+
+  '<img class="wiz-photo" src="img/bild3_23e4b572a8.jpg" alt="Unser Team" onerror="this.onerror=null;this.src=this.src.split(\'/\').pop()">'+
   '<div class="info-box">Seit über 15 Jahren stehen wir für zuverlässige Unterstützung im Alltag. Jährlich vertrauen uns mehr als 1.000 zufriedene Kunden bei der Vermittlung von qualifizierten Helfern für Haushalt, Einkäufe, Begleitdienste und viele weitere Dienstleistungen. Unser Ziel: schnelle Hilfe, persönliche Betreuung und höchste Kundenzufriedenheit.</div>'+
   '<div class="wiz-nav"><span></span><button class="btn-primary" onclick="wizNext()">Los geht\'s →</button></div></div>';
 }
@@ -3993,9 +4071,12 @@ function startTermin(id){
   document.getElementById('modalTitle').textContent='Einsatz bei '+fullName(cu);
   document.getElementById('modalBody').innerHTML=
     '<div class="summary" style="margin-bottom:14px"><div class="sh">Einsatz</div>'+
-      '<b>'+fullName(cu)+'</b> · '+(cu.address||cu.area||'')+'<br>Geplant: '+a.time+' Uhr · '+(a.duration||60)+' Min.'+
+      '<b>'+fullName(cu)+'</b> · '+addrLinkHtml(cu.address||cu.area||'')+'<br>Geplant: '+a.time+' Uhr · '+(a.duration||60)+' Min.'+
       (cu.bedarfsanalyse?('<br><b>Bedarf:</b> '+(cu.bedarfsanalyse.skills||[]).join(', ')+(cu.bedarfsanalyse.notes?' – '+cu.bedarfsanalyse.notes:'')):'')+
     '</div>'+
+    (!(cu.beratung&&cu.beratung.signature)
+      ? '<div class="example-id" style="background:var(--amber-soft);border-color:#f0dcc2;margin-bottom:12px;display:flex;align-items:center;gap:10px"><div style="font-size:20px">📋</div><div style="flex:1">Erster Besuch: Das <b>Beratungsgespräch</b> ist noch offen. Bitte vor dem Einsatz durchführen und die Unterschriftsprobe einholen.</div><button class="btn-primary btn-sm" style="width:auto" onclick="openBeratung('+cu.id+')">Beratung starten</button></div>'
+      : '')+
     '<p style="color:var(--muted);font-size:13.5px;margin-bottom:10px">Passe die Zeiten an, falls der Einsatz kürzer oder länger war.</p>'+
     '<div class="content-form">'+
       '<input type="hidden" id="te_appt" value="'+id+'"><input type="hidden" id="te_cust" value="'+cu.id+'">'+
@@ -4702,6 +4783,147 @@ function downloadAbtretung(customerId){
   if(doc) doc.save(('Abtretung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
 }
 
+/* ============================================================
+   ERSTBERATUNG: Leitfaden + Vereinbarung mit Unterschriftsprobe
+   Ablauf: Mitarbeiter nimmt Auftrag an -> Aufgabe "Erstberatung"
+   -> beim Termin "Beratung starten" -> Leitfaden Punkt für Punkt
+   -> Kunde stimmt zu -> Vereinbarung wird unterschrieben; diese
+   Unterschrift dient als UNTERSCHRIFTSPROBE für den späteren
+   Abgleich mit den Leistungsnachweisen. Ablage nur im Adminbereich.
+   ============================================================ */
+const BERATUNG_LEITFADEN=[
+  {t:'1. Begrüßung & Vorstellung', p:[
+    'Mit Namen und Firma vorstellen („Ich komme von der Alltagshilfe …")',
+    'Dauer des Gesprächs ankündigen (ca. 20–30 Minuten)',
+    'Kurz erklären, worum es geht: Kennenlernen, Bedarf, Ablauf, Kosten']},
+  {t:'2. Situation & Bedarf des Kunden', p:[
+    'Wobei wird Hilfe benötigt? (Haushalt, Einkauf, Begleitung, Gesellschaft)',
+    'Wie oft und zu welchen Zeiten? Wunschtage notieren',
+    'Besonderheiten erfragen: Gesundheit/Mobilität, Haustiere, Zugang/Schlüssel',
+    'Kontaktperson/Angehörige und Notfallkontakt aufnehmen']},
+  {t:'3. Unsere Leistungen & Ablauf', p:[
+    'Was wir leisten – und was nicht (keine Pflege, keine Medikamentengabe, keine Körperpflege)',
+    'Feste Bezugsperson, Vertretung bei Urlaub/Krankheit erklären',
+    'Ablauf jedes Einsatzes: am Ende Stundenzettel, Kunde unterschreibt auf dem Gerät']},
+  {t:'4. Kosten & Abrechnung', p:[
+    'Pflegegrad vorhanden? Entlastungsbetrag nach § 45b SGB XI erklären (131 € pro Monat, nicht genutzte Beträge sammeln sich bis Mitte des Folgejahres an)',
+    'Mit Abtretungserklärung rechnen wir direkt mit der Pflegekasse ab – kein Vorstrecken durch den Kunden',
+    'Ohne Pflegegrad oder über das Budget hinaus: Privatrechnung, Preis pro Stunde nennen',
+    'Terminabsagen: bitte bis zum Vortag Bescheid geben']},
+  {t:'5. Datenschutz', p:[
+    'Erklären, welche Daten wir speichern (Kontaktdaten, Einsätze, Abrechnung) und wofür',
+    'Hinweis: Daten werden nicht an Dritte weitergegeben, außer zur Abrechnung an die Kasse']},
+  {t:'6. Zustimmung & Unterschriftsprobe', p:[
+    'Offene Fragen klären, Zusammenfassung geben',
+    'Bei Zustimmung: Vereinbarung vorlesen lassen/aushändigen und unterschreiben lassen',
+    'Wichtig erklären: Diese Unterschrift ist die Vergleichsprobe für alle künftigen Leistungsnachweise – sie schützt den Kunden vor missbräuchlich bestätigten Einsätzen']}
+];
+function beratungVertragText(cu, datum){
+  return 'Vereinbarung über Beratungsgespräch und Unterschriftsprobe\n\n'+
+  'zwischen '+firmaName()+' (nachfolgend „Anbieter") und '+fullName(cu)+(cu.address?', '+cu.address:'')+' (nachfolgend „Kunde/Kundin").\n\n'+
+  '1. Beratungsgespräch. Der Kunde bestätigt, dass am '+fmtDate(datum)+' ein persönliches Beratungsgespräch stattgefunden hat. Gegenstand waren insbesondere: Art und Umfang der Alltagshilfe-Leistungen, Ablauf der Einsätze, Kosten und Abrechnung (einschließlich des Entlastungsbetrags nach § 45b SGB XI und – soweit vereinbart – der direkten Abrechnung mit der Pflegekasse auf Grundlage einer Abtretungserklärung), organisatorische Regelungen sowie die Verarbeitung personenbezogener Daten.\n\n'+
+  '2. Zweck der Unterschrift (Unterschriftsprobe). Die unten geleistete Unterschrift dient ausdrücklich und ausschließlich als Referenz-Unterschrift („Unterschriftsprobe"). Der Anbieter verwendet sie, um die auf künftigen Leistungsnachweisen (Stundenzetteln) geleisteten Unterschriften des Kunden auf Übereinstimmung zu prüfen. Dies dient der Qualitätssicherung und dem Schutz des Kunden vor missbräuchlich bestätigten Einsätzen.\n\n'+
+  '3. Speicherung. Die Unterschriftsprobe wird zusammen mit dieser Vereinbarung ausschließlich im zugriffsgeschützten Verwaltungsbereich des Anbieters gespeichert und nur zu dem in Ziffer 2 genannten Zweck verwendet. Rechtsgrundlage der Verarbeitung ist Art. 6 Abs. 1 lit. b und f DSGVO. Die Daten werden gelöscht, sobald sie für den genannten Zweck nicht mehr erforderlich sind, spätestens nach Beendigung der Kundenbeziehung und Ablauf gesetzlicher Aufbewahrungsfristen.\n\n'+
+  '4. Keine Zahlungspflicht. Mit dieser Vereinbarung ist keine Zahlungsverpflichtung verbunden. Leistungen und Vergütung richten sich nach den gesondert vereinbarten Konditionen bzw. dem Dienstleistungsvertrag.\n\n'+
+  '5. Betroffenenrechte. Der Kunde kann jederzeit Auskunft über die gespeicherten Daten verlangen; die Rechte auf Berichtigung, Löschung, Einschränkung der Verarbeitung sowie das Beschwerderecht bei der Datenschutz-Aufsichtsbehörde bleiben unberührt.';
+}
+// Schritt 1: Leitfaden anzeigen (mit Abhak-Punkten)
+function openBeratung(customerId){
+  const cu=custById(customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
+  if(cu.beratung && cu.beratung.signature){ toast('Für '+fullName(cu)+' liegt bereits eine Beratung mit Unterschriftsprobe vor',true); return; }
+  window.__beratungCtx={customerId:customerId};
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Beratungsgespräch – '+fullName(cu);
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin:0 0 12px">Führe das Gespräch entlang dieser Punkte und hake ab, was besprochen wurde. Am Ende – wenn der Kunde zustimmt – wird die Vereinbarung mit Unterschriftsprobe unterschrieben.</p>'+
+    BERATUNG_LEITFADEN.map((s,si)=>
+      '<div class="section-label" style="margin-top:'+(si?'14px':'0')+'">'+s.t+'</div>'+
+      s.p.map((p,pi)=>'<label style="display:flex;gap:9px;align-items:flex-start;padding:5px 0;font-size:14px;cursor:pointer"><input type="checkbox" class="ber-chk" data-p="'+s.t+' – '+p.replace(/"/g,'&quot;')+'" style="width:auto;margin-top:3px">'+p+'</label>').join('')
+    ).join('');
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Später fortsetzen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="beratungWeiter()">Kunde stimmt zu → Vereinbarung unterschreiben</button>';
+  openModal();
+}
+// Schritt 2: Vereinbarungstext zeigen, dann Unterschrift einholen
+function beratungWeiter(){
+  const ctx=window.__beratungCtx; if(!ctx) return;
+  const cu=custById(ctx.customerId); if(!cu) return;
+  ctx.punkte=[...document.querySelectorAll('.ber-chk:checked')].map(c=>c.dataset.p);
+  const datum=todayISO();
+  document.getElementById('modalTitle').textContent='Vereinbarung – '+fullName(cu);
+  document.getElementById('modalBody').innerHTML=
+    '<div style="border:1px solid var(--line);border-radius:10px;padding:14px 16px;max-height:320px;overflow:auto;font-size:13px;line-height:1.6;white-space:pre-wrap;background:#fff">'+
+    beratungVertragText(cu,datum).replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'+
+    '<p style="font-size:13px;color:var(--muted);margin-top:10px">Bitte dem Kunden vorlesen bzw. zeigen. Mit „Weiter" öffnet sich das Unterschriftsfeld – dort unterschreibt der <b>Kunde</b>.</p>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="beratungUnterschrift()">Weiter → Unterschrift des Kunden</button>';
+}
+function beratungUnterschrift(){
+  const ctx=window.__beratungCtx; if(!ctx) return;
+  const cu=custById(ctx.customerId); if(!cu) return;
+  openSignatureModal(
+    'Unterschriftsprobe – '+fullName(cu),
+    'Der Kunde unterschreibt hier die Vereinbarung. Diese Unterschrift dient als Vergleichsprobe für alle künftigen Leistungsnachweise.',
+    function(sig){ saveBeratung(cu, sig); }
+  );
+}
+function saveBeratung(cu, sig){
+  const ctx=window.__beratungCtx||{};
+  const datum=todayISO();
+  const mid=(currentRole==='staff'&&typeof myId!=='undefined')?myId:null;
+  cu.beratung={date:datum, signature:sig, mitarbeiterId:mid, punkte:ctx.punkte||[]};
+  if(CLOUD){
+    cloudInsert('beratungen',{customer_id:cu.id, mitarbeiter_id:mid, datum:datum, punkte:ctx.punkte||[], signature:sig, standort_id:currentStandortId});
+  }
+  // Offene Erstberatungs-Aufgabe für diesen Kunden als erledigt markieren
+  const auf=aufgaben.find(a=>a.customerId===cu.id&&/^Erstberatung/.test(a.title||'')&&a.status!=='erledigt');
+  if(auf){ auf.status='erledigt'; if(CLOUD&&auf.id) cloudUpdate('aufgaben',auf.id,{status:'erledigt'}); }
+  logActivity('Erstberatung mit Unterschriftsprobe: '+fullName(cu));
+  const doc=buildBeratungsvertragPdf(cu, sig, datum);
+  if(doc) doc.save(('Beratungsvereinbarung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+  window.__beratungCtx=null;
+  toast('Beratung abgeschlossen – Vereinbarung gespeichert, PDF wird heruntergeladen');
+  if(currentRole==='staff') renderStaff('aufgaben');
+}
+function buildBeratungsvertragPdf(cu, sig, datum){
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
+  const { jsPDF } = window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(); const pageH=doc.internal.pageSize.getHeight();
+  const margin=52; let y=margin;
+  doc.setFont('helvetica','bold');doc.setFontSize(10.5);
+  doc.text(firmaName(),margin,y); y+=14;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(80);
+  doc.text('Bahnhofstraße 85 · 31515 Wunstorf',margin,y); y+=26;
+  doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(14);
+  doc.text('Vereinbarung über Beratungsgespräch',margin,y); y+=17;
+  doc.text('und Unterschriftsprobe',margin,y); y+=24;
+  doc.setFont('helvetica','normal');doc.setFontSize(10);
+  const text=beratungVertragText(cu,datum);
+  text.split('\n\n').forEach(par=>{
+    const lines=doc.splitTextToSize(par,pageW-margin*2);
+    if(y+lines.length*13>pageH-160){ doc.addPage(); y=margin; }
+    doc.text(lines,margin,y); y+=lines.length*13+8;
+  });
+  y+=14;
+  if(y>pageH-140){ doc.addPage(); y=margin; }
+  doc.setFontSize(10);
+  doc.text((cu.city||'Wunstorf')+', den '+fmtDate(datum),margin,y); y+=8;
+  try{ if(sig) doc.addImage(sig,'PNG',margin,y,170,60); }catch(e){}
+  y+=66;
+  doc.setDrawColor(120);doc.line(margin,y,margin+220,y); y+=12;
+  doc.setFontSize(9);doc.setTextColor(90);
+  doc.text('Unterschrift Kunde/Kundin ('+fullName(cu)+') – dient zugleich als Unterschriftsprobe',margin,y);
+  return doc;
+}
+function downloadBeratungsvertrag(customerId){
+  const cu=custById(customerId); if(!cu||!cu.beratung||!cu.beratung.signature){toast('Keine Beratungsvereinbarung vorhanden',true);return;}
+  const doc=buildBeratungsvertragPdf(cu, cu.beratung.signature, cu.beratung.date);
+  if(doc) doc.save(('Beratungsvereinbarung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+}
+
 /* ---- Leistungsnachweis: sammelt automatisch die Einsätze des Kunden ---- */
 function buildLNRowsForCustomer(customerId){
   const rows=[];
@@ -5246,8 +5468,8 @@ function showCustomerForTask(custId){
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent=fullName(cu);
   document.getElementById('modalBody').innerHTML=
-    '<div class="form-row"><div><label>Adresse</label><p>'+(cu.street?cu.street+' '+(cu.houseNo||''):'')+'<br>'+(cu.plz||'')+' '+(cu.city||'')+'</p></div>'+
-    '<div><label>Telefon</label><p>'+(cu.phone||cu.phoneMobile||cu.phoneLandline||'—')+'</p></div></div>'+
+    '<div class="form-row"><div><label>Adresse</label><p>'+addrLinkHtml(((cu.street?cu.street+' '+(cu.houseNo||''):'')+', '+(cu.plz||'')+' '+(cu.city||'')).replace(/^, |, $/g,'')||cu.address)+'</p></div>'+
+    '<div><label>Telefon</label><p>'+telLinkHtml(cu.phone||cu.phoneMobile||cu.phoneLandline)+'</p></div></div>'+
     '<div class="section-label">Kommunikation</div>'+custKommListHTML(custId).replace(/onclick="openKommModal/g,'onclick="void(0);//');
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
   openModal();
@@ -5907,6 +6129,119 @@ async function bankDashboardFill(){
   el.innerHTML='<div class="cards grid-4" style="margin-bottom:16px">'+
     statClick('Kontostand (Bank)',fmtEuro(total),(bankVerbindungen[0].bank_name||'Bank')+(days!=null?' · Zugriff noch '+days+' Tage':''),"renderAdmin('bank')")+
   '</div>';
+}
+
+/* ============================================================
+   HILFE-CHATBOT (Admin, Büro und Mitarbeiter)
+   Beantwortet Bedienungsfragen: zuerst aus der eingebauten
+   Wissensbasis (sofort, kostenlos). Findet er nichts Passendes,
+   fragt er optional die KI über die Edge Function "hilfe-bot"
+   (braucht Secret ANTHROPIC_API_KEY – ohne läuft er lokal weiter).
+   ============================================================ */
+const HILFE_WISSEN=[
+  {k:'anmelden login einloggen zugang zugangsdaten', t:'Anmelden', a:'Melde dich mit deiner E-Mail-Adresse und deinem Passwort an. Nach 30 Minuten ohne Aktivität wirst du automatisch abgemeldet.'},
+  {k:'passwort vergessen zurücksetzen reset ändern', t:'Passwort vergessen', a:'Auf der Anmeldeseite „Passwort vergessen?" klicken – du bekommst einen Reset-Link per E-Mail. Deine eigenen Zugangsdaten findest du im Menü unter „Meine Zugangsdaten".'},
+  {k:'kunde anlegen neuer erfassen aufnehmen neukunde', t:'Kunde anlegen', a:'Menü „Kunde anlegen" (Büro/Admin/CallCenter). Pflichtfelder: Name, Adresse, Telefon, Leistung. Zusätzlich Pflegegrad, Versicherungsart, Kostenträger, Leistungen mit Preis, §45b-Budget, Lead-Quelle und Leistungsbeginn ausfüllen. Beim Speichern entsteht automatisch ein Auftrag in der Börse.'},
+  {k:'kunde bearbeiten ändern adresse telefonnummer kundendaten', t:'Kunde bearbeiten', a:'Menü „Kunden" → Zeile anklicken bzw. das „⋯"-Menü → Bearbeiten. Dort auch Dokumente (Abtretung, Beratungsvereinbarung, Leistungsnachweise) und der E-Mail-Verlauf.'},
+  {k:'auftrag annehmen börse auftragsbörse verbindlich', t:'Auftrag annehmen', a:'Als Mitarbeiter: Menü „Auftragsbörse" → Auftrag öffnen → „Verbindlich annehmen". Danach musst du innerhalb von 48 Stunden einen Termin mit dem Kunden vereinbaren. Bei einem neuen Kunden bekommst du automatisch die Aufgabe „Erstberatung".'},
+  {k:'beratung erstberatung beratungsgespräch leitfaden unterschriftsprobe', t:'Erstberatung durchführen', a:'Beim ersten Termin: „Meine Aufgaben" → bei der Erstberatungs-Aufgabe „📋 Beratung starten" (oder im Einsatz-Dialog). Leitfaden Punkt für Punkt durchgehen und abhaken. Stimmt der Kunde zu: Vereinbarung zeigen, Kunde unterschreibt auf dem Gerät – diese Unterschrift dient als Unterschriftsprobe für den Abgleich mit Leistungsnachweisen.'},
+  {k:'termin vereinbaren kalender absagen verschieben', t:'Termine', a:'Termine vereinbarst du über „Meine Kunden" beim jeweiligen Kunden. Alle Termine stehen unter „Meine Termine" bzw. im Kalender. Absagen bitte mit Grund erfassen.'},
+  {k:'einsatz abschließen stundenzettel erfassen zeit unterschrift kunde', t:'Einsatz abschließen', a:'Nach dem Einsatz den Termin öffnen, Zeiten prüfen/anpassen, dann unterschreibt der Kunde auf dem Gerät. Stundenzettel, Leistungsnachweis und Abtretung entstehen automatisch.'},
+  {k:'stundenzettel prüfen freigeben ablehnen kontrolle', t:'Stundenzettel prüfen (Büro)', a:'Menü „Stundenzettel": Einträge prüfen und freigeben oder ablehnen. Neben der Einsatz-Unterschrift siehst du die Unterschriftsprobe aus der Erstberatung zum Vergleich. Freigegebene Einsätze erscheinen unter „Rechnungen" zur Abrechnung.'},
+  {k:'rechnung erstellen abrechnen kostenträger privatrechnung', t:'Rechnung erstellen', a:'Menü „Rechnungen" (Admin/Buchhaltung): Bei „Bereit zur Abrechnung" auf „Rechnung erstellen". Gesetzlich Versicherte: Rechnung geht an den Kostenträger (Abtretungserklärung nötig). Optional direkt per E-Mail senden und in Lexware Office als Entwurf anlegen.'},
+  {k:'rechnung status bezahlt überfällig mahnung offen', t:'Rechnungsstatus', a:'In der Rechnungsliste den Status (offen/versendet/bezahlt) direkt umstellen. Nach 14 Tagen gilt eine offene Rechnung als überfällig (rote Markierung, Warnung im Dashboard). Mit Lexware-Anbindung setzt der Zahlungs-Abgleich bezahlte Rechnungen automatisch.'},
+  {k:'lexware office verbinden buchhaltung kontakte übertragen entwurf', t:'Lexware Office', a:'Menü „Lexware Office" (Admin/Buchhaltung): Verbindung testen, Kunden als Kontakte übertragen (läuft bei neuen Kunden automatisch), Finanzen ansehen und Zahlungsstatus abgleichen. Rechnungen landen als Entwurf in Lexware und werden dort festgeschrieben. Einrichtung: ANLEITUNG_LEXWARE.md.'},
+  {k:'bank konto kontostand volksbank umsätze verbinden tan', t:'Bank / Kontostand', a:'Menü „Bank" (Admin/Buchhaltung): Volksbank suchen → verbinden → bei der Bank mit VR-NetKey und TAN bestätigen. Danach siehst du Kontostand und Umsätze (nur Lesezugriff). Der Zugriff läuft nach max. 90 Tagen ab – dann „Neu verbinden". PIN/TAN gibst du nur bei der Bank ein.'},
+  {k:'dashboard kennzahlen umsatz warnung finanzen', t:'Dashboard', a:'Das Dashboard (Admin) zeigt Finanzen (Umsatz, offene Forderungen, nicht abgerechnete Stundenzettel, 6-Monats-Verlauf, Lexware- und Bank-Kacheln), die Warnliste (klickbar), Kundenstruktur und Personal/Betrieb. Kacheln anklicken führt zum passenden Bereich.'},
+  {k:'email e-mail vorlage rundmail marketing versand', t:'E-Mails & Vorlagen', a:'Rechnungen, Zu-/Absagen und Termin-Mails werden automatisch versendet (Absender no-reply@daily-do.de). Texte unter „E-Mail-Vorlagen" anpassen – Platzhalter in {geschweiften Klammern}. Rundmails: „E-Mail-Marketing" (nur Admin/Büro).'},
+  {k:'aufgabe aufgaben zuweisen erledigt', t:'Aufgaben', a:'Das Büro weist Mitarbeitern Aufgaben zu (Menü „Aufgaben"). Als Mitarbeiter setzt du den Status auf „In Arbeit" bzw. „Erledigt". Bei Kundenaufgaben kannst du die Kundendaten direkt öffnen.'},
+  {k:'karte landkarte gebiet kunden anzeigen', t:'Karte', a:'Menü „Karte" (Büro/Admin): alle aktiven Kunden auf der Landkarte, farblich nach Gebiet. Beim ersten Öffnen werden die Adressen ermittelt – das dauert einige Minuten.'},
+  {k:'schulung lernen powerpoint folien', t:'Schulung', a:'Menü „Schulung": Schulungen direkt in der App durchklicken oder als PowerPoint herunterladen (Bedienung der App, Kommunikation, Reinigung & Betreuung).'},
+  {k:'bewerbung bewerber einstellen prüfen', t:'Bewerbungen', a:'Bewerber nutzen den öffentlichen Bewerbungs-Assistenten („Jetzt als Mitarbeiter bewerben" auf der Anmeldeseite). Das Büro prüft Bewerbungen im Menü „Bewerbungen" und kann Zu-/Absagen per E-Mail senden.'},
+  {k:'suche suchen finden schnell', t:'Globale Suche', a:'Oben in der Mitte ist die globale Suche – findet Kunden, Mitarbeiter und Aufträge. Tipp: Die Taste „/" springt direkt ins Suchfeld.'},
+  {k:'adresse navigation maps anrufen telefon klicken', t:'Navigation & Anrufe', a:'In den Kundenansichten sind Adresse und Telefonnummer klickbar: Die Adresse öffnet Google Maps (🍎 daneben öffnet Apple Karten), die Telefonnummer startet direkt einen Anruf.'},
+  {k:'abtretung abtretungserklärung kasse einholen', t:'Abtretungserklärung', a:'Die Abtretung erlaubt uns, direkt mit der Pflegekasse abzurechnen. Sie entsteht automatisch beim Einsatz-Abschluss mit Unterschrift oder manuell im Kundenprofil („+ Abtretung"). Ohne Abtretung kann keine Kostenträger-Rechnung erstellt werden.'},
+  {k:'lohn lohnabrechnung bonus boni gehalt', t:'Lohnabrechnung & Boni', a:'Menü „Lohnabrechnung": Übersicht der geleisteten Stunden und Boni je Mitarbeiter. Fällige Boni siehst du als Admin auch auf dem Dashboard.'},
+  {k:'rolle rechte zugriff berechtigung admin büro', t:'Rollen & Rechte', a:'Rollen: Admin (alles), Büro (Verwaltung), CallCenter (Kundenaufnahme), Buchhaltung (Abrechnung, Lexware, Bank), Mitarbeiter (eigene Einsätze). Zugänge verwaltet der Admin unter „Zugänge & Rollen".'}
+];
+let __hilfeOffen=false;
+function ensureHilfeWidget(){
+  if(document.getElementById('hilfeBtn')) return;
+  const btn=document.createElement('button');
+  btn.id='hilfeBtn'; btn.title='Hilfe-Chat öffnen'; btn.textContent='❓ Hilfe';
+  btn.style.cssText='position:fixed;bottom:52px;right:12px;z-index:9998;background:#6d28d9;color:#fff;border:0;border-radius:20px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.2)';
+  btn.onclick=toggleHilfe;
+  document.body.appendChild(btn);
+  const box=document.createElement('div');
+  box.id='hilfeBox';
+  box.style.cssText='display:none;position:fixed;bottom:100px;right:12px;z-index:9999;width:min(360px,92vw);max-height:min(500px,70vh);background:#fff;border:1px solid #ddd;border-radius:16px;box-shadow:0 10px 34px rgba(0,0,0,.22);flex-direction:column;overflow:hidden';
+  box.innerHTML=
+    '<div style="background:#6d28d9;color:#fff;padding:12px 16px;font-weight:700;display:flex;justify-content:space-between;align-items:center">🤖 Daily-Do-Hilfe'+
+      '<button onclick="toggleHilfe()" style="background:none;border:0;color:#fff;font-size:18px;cursor:pointer;line-height:1">✕</button></div>'+
+    '<div id="hilfeMsgs" style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#f7f5fc"></div>'+
+    '<div style="display:flex;gap:6px;padding:10px;border-top:1px solid #eee;background:#fff">'+
+      '<input id="hilfeInput" placeholder="Frage zur Bedienung …" style="flex:1;border:1px solid #ddd;border-radius:10px;padding:9px 12px;font-size:14px" onkeydown="if(event.key===\'Enter\')hilfeSend()">'+
+      '<button onclick="hilfeSend()" style="background:#6d28d9;color:#fff;border:0;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer">➤</button></div>';
+  document.body.appendChild(box);
+  hilfeAddMsg('bot','Hallo! Ich helfe bei Fragen zur Bedienung von Daily Do – z. B. <i>„Wie erstelle ich eine Rechnung?"</i> oder <i>„Wie führe ich die Erstberatung durch?"</i>');
+}
+function toggleHilfe(){
+  const box=document.getElementById('hilfeBox'); if(!box) return;
+  __hilfeOffen=!__hilfeOffen;
+  box.style.display=__hilfeOffen?'flex':'none';
+  if(__hilfeOffen){ const inp=document.getElementById('hilfeInput'); if(inp) setTimeout(()=>inp.focus(),50); }
+}
+function hilfeAddMsg(who, html){
+  const box=document.getElementById('hilfeMsgs'); if(!box) return;
+  const d=document.createElement('div');
+  d.style.cssText=who==='ich'
+    ?'align-self:flex-end;background:#6d28d9;color:#fff;border-radius:12px 12px 3px 12px;padding:8px 12px;max-width:85%;font-size:13.5px;line-height:1.5'
+    :'align-self:flex-start;background:#fff;border:1px solid #e6e2f2;border-radius:12px 12px 12px 3px;padding:8px 12px;max-width:90%;font-size:13.5px;line-height:1.5';
+  d.innerHTML=html;
+  box.appendChild(d);
+  box.scrollTop=box.scrollHeight;
+  return d;
+}
+// Lokale Suche in der Wissensbasis: Wörter der Frage gegen Schlagwörter zählen
+function hilfeLocalMatch(frage){
+  const worte=frage.toLowerCase().replace(/[^a-zäöüß0-9\s§-]/g,' ').split(/\s+/).filter(w=>w.length>2);
+  const scored=HILFE_WISSEN.map(e=>{
+    const keys=(e.k+' '+e.t).toLowerCase();
+    let s=0; worte.forEach(w=>{ if(keys.indexOf(w)>-1) s+=2; else if(w.length>4 && keys.indexOf(w.slice(0,5))>-1) s+=1; });
+    return {e:e, s:s};
+  }).filter(x=>x.s>0).sort((a,b)=>b.s-a.s);
+  return scored;
+}
+async function hilfeSend(){
+  const inp=document.getElementById('hilfeInput'); if(!inp) return;
+  const frage=cleanInput(inp.value,300); if(!frage) return;
+  inp.value='';
+  hilfeAddMsg('ich',frage.replace(/</g,'&lt;'));
+  const treffer=hilfeLocalMatch(frage);
+  // Guter lokaler Treffer: sofort antworten (kostenlos, ohne KI)
+  if(treffer.length && treffer[0].s>=4){
+    hilfeAddMsg('bot','<b>'+treffer[0].e.t+'</b><br>'+treffer[0].e.a+
+      (treffer[1]?'<br><br><span style="color:#777;font-size:12px">Auch interessant: '+treffer.slice(1,3).map(x=>x.e.t).join(' · ')+'</span>':''));
+    return;
+  }
+  // Sonst: KI fragen (falls eingerichtet), mit lokalem Fallback
+  const warten=hilfeAddMsg('bot','<i>Ich schaue nach …</i>');
+  let ki={ok:false};
+  if(CLOUD && sb && sb.functions){
+    try{
+      const {data,error}=await sb.functions.invoke('hilfe-bot',{ body:{frage:frage, rolle:currentRole} });
+      if(!error && data && data.ok && data.text) ki={ok:true, text:String(data.text)};
+    }catch(e){ /* KI nicht eingerichtet – lokal weitermachen */ }
+  }
+  if(ki.ok){
+    warten.innerHTML=ki.text.replace(/</g,'&lt;').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
+    const box=document.getElementById('hilfeMsgs'); if(box) box.scrollTop=box.scrollHeight;
+  }else if(treffer.length){
+    warten.innerHTML='Meintest du eines dieser Themen?<br>'+
+      treffer.slice(0,3).map(x=>'<div style="margin-top:6px"><b>'+x.e.t+'</b><br>'+x.e.a+'</div>').join('');
+  }else{
+    warten.innerHTML='Dazu habe ich leider keine Antwort gefunden. Formuliere die Frage gern anders (z. B. mit einem Stichwort wie „Rechnung", „Termin", „Beratung") – oder frag direkt im Büro nach.';
+  }
 }
 
 // Finanz-Kacheln auf dem Dashboard füllen (nutzt den 10-Minuten-Cache)
