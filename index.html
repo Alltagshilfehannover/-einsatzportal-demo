@@ -762,8 +762,21 @@ function rowToCust(r){return {
   intern:{kvNr:r.kv_nr,kasse:r.kasse,budget:r.budget,budgetUsed:r.budget_used},
   kostentraegerId:r.kostentraeger_id||null, leistungen:r.leistungen||[],
   bedarfsanalyse:r.bedarfsanalyse||null, vertrag:r.vertrag||null,
-  lexwareId:r.lexware_id||null
+  lexwareId:r.lexware_id||null,
+  leadQuelle:r.lead_quelle||'', startDatum:r.start_datum||'', endeDatum:r.ende_datum||'', endeGrund:r.ende_grund||''
 };}
+/* Auswertungs-Felder still in der DB nachtragen (eigene Spalten, damit ein
+   fehlendes DASHBOARD_MIGRATION.sql das normale Speichern nicht blockiert). */
+async function saveCustomerExtrasQuiet(c){
+  if(!CLOUD || !c || !c.id) return;
+  try{
+    const {error}=await sb.from('kunden').update({
+      lead_quelle:c.leadQuelle||null, start_datum:c.startDatum||null,
+      ende_datum:c.endeDatum||null, ende_grund:c.endeGrund||null
+    }).eq('id',c.id);
+    if(error) console.warn('Auswertungs-Felder speichern: '+error.message+' – bitte DASHBOARD_MIGRATION.sql ausführen');
+  }catch(e){ console.warn('Auswertungs-Felder speichern',e); }
+}
 /* ============ KOSTENTRÄGER / RECHNUNGEN: DB-Mapping ============ */
 function standortToRow(s){return {name:s.name,firma:s.firma||null,strasse:s.strasse||null,plz:s.plz||null,ort:s.ort||null,telefon:s.telefon||null,email:s.email||null,notizen:s.notizen||null,
   ik_nummer:s.ikNummer||null,handelsregister:s.handelsregister||null,ust_id:s.ustId||null,geschaeftsfuehrer:s.geschaeftsfuehrer||null,
@@ -1898,6 +1911,162 @@ function buildStaffNav(active){
     navItem('contracts','📄','Meine Verträge',active==='contracts')+
     navItem('emergency','✆','Notfallnummer',active==='emergency');
 }
+/* ============================================================
+   FÜHRUNGS-DASHBOARD
+   Kennzahlen aus allen Bereichen: Finanzen (eigene Rechnungen +
+   Lexware), Kunden (Bestand, Pipeline, Struktur, Budget §45b,
+   Lead-Quellen, Kündigungsgründe), Personal & Betrieb, Warnungen.
+   ============================================================ */
+function parseEuroNum(s){ const m=String(s==null?'':s).replace(',','.').match(/\d+(\.\d+)?/); return m?parseFloat(m[0]):null; }
+function pct(n,of){ return of>0?Math.round(n/of*100):0; }
+// kleine Verteilungs-Zeile mit Balken (für Struktur-Panels)
+function distRow(label,count,total,color){
+  return '<div style="display:flex;align-items:center;gap:10px;margin:5px 0;font-size:13.5px">'+
+    '<div style="flex:0 0 150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+label+'</div>'+
+    '<div style="flex:1;height:9px;background:#eef0f6;border-radius:5px;overflow:hidden"><div style="height:100%;width:'+pct(count,total)+'%;background:'+(color||'var(--brand,#6d28d9)')+';border-radius:5px"></div></div>'+
+    '<div style="flex:0 0 70px;text-align:right;color:var(--muted)"><b style="color:var(--ink)">'+count+'</b> ('+pct(count,total)+'%)</div>'+
+  '</div>';
+}
+function adminDashboardHTML(open,newApps){
+  const today=todayISO(), thisMonth=today.slice(0,7), thisYear=today.slice(0,4);
+
+  /* ---- Finanzen (eigene Abrechnung) ---- */
+  const reBetrag=r=>Number(r.betrag)||0;
+  const umsatzMonat=rechnungen.filter(r=>String(r.datum||'').slice(0,7)===thisMonth).reduce((s,r)=>s+reBetrag(r),0);
+  const umsatzJahr=rechnungen.filter(r=>String(r.datum||'').slice(0,4)===thisYear).reduce((s,r)=>s+reBetrag(r),0);
+  const offeneRe=rechnungen.filter(r=>r.status!=='bezahlt');
+  const forderungen=offeneRe.reduce((s,r)=>s+reBetrag(r),0);
+  const ueberf=offeneRe.filter(r=>(Date.now()-new Date(r.datum).getTime())/86400000>14);
+  const ueberfSum=ueberf.reduce((s,r)=>s+reBetrag(r),0);
+  const readyTs=timesheets.filter(t=>t.status==='freigegeben'&&t.billable!==false&&!rechnungen.find(r=>r.stundenzettelId===t.id));
+  const unbilledEur=readyTs.reduce((s,t)=>s+tsMinutes(t),0)/60*STUNDENSATZ;
+  const openTs=timesheets.filter(t=>t.status==='offen').length;
+  const bonusDue=staff.reduce((s,m)=>s+((m.bonus&&m.bonus.pending)||0),0);
+
+  // Umsatz-Verlauf: letzte 6 Monate aus erstellten Rechnungen
+  const MONK=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  const trend=[]; const d0=new Date();
+  for(let i=5;i>=0;i--){ const d=new Date(d0.getFullYear(),d0.getMonth()-i,1); const key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    trend.push({key:key, label:MONK[d.getMonth()], sum:rechnungen.filter(r=>String(r.datum||'').slice(0,7)===key).reduce((s,r)=>s+reBetrag(r),0)}); }
+  const trendMax=Math.max(1,...trend.map(t=>t.sum));
+
+  /* ---- Kunden ---- */
+  const aktive=customers.filter(c=>c.status==='aktiv');
+  const interessenten=customers.filter(c=>c.status==='Interessent');
+  const beendete=customers.filter(c=>c.status==='beendet');
+  const neuMonat=customers.filter(c=>String(c.startDatum||'').slice(0,7)===thisMonth).length;
+  const verlorenJahr=beendete.filter(c=>!c.endeDatum||String(c.endeDatum).slice(0,4)===thisYear);
+  const umsatzProKunde=aktive.length?umsatzMonat/aktive.length:0;
+  const ohneAbtretung=aktive.filter(c=>!(c.abtretung&&c.abtretung.signature));
+  const ohneLeistungen=aktive.filter(c=>!(c.leistungen&&c.leistungen.length));
+  const ohneKt=aktive.filter(c=>c.insuranceType==='gesetzlich'&&!c.kostentraegerId);
+  // §45b-Budget: ungenutztes Potenzial bei Kunden mit gepflegter Budget-Angabe
+  let budgetKunden=0, budgetFrei=0;
+  aktive.forEach(c=>{ const b=parseEuroNum(c.intern&&c.intern.budget); if(b===null) return;
+    const u=parseEuroNum(c.intern&&c.intern.budgetUsed)||0; budgetKunden++; budgetFrei+=Math.max(0,b-u); });
+  // Strukturen
+  const count=(arr,fn)=>{const m={};arr.forEach(x=>{const k=fn(x)||'—';m[k]=(m[k]||0)+1;});return Object.entries(m).sort((a,b)=>b[1]-a[1]);};
+  const pgrade=count(aktive,c=>'Pflegegrad '+(c.pgrad||'—'));
+  const versArt=count(aktive,c=>({gesetzlich:'Gesetzlich',privat:'Privat',beihilfe:'Beihilfe'}[c.insuranceType]||'—'));
+  const gebiete=count(aktive,c=>c.area).slice(0,6);
+  const quellen=count(customers.filter(c=>c.leadQuelle),c=>c.leadQuelle);
+  const gruende=count(beendete.filter(c=>c.endeGrund),c=>c.endeGrund);
+
+  /* ---- Personal & Betrieb ---- */
+  const aktiveMA=staff.filter(m=>m.status==='aktiv');
+  const krank=staff.filter(m=>m.status==='krank').length;
+  const urlaub=staff.filter(m=>m.status==='Urlaub').length;
+  const termineHeute=appointments.filter(a=>a.date===today&&a.status!=='abgesagt').length;
+  const in7=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+  const termineWoche=appointments.filter(a=>a.date>=today&&a.date<=in7&&a.status!=='abgesagt').length;
+  const offeneKomm=kommunikationen.filter(k=>k.status==='offen').length;
+  const offeneAufg=aufgaben.filter(a=>a.status==='offen').length;
+  const leaving=staff.filter(m=>(m.daysWorked||0)>=60);
+  const staffReject=(m)=>{const t=jobs.filter(j=>j.rejectedBy.includes(m.id)).length+jobs.filter(j=>j.assignedTo===m.id).length;const r=jobs.filter(j=>j.rejectedBy.includes(m.id)).length;return t>0?r/t:0;};
+  const unreliable=staff.filter(m=>staffReject(m)>=0.5);
+  const positive=staff.filter(m=>m.status==='aktiv'&&staffReject(m)===0&&(m.bonus&&m.bonus.earned>0));
+
+  /* ---- Warnungen (nach Dringlichkeit) ---- */
+  const warn=[];
+  if(ueberf.length) warn.push({tag:'red',t:ueberf.length+' überfällige Rechnung(en) über '+fmtEuro(ueberfSum),s:'älter als 14 Tage – mahnen oder Status pflegen',go:"renderAdmin('rechnungen')"});
+  if(readyTs.length) warn.push({tag:'amber',t:fmtEuro(unbilledEur)+' noch nicht abgerechnet',s:readyTs.length+' freigegebene Stundenzettel warten auf Rechnung',go:"renderAdmin('rechnungen')"});
+  if(ohneAbtretung.length) warn.push({tag:'amber',t:ohneAbtretung.length+' aktive Kunden ohne Abtretungserklärung',s:'blockiert die Abrechnung: '+ohneAbtretung.slice(0,3).map(fullName).join(', ')+(ohneAbtretung.length>3?' +'+(ohneAbtretung.length-3):''),go:"renderAdmin('customers')"});
+  if(ohneKt.length) warn.push({tag:'amber',t:ohneKt.length+' gesetzlich Versicherte ohne Kostenträger',s:'Rechnung kann sonst nicht an die Kasse gehen',go:"renderAdmin('customers')"});
+  if(ohneLeistungen.length) warn.push({tag:'amber',t:ohneLeistungen.length+' aktive Kunden ohne hinterlegte Leistungen',s:'ohne Leistung keine Rechnung möglich',go:"renderAdmin('customers')"});
+  if(open>0) warn.push({tag:'blue',t:open+' unbesetzte Aufträge',s:'jeder unbesetzte Auftrag ist entgangener Umsatz',go:"renderAdmin('jobs')"});
+  leaving.forEach(m=>warn.push({tag:'amber',t:fullName(m)+' – 70-Tage-Grenze',s:(m.daysWorked||0)+'/70 Tage, Nachfolge planen',go:"renderAdmin('staff')"}));
+  unreliable.forEach(m=>warn.push({tag:'red',t:fullName(m)+' – hohe Absagequote ('+Math.round(staffReject(m)*100)+'%)',s:'Zuteilung prüfen / Gespräch führen',go:"renderAdmin('staff')"}));
+
+  return head('Dashboard','Führungs-Cockpit: Finanzen, Kunden, Personal und alles, was Aufmerksamkeit braucht.')+
+
+  '<div class="section-label" style="margin-top:0">Finanzen</div>'+
+  '<div class="cards grid-4">'+
+    statClick('Umsatz (Monat)',fmtEuro(umsatzMonat),'Jahr: '+fmtEuro(umsatzJahr)+' · aus erstellten Rechnungen',"renderAdmin('rechnungen')")+
+    statClick('Offene Forderungen',fmtEuro(forderungen),offeneRe.length+' Rechnung(en), davon '+ueberf.length+' überfällig',"renderAdmin('rechnungen')")+
+    statClick('Nicht abgerechnet',fmtEuro(unbilledEur),readyTs.length+' freigegebene Stundenzettel',"renderAdmin('rechnungen')")+
+    statClick('Ø Umsatz je Kunde',fmtEuro(umsatzProKunde),'Monat, je aktivem Kunden',"renderAdmin('customers')")+
+  '</div><div style="height:16px"></div>'+
+  (hasRole('admin','buchhaltung')&&lexwareReady()&&CLOUD?'<div id="lxDashFin"></div>':'')+
+
+  '<div class="cards grid-2">'+
+    '<div class="panel"><div class="panel-head"><h3>Umsatz-Verlauf (6 Monate)</h3></div><div class="panel-body" style="padding-top:12px">'+
+      '<div style="display:flex;align-items:flex-end;gap:12px;height:150px;padding:0 4px">'+
+      trend.map(t=>'<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;justify-content:flex-end">'+
+        '<div style="font-size:11.5px;color:var(--muted);font-weight:600">'+(t.sum?fmtEuro(t.sum).replace(',00 €',' €'):'')+'</div>'+
+        '<div style="width:70%;max-width:44px;height:'+Math.max(3,Math.round(t.sum/trendMax*100))+'%;background:'+(t.key===thisMonth?'var(--brand,#6d28d9)':'#c9b8f0')+';border-radius:6px 6px 0 0"></div>'+
+        '<div style="font-size:12px;color:var(--muted)">'+t.label+'</div>'+
+      '</div>').join('')+
+      '</div></div></div>'+
+    '<div class="panel"><div class="panel-head"><h3>⚠️ Achtung erforderlich ('+warn.length+')</h3></div><div class="panel-body" style="padding-top:8px;max-height:210px;overflow:auto">'+
+      (warn.length?warn.map(w=>'<div class="list-row" style="cursor:pointer" onclick="'+w.go+'"><div class="li-main"><b>'+w.t+'</b><div class="li-sub">'+w.s+'</div></div><span class="tag '+w.tag+'">→</span></div>').join(''):'<p style="color:var(--muted);padding:8px 0">✓ Keine offenen Warnungen – alles im grünen Bereich.</p>')+
+    '</div></div>'+
+  '</div><div style="height:18px"></div>'+
+
+  '<div class="section-label">Kunden</div>'+
+  '<div class="cards grid-4">'+
+    statClick('Aktive Kunden',aktive.length,(neuMonat?'+'+neuMonat+' neu diesen Monat':'Leistungsbeginn im Formular pflegen'),"renderAdmin('customers')")+
+    statClick('Interessenten',interessenten.length,'Pipeline – noch nicht aktiv',"renderAdmin('customers')")+
+    statClick('Verloren ('+thisYear+')',verlorenJahr.length,(gruende.length?'häufigster Grund: '+gruende[0][0]:'Grund im Kundenformular pflegen'),"renderAdmin('customers')")+
+    statClick('§45b ungenutzt',fmtEuro(budgetFrei),(budgetKunden?'freies Budget bei '+budgetKunden+' Kunden = Umsatzpotenzial':'Budget im Kundenformular pflegen'),"renderAdmin('customers')")+
+  '</div><div style="height:16px"></div>'+
+  '<div class="cards grid-2">'+
+    '<div class="panel"><div class="panel-head"><h3>Kundenstruktur (aktiv: '+aktive.length+')</h3></div><div class="panel-body" style="padding-top:10px">'+
+      '<div class="section-label" style="margin-top:0">Pflegegrade</div>'+pgrade.map(([k,n])=>distRow(k,n,aktive.length)).join('')+
+      '<div class="section-label">Versicherung</div>'+versArt.map(([k,n])=>distRow(k,n,aktive.length,'#0e9f6e')).join('')+
+    '</div></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Gebiete &amp; Vertrieb</h3></div><div class="panel-body" style="padding-top:10px">'+
+      '<div class="section-label" style="margin-top:0">Top-Gebiete</div>'+(gebiete.length?gebiete.map(([k,n])=>distRow(k,n,aktive.length,'#2563eb')).join(''):'<p style="color:var(--muted);font-size:13px">Noch keine Gebiete gepflegt.</p>')+
+      '<div class="section-label">Woher kommen die Kunden?</div>'+
+      (quellen.length?quellen.map(([k,n])=>distRow(k,n,quellen.reduce((s,q)=>s+q[1],0),'#b45309')).join(''):'<p style="color:var(--muted);font-size:13px">Noch keine Daten – neues Feld „Wie ist der Kunde auf uns gekommen?" beim Anlegen/Bearbeiten ausfüllen. Nach ein paar Wochen siehst du hier, welcher Kanal Kunden bringt.</p>')+
+    '</div></div>'+
+  '</div><div style="height:18px"></div>'+
+
+  '<div class="section-label">Personal &amp; Betrieb</div>'+
+  '<div class="cards grid-4">'+
+    statClick('Aktive Mitarbeiter',aktiveMA.length,'krank: '+krank+' · Urlaub: '+urlaub,"renderAdmin('staff')")+
+    statClick('Termine heute',termineHeute,'diese Woche: '+termineWoche,"renderAdmin('calendar')")+
+    statClick('Zu prüfen',openTs+' Stundenzettel','danach abrechnen',"renderAdmin('hours')")+
+    statClick('Fällige Boni',fmtEuro(bonusDue),'an Mitarbeiter auszuzahlen',"renderAdmin('payroll')")+
+  '</div><div style="height:16px"></div>'+
+  '<div class="cards grid-2">'+
+    '<div class="panel"><div class="panel-head"><h3>Offene Vorgänge</h3></div><div class="panel-body" style="padding-top:8px">'+
+      '<div class="list-row" style="cursor:pointer" onclick="renderAdmin(\'jobs\')"><div class="li-main"><b>Unbesetzte Aufträge</b><div class="li-sub">warten auf Annahme in der Börse</div></div><span class="tag '+(open?'blue':'green')+'">'+open+'</span></div>'+
+      '<div class="list-row" style="cursor:pointer" onclick="renderAdmin(\'applications\')"><div class="li-main"><b>Neue Bewerbungen</b><div class="li-sub">in Bearbeitung</div></div><span class="tag '+(newApps?'blue':'green')+'">'+newApps+'</span></div>'+
+      '<div class="list-row" style="cursor:pointer" onclick="renderAdmin(\'kommunikation\')"><div class="li-main"><b>Offene Kommunikation</b><div class="li-sub">Rückrufe / CRM-Vorgänge</div></div><span class="tag '+(offeneKomm?'amber':'green')+'">'+offeneKomm+'</span></div>'+
+      '<div class="list-row" style="cursor:pointer" onclick="renderAdmin(\'aufgaben\')"><div class="li-main"><b>Offene Aufgaben</b><div class="li-sub">an Mitarbeiter verteilt</div></div><span class="tag '+(offeneAufg?'amber':'green')+'">'+offeneAufg+'</span></div>'+
+    '</div></div>'+
+    '<div class="panel"><div class="panel-head"><h3>⭐ Positive Mitarbeiter</h3></div><div class="panel-body" style="padding-top:8px">'+
+      (positive.length?positive.map(m=>'<div class="list-row"><div class="li-main"><b>'+fullName(m)+'</b><div class="li-sub">Zuverlässig, keine Absagen · Bonus erhalten</div></div><span class="tag green">Top</span></div>').join(''):'<p style="color:var(--muted);padding:8px 0">Noch keine Auswertung.</p>')+
+    '</div></div>'+
+  '</div><div style="height:18px"></div>'+
+
+  '<div class="panel"><div class="panel-head"><h3>Zuletzt freigegebene Aufträge</h3>'+
+    '<button class="btn-ghost btn-sm" onclick="renderAdmin(\'jobs\')">Alle ansehen</button></div>'+
+    '<div class="panel-body"><table><thead><tr><th>Auftrag</th><th>Kunde</th><th>Gebiet</th><th>Status</th></tr></thead><tbody>'+
+    jobs.slice(0,8).map(j=>{const cu=custById(j.customerId);return '<tr><td><b>'+j.title+'</b></td><td>'+(j.status==='available'?'<span style="color:var(--muted)">verdeckt</span>':(cu?fullName(cu):'—'))+'</td><td>'+(cu?cu.area:'—')+'</td><td>'+jobStatusTag(j)+'</td></tr>';}).join('')+
+    '</tbody></table></div></div>';
+}
+
 /* ============ ADMIN VIEWS ============ */
 let __lastAdminView=null;
 function renderAdmin(view){
@@ -1911,46 +2080,8 @@ function renderAdmin(view){
   const newApps=applications.filter(a=>a.status!=='aktiv').length;
 
   if(view==='dashboard'){
-    // Kennzahlen berechnen
-    const openTs=timesheets.filter(t=>t.status==='offen').length;
-    const plannedAppts=appointments.length;
-    // Umsatz = bestätigte Stunden * Kundensatz
-    const confirmedMin=timesheets.filter(t=>t.status==='freigegeben').reduce((s,t)=>s+tsMinutes(t),0);
-    const revenue=(confirmedMin/60*STUNDENSATZ);
-    const bonusDue=staff.reduce((s,m)=>s+((m.bonus&&m.bonus.pending)||0),0);
-    // 70-Tage: wer scheidet bald aus (>=60 Tage)
-    const leaving=staff.filter(m=>(m.daysWorked||0)>=60);
-    // Risiko: unzuverlässig (hohe Absagequote) und positiv
-    const staffReject=(m)=>{const t=jobs.filter(j=>j.rejectedBy.includes(m.id)).length+jobs.filter(j=>j.assignedTo===m.id).length;const r=jobs.filter(j=>j.rejectedBy.includes(m.id)).length;return t>0?r/t:0;};
-    const unreliable=staff.filter(m=>staffReject(m)>=0.5);
-    const positive=staff.filter(m=>m.status==='aktiv'&&staffReject(m)===0&&(m.bonus&&m.bonus.earned>0));
-    c.innerHTML=head('Dashboard','Überblick über Umsatz, Team und offene Punkte.')+
-    '<div class="cards grid-4">'+
-      statClick('Umsatz (bestätigt)',revenue.toFixed(0)+' €','aus freigegebenen Stunden',"renderAdmin('hours')")+
-      statClick('Geplante Termine',plannedAppts,'im Kalender',"renderAdmin('calendar')")+
-      statClick('Offene Stundenzettel',openTs,'zu prüfen',"renderAdmin('hours')")+
-      statClick('Fällige Boni',bonusDue+' €','an Mitarbeiter auszuzahlen',"renderAdmin('payroll')")+
-    '</div><div style="height:16px"></div>'+
-    '<div class="cards grid-2">'+
-      statClick('Offene Aufträge',open,'warten auf Annahme',"renderAdmin('jobs')")+
-      statClick('Neue Bewerbungen',newApps,'in Bearbeitung',"renderAdmin('applications')")+
-    '</div><div style="height:18px"></div>'+
-    // Meldungen
-    '<div class="cards grid-2">'+
-      '<div class="panel"><div class="panel-head"><h3>⚠️ Achtung erforderlich</h3></div><div class="panel-body" style="padding-top:8px">'+
-        (leaving.length?leaving.map(m=>'<div class="list-row"><div class="li-main"><b>'+fullName(m)+'</b><div class="li-sub">70-Tage-Grenze: '+(m.daysWorked||0)+'/70 Tage – scheidet bald aus</div></div><span class="tag amber">'+(70-(m.daysWorked||0))+' Tage</span></div>').join(''):'')+
-        (unreliable.length?unreliable.map(m=>'<div class="list-row"><div class="li-main"><b>'+fullName(m)+'</b><div class="li-sub">Hohe Absagequote ('+Math.round(staffReject(m)*100)+'%) – Termine begrenzen</div></div><span class="tag red">unzuverlässig</span></div>').join(''):'')+
-        (!leaving.length&&!unreliable.length?'<p style="color:var(--muted);padding:8px 0">Keine Auffälligkeiten.</p>':'')+
-      '</div></div>'+
-      '<div class="panel"><div class="panel-head"><h3>⭐ Positive Mitarbeiter</h3></div><div class="panel-body" style="padding-top:8px">'+
-        (positive.length?positive.map(m=>'<div class="list-row"><div class="li-main"><b>'+fullName(m)+'</b><div class="li-sub">Zuverlässig, keine Absagen · Bonus erhalten</div></div><span class="tag green">Top</span></div>').join(''):'<p style="color:var(--muted);padding:8px 0">Noch keine Auswertung.</p>')+
-      '</div></div>'+
-    '</div><div style="height:18px"></div>'+
-    '<div class="panel"><div class="panel-head"><h3>Zuletzt freigegebene Aufträge</h3>'+
-      '<button class="btn-ghost btn-sm" onclick="renderAdmin(\'jobs\')">Alle ansehen</button></div>'+
-      '<div class="panel-body"><table><thead><tr><th>Auftrag</th><th>Kunde</th><th>Gebiet</th><th>Status</th></tr></thead><tbody>'+
-      jobs.map(j=>{const cu=custById(j.customerId);return '<tr><td><b>'+j.title+'</b></td><td>'+(j.status==='available'?'<span style="color:var(--muted)">verdeckt</span>':(cu?fullName(cu):'—'))+'</td><td>'+(cu?cu.area:'—')+'</td><td>'+jobStatusTag(j)+'</td></tr>';}).join('')+
-      '</tbody></table></div></div>';
+    c.innerHTML=adminDashboardHTML(open,newApps);
+    if(hasRole('admin','buchhaltung')&&lexwareReady()&&CLOUD) setTimeout(lexwareDashboardFill,80);
   }
 
   if(view==='jobs'){
@@ -2235,6 +2366,9 @@ function renderAdmin(view){
       stat('Rechnungen verknüpft',reLinked+' / '+rechnungen.length,'in Lexware angelegt')+
       stat('Modus','Entwurf','Rechnungen werden zur Prüfung als Entwurf angelegt')+
     '</div><div style="height:16px"></div>'+
+    '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Finanzen (aus Lexware)</h3>'+
+      '<button class="btn-ghost btn-sm" onclick="lexwareRenderFinance(true)">⟳ Aktualisieren</button></div>'+
+      '<div class="panel-body" style="padding-top:10px"><div id="lx_finance"></div></div></div>'+
     '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Kunden-Abgleich</h3>'+
       '<button class="btn-primary btn-sm" style="width:auto" onclick="lexwareSyncCustomers()">↑ Aktive Kunden nach Lexware übertragen</button></div>'+
       '<div class="panel-body" style="padding-top:10px"><p style="color:var(--muted);font-size:13.5px;margin:0 0 8px">Überträgt alle aktiven Kunden ohne Lexware-Verknüpfung als Kontakte (Name, Adresse, E-Mail, Telefon). Bereits übertragene Kunden werden übersprungen. Wegen des Lexware-Limits (2 Anfragen/Sek.) dauert das bei vielen Kunden einige Minuten.</p>'+
@@ -2253,7 +2387,7 @@ function renderAdmin(view){
       '</ol>'+
       '<div style="margin-top:12px"><button class="btn-ghost btn-sm" onclick="lexwarePing()">Verbindung testen</button></div>'+
     '</div></div>';
-    if(CLOUD) setTimeout(lexwarePing,60);
+    if(CLOUD){ setTimeout(lexwarePing,60); setTimeout(function(){ lexwareRenderFinance(false); },120); }
     else { const el=document.getElementById('lx_status'); if(el) el.innerHTML='<span class="tag amber">offline</span>'; }
   }
   if(view==='vorlagen'){
@@ -2418,6 +2552,9 @@ function createLogin(id){
 }
 
 /* ============ KUNDEN: FORM + BEARBEITEN ============ */
+/* Auswahllisten für die Auswertungs-Felder (Dashboard: Lead-Quellen & Kündigungsgründe) */
+const LEAD_QUELLEN=['Empfehlung','Pflegestützpunkt','Krankenkasse','Arzt/Klinik','Google/Internet','Flyer/Zeitung','Social Media','Sonstiges'];
+const ENDE_GRUENDE=['Verstorben','Umzug ins Pflegeheim','Umzug (anderer Ort)','Zu Wettbewerber gewechselt','Unzufrieden mit Leistung','Preis','Bedarf entfallen','Sonstiges'];
 function customerFormHTML(c){
   const isNew=!c;
   c=c||{first:'',last:'',area:'',street:'',houseNo:'',plz:'',city:'',phoneMobile:'',phoneLandline:'',need:[],freqNum:1,freqUnit:'pro Woche',timeWindows:[],pets:[],pgrad:'1',contactName:'',contactPhone:'',noContact:false,noNotes:false,notes:'',insuranceType:'gesetzlich',beihilfePct:'',intern:{kvNr:'',kasse:'',budget:'',budgetUsed:''}};
@@ -2440,6 +2577,14 @@ function customerFormHTML(c){
     '<label>E-Mail (für Terminbestätigungen &amp; Rundmails, optional)</label><input id="nc_email" value="'+(c.email||'')+'" placeholder="kunde@example.de">'+
     '<div class="form-row"><div><label>Pflegegrad</label><select id="nc_pgrad">'+['1','2','3','4','5'].map(p=>'<option '+(c.pgrad===p?'selected':'')+'>'+p+'</option>').join('')+'</select></div>'+
     '<div><label>Geburtsdatum</label><input id="nc_birth" type="date" value="'+(c.birth||'')+'"></div></div>'+
+
+    '<div class="section-label">Herkunft &amp; Kundenzeitraum <span style="font-weight:400;color:var(--muted)">(für Auswertungen im Dashboard)</span></div>'+
+    '<div class="form-row"><div><label>Wie ist der Kunde auf uns gekommen?</label><select id="nc_leadQuelle"><option value="">— unbekannt —</option>'+
+      LEAD_QUELLEN.map(q=>'<option '+(c.leadQuelle===q?'selected':'')+'>'+q+'</option>').join('')+'</select></div>'+
+    '<div><label>Kunde seit (Leistungsbeginn)</label><input id="nc_startDatum" type="date" value="'+(c.startDatum||'')+'"></div></div>'+
+    (isNew?'':'<div class="form-row"><div><label>Beendet am (falls beendet)</label><input id="nc_endeDatum" type="date" value="'+(c.endeDatum||'')+'"></div>'+
+    '<div><label>Beendigungsgrund</label><select id="nc_endeGrund"><option value="">—</option>'+
+      ENDE_GRUENDE.map(g=>'<option '+(c.endeGrund===g?'selected':'')+'>'+g+'</option>').join('')+'</select></div></div>')+
 
     '<label>Benötigte Leistungen</label>'+
     '<div class="checks" id="nc_skills">'+SKILLS.map(s=>'<span class="check '+(c.need.includes(s)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+s+'</span>').join('')+'</div>'+
@@ -2520,6 +2665,10 @@ function gatherCustomer(c){
   c.phone=c.phoneMobile||c.phoneLandline||'—';
   c.pgrad=document.getElementById('nc_pgrad').value;
   c.birth=val('nc_birth');
+  c.leadQuelle=document.getElementById('nc_leadQuelle')?document.getElementById('nc_leadQuelle').value:c.leadQuelle;
+  c.startDatum=document.getElementById('nc_startDatum')?val('nc_startDatum'):c.startDatum;
+  c.endeDatum=document.getElementById('nc_endeDatum')?val('nc_endeDatum'):c.endeDatum;
+  c.endeGrund=document.getElementById('nc_endeGrund')?document.getElementById('nc_endeGrund').value:c.endeGrund;
   c.need=[...document.querySelectorAll('#nc_skills .check.on')].map(e=>e.textContent);
   if(!c.need.length)c.need=['Haushaltshilfe'];
   c.freqNum=parseInt(document.getElementById('nc_freqNum').value)||1;
@@ -2571,6 +2720,8 @@ function createCustomer(){
       logActivity('Kunde angelegt: '+fullName(c));
       toast('Kunde gespeichert & als Auftrag freigegeben');renderAdmin('jobs');
       notifyStaffNewJob(job, c);
+      saveCustomerExtrasQuiet(c); // Auswertungs-Felder (Lead-Quelle etc.), still
+      lexwareAutoSyncCustomer(c); // still, blockiert nichts
     })();
   }else{
     customers.unshift(c);jobs.unshift(job);
@@ -2673,6 +2824,8 @@ function updateCustomer(id){
   if(!requireRoleAction('admin','buero','callcenter')) return;
   const c=custById(id);gatherCustomer(c);
   if(CLOUD) cloudUpdate('kunden',id,custToRow(c));
+  saveCustomerExtrasQuiet(c); // Auswertungs-Felder (Lead-Quelle etc.), still
+  lexwareAutoSyncCustomer(c); // hält den Lexware-Kontakt aktuell (still)
   logActivity('Kunde bearbeitet: '+fullName(c));
   closeModal();document.getElementById('modalBox').classList.remove('wide');
   toast('Kundendaten gespeichert');renderAdmin('customers');
@@ -5366,6 +5519,22 @@ function lexwareContactPayload(cu){
   return p;
 }
 
+// Einzelnen Kunden still nach Lexware übertragen/aktualisieren.
+// Läuft im Hintergrund bei "Kunde anlegen" und "Kunde bearbeiten";
+// Fehler stören den Arbeitsablauf nicht (nur Konsolen-Hinweis).
+function lexwareAutoSyncCustomer(c){
+  if(!CLOUD || !lexwareReady() || !c) return;
+  const payload={contact:lexwareContactPayload(c)};
+  if(c.lexwareId) payload.lexwareId=c.lexwareId;
+  lexwareCall('syncContact',payload,true).then(res=>{
+    if(res.ok&&res.data&&res.data.id){
+      if(!c.lexwareId){ c.lexwareId=res.data.id; saveLexwareIdQuiet('kunden',c.id,res.data.id); }
+    }else if(res.error&&res.error!=='offline'){
+      console.warn('Lexware Auto-Sync Kunde',fullName(c),res.error);
+    }
+  });
+}
+
 // Alle aktiven Kunden ohne Verknüpfung als Kontakte übertragen
 async function lexwareSyncCustomers(){
   if(!requireRoleAction('admin','buchhaltung')) return;
@@ -5470,6 +5639,109 @@ async function lexwareStatusSync(){
   }
   toast('Zahlungsabgleich abgeschlossen'+(paid?': '+paid+' Rechnung(en) auf „bezahlt" gesetzt':''));
   if(paid&&__lastAdminView==='rechnungen') renderAdmin('rechnungen');
+}
+
+/* ---- Finanzen aus Lexware: Einnahmen, Ausgaben, offene Posten ----
+   Datenquelle ist die Belegliste des laufenden Jahres. Ergebnis wird
+   10 Minuten zwischengespeichert, damit Dashboard und Lexware-Seite
+   nicht bei jedem Öffnen neu bei Lexware anfragen. */
+let __lexFin=null; // {t:Zeitstempel, vouchers:[...], year}
+function fmtEuro(n){ return (Number(n)||0).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.')+' €'; }
+async function lexwareFinanceLoad(force){
+  const now=Date.now();
+  if(!force && __lexFin && (now-__lexFin.t)<10*60*1000) return {ok:true, cached:true};
+  const res=await lexwareCall('finance',{},true);
+  if(!res.ok) return res;
+  __lexFin={t:now, vouchers:(res.data&&res.data.vouchers)||[], year:(res.data&&res.data.year)||String(new Date().getFullYear()), truncated:!!(res.data&&res.data.truncated)};
+  return {ok:true};
+}
+// Belege zu Kennzahlen zusammenrechnen.
+// Einnahmen = bezahlter Anteil (total - open) der Ausgangsrechnungen,
+// Gutschriften werden abgezogen. Ausgaben analog aus Eingangsrechnungen.
+function lexwareFinanceAggregate(){
+  const out={einJahr:0,einMonat:0,ausJahr:0,ausMonat:0,forderungen:0,forderungenZahl:0,verbindlichkeiten:0,verbindlichkeitenZahl:0,monate:{},ausgabenListe:[]};
+  if(!__lexFin) return out;
+  const REV=['invoice','salesinvoice','downpaymentinvoice'];
+  const REVNEG=['creditnote','salescreditnote'];
+  const COST=['purchaseinvoice'];
+  const COSTNEG=['purchasecreditnote'];
+  const thisMonth=(new Date()).toISOString().slice(0,7);
+  for(const v of __lexFin.vouchers){
+    const st=String(v.status||'');
+    if(st==='draft'||st==='voided') continue;
+    const type=String(v.type||'');
+    const total=Number(v.total)||0;
+    const open=Number(v.open!=null?v.open:(st==='paidoff'||st==='paid'?0:total))||0;
+    const paid=Math.max(0,total-open);
+    const ym=String(v.date||'').slice(0,7);
+    if(!out.monate[ym]) out.monate[ym]={ein:0,aus:0};
+    if(REV.includes(type)){
+      out.einJahr+=paid; if(ym===thisMonth) out.einMonat+=paid;
+      out.monate[ym].ein+=paid;
+      if(st==='open'||st==='overdue'){ out.forderungen+=open; out.forderungenZahl++; }
+    }else if(REVNEG.includes(type)){
+      out.einJahr-=paid; if(ym===thisMonth) out.einMonat-=paid;
+      out.monate[ym].ein-=paid;
+    }else if(COST.includes(type)){
+      out.ausJahr+=paid; if(ym===thisMonth) out.ausMonat+=paid;
+      out.monate[ym].aus+=paid;
+      if(st==='open'||st==='overdue'){ out.verbindlichkeiten+=open; out.verbindlichkeitenZahl++; }
+      out.ausgabenListe.push(v);
+    }else if(COSTNEG.includes(type)){
+      out.ausJahr-=paid; if(ym===thisMonth) out.ausMonat-=paid;
+      out.monate[ym].aus-=paid;
+    }
+  }
+  return out;
+}
+// Finanz-Panel auf der Lexware-Seite füllen
+async function lexwareRenderFinance(force){
+  const el=document.getElementById('lx_finance'); if(!el) return;
+  el.innerHTML='<p style="color:var(--muted);font-size:13.5px;margin:4px 0">Lade Finanzdaten aus Lexware … (bei vielen Belegen ein paar Sekunden)</p>';
+  const res=await lexwareFinanceLoad(force);
+  if(!res.ok){ el.innerHTML='<p style="color:#b91c1c;font-size:13.5px;margin:4px 0">Finanzdaten konnten nicht geladen werden: '+cleanInput(res.error||'',200)+'</p>'; return; }
+  const f=lexwareFinanceAggregate();
+  const ergebnis=f.einJahr-f.ausJahr;
+  const months=Object.keys(f.monate).sort().reverse();
+  const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  const monLabel=ym=>{ const p=ym.split('-'); return (MON[(+p[1]||1)-1]||p[1])+' '+p[0]; };
+  el.innerHTML=
+    '<div class="cards grid-4" style="margin-bottom:14px">'+
+      stat('Einnahmen (Monat)',fmtEuro(f.einMonat),'bezahlte Ausgangsrechnungen')+
+      stat('Einnahmen '+__lexFin.year,fmtEuro(f.einJahr),'bezahlt, abzgl. Gutschriften')+
+      stat('Ausgaben '+__lexFin.year,fmtEuro(f.ausJahr),'bezahlte Eingangsrechnungen')+
+      stat('Ergebnis '+__lexFin.year,fmtEuro(ergebnis),'Einnahmen − Ausgaben')+
+    '</div>'+
+    '<div class="summary" style="margin-bottom:14px"><div class="sh">Offene Posten</div>'+
+      'Forderungen (Kunden/Kassen schulden dir): <b>'+fmtEuro(f.forderungen)+'</b> aus '+f.forderungenZahl+' Rechnung(en) &nbsp;·&nbsp; '+
+      'Verbindlichkeiten (du schuldest Lieferanten): <b>'+fmtEuro(f.verbindlichkeiten)+'</b> aus '+f.verbindlichkeitenZahl+' Beleg(en)'+
+      (__lexFin.truncated?'<br><span style="color:#b45309">Hinweis: mehr als 2000 Belege im Jahr – Zahlen umfassen die neuesten 2000.</span>':'')+
+    '</div>'+
+    (months.length?'<div class="section-label">Monatsübersicht '+__lexFin.year+'</div>'+
+      '<table><thead><tr><th>Monat</th><th>Einnahmen</th><th>Ausgaben</th><th>Saldo</th></tr></thead><tbody>'+
+      months.map(ym=>{const m=f.monate[ym];const s=m.ein-m.aus;
+        return '<tr><td>'+monLabel(ym)+'</td><td>'+fmtEuro(m.ein)+'</td><td>'+fmtEuro(m.aus)+'</td><td style="font-weight:600;color:'+(s>=0?'#047857':'#b91c1c')+'">'+fmtEuro(s)+'</td></tr>';}).join('')+
+      '</tbody></table>':'')+
+    (f.ausgabenListe.length?'<div class="section-label" style="margin-top:14px">Letzte Ausgaben (Eingangsrechnungen)</div>'+
+      '<table><thead><tr><th>Datum</th><th>Lieferant</th><th>Nr.</th><th>Betrag</th><th>Status</th></tr></thead><tbody>'+
+      f.ausgabenListe.slice(0,10).map(v=>'<tr><td>'+(v.date?fmtDate(String(v.date).slice(0,10)):'—')+'</td><td>'+cleanInput(v.contact||'—',50)+'</td><td>'+cleanInput(v.number||'—',30)+'</td><td>'+fmtEuro(v.total)+'</td>'+
+        '<td>'+(v.status==='paidoff'?'<span class="tag green">bezahlt</span>':v.status==='overdue'?'<span class="tag red">überfällig</span>':'<span class="tag amber">offen</span>')+'</td></tr>').join('')+
+      '</tbody></table>':'<p style="color:var(--muted);font-size:13px;margin-top:8px">Noch keine Eingangsrechnungen (Ausgaben) in Lexware erfasst – Belege in Lexware hochladen/buchen, dann erscheinen sie hier.</p>');
+}
+// Finanz-Kacheln auf dem Dashboard füllen (nutzt den 10-Minuten-Cache)
+async function lexwareDashboardFill(){
+  const el=document.getElementById('lxDashFin'); if(!el) return;
+  const res=await lexwareFinanceLoad(false);
+  if(!res.ok){ el.innerHTML=''; return; } // Dashboard bleibt ruhig, Details auf der Lexware-Seite
+  const f=lexwareFinanceAggregate();
+  el.innerHTML=
+    '<div class="section-label" style="margin-top:4px">Finanzen (Lexware Office)</div>'+
+    '<div class="cards grid-4">'+
+      statClick('Einnahmen (Monat)',fmtEuro(f.einMonat),'bezahlt laut Lexware',"renderAdmin('lexware')")+
+      statClick('Einnahmen ('+__lexFin.year+')',fmtEuro(f.einJahr),'bezahlt laut Lexware',"renderAdmin('lexware')")+
+      statClick('Offene Forderungen',fmtEuro(f.forderungen),f.forderungenZahl+' offene Rechnung(en)',"renderAdmin('lexware')")+
+      statClick('Ausgaben ('+__lexFin.year+')',fmtEuro(f.ausJahr),'Eingangsrechnungen',"renderAdmin('lexware')")+
+    '</div><div style="height:16px"></div>';
 }
 
 function fillContractFor(text,s){
