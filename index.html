@@ -1,9 +1,14 @@
 <!DOCTYPE html>
+<!-- © 2026 Alltagshilfe Hannover UG (haftungsbeschränkt) – alle Rechte vorbehalten.
+     Dieses Programm (Daily Do) einschließlich Gestaltung, Texten und Quellcode ist
+     urheberrechtlich geschützt. Vervielfältigung, Bearbeitung oder Verbreitung –
+     auch auszugsweise – nur mit ausdrücklicher schriftlicher Zustimmung. -->
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>DailyDo – Testversion 3 (NEXUS)</title>
+<meta name="copyright" content="© 2026 Alltagshilfe Hannover UG (haftungsbeschränkt) – alle Rechte vorbehalten." />
+<title>Daily Do – Einsatz- &amp; Kundenverwaltung</title>
 <style>
   :root{
     --petrol:#6d28d9;--petrol-dark:#4c1d95;--petrol-soft:#f0e9ff;
@@ -451,6 +456,7 @@
         <div class="apply-big-text">Noch kein Teil des Teams?</div>
         <button class="btn-apply" onclick="startWizard()">✨ Jetzt als Mitarbeiter bewerben</button>
       </div>
+      <div style="margin-top:18px;text-align:center;font-size:11.5px;color:var(--muted)">© 2026 Alltagshilfe Hannover UG (haftungsbeschränkt) – alle Rechte vorbehalten.</div>
     </div>
   </div>
 </div>
@@ -460,7 +466,7 @@
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:14px">
       <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
-      <div class="brand"><img class="mark-logo" src="img/bild1_898fe1a00c.png" alt="DailyDo" onerror="this.onerror=null;this.src=this.src.split('/').pop()"> DailyDo <span class="test-badge">TEST</span></div>
+      <div class="brand"><img class="mark-logo" src="img/bild1_898fe1a00c.png" alt="DailyDo" onerror="this.onerror=null;this.src=this.src.split('/').pop()"> DailyDo</div>
     </div>
     <!-- Globale Suche: durchsucht Kunden, Mitarbeiter und Aufträge (Taste "/") -->
     <div class="gsearch" id="gsearchWrap" style="display:none">
@@ -736,6 +742,7 @@ function rowToStaff(r){return {
   daysWorked:r.days_worked,color:r.color,hasLogin:r.has_login,login:r.login,
   contracts:[], // werden separat geladen
   schulungen:r.schulungen||{}, // abgeschlossene Pflichtschulungen {id:{done,datum}}
+  avatar:r.avatar||'', // Profilbild (Daten-URL, klein) – Spalte via V4_MIGRATION.sql
   intern:{birth:r.birth,address:r.address,taxId:r.tax_id,taxClass:r.tax_class,kvNr:r.kv_nr,kasse:r.kasse,employment:r.employment,citizenship:r.citizenship,iban:r.iban}
 };}
 function custToRow(c){return {
@@ -1859,6 +1866,7 @@ async function enterApp(role, user){
     document.getElementById('whoName').textContent=m.first+' '+(m.last?m.last[0]+'.':'');
     document.getElementById('whoRole').textContent=m.role;
     document.getElementById('avatar').textContent=initials(m);
+    if(window.v4ApplyTopbarAvatar) v4ApplyTopbarAvatar(m);
     currentUserLabel=fullName(m)+' (Mitarbeiter)';
     renderStaff('board');
   }
@@ -1982,7 +1990,8 @@ function buildAdminNav(active){
       viewAllowed('schulung')?navItem('schulung','🎓','Schulung',active==='schulung'):''
     ]],
     ['Konto',[
-      viewAllowed('mylogin')?navItem('mylogin','🔑','Meine Zugangsdaten',active==='mylogin'):''
+      viewAllowed('mylogin')?navItem('mylogin','🔑','Meine Zugangsdaten',active==='mylogin'):'',
+      '<button class="nav-item" onclick="openDesignSettings()"><span class="ic">🎨</span>Design &amp; Farben</button>'
     ]]
   ];
   document.getElementById('sidebar').innerHTML=groups.map(([label,items],gi)=>{
@@ -2027,7 +2036,8 @@ function buildStaffNav(active){
     '<div class="nav-group">Konto</div>'+
     navItem('profile','☺','Mein Profil',active==='profile')+
     navItem('contracts','📄','Meine Verträge',active==='contracts')+
-    navItem('emergency','✆','Notfallnummer',active==='emergency');
+    navItem('emergency','✆','Notfallnummer',active==='emergency')+
+    '<button class="nav-item" onclick="openDesignSettings()"><span class="ic">🎨</span>Design &amp; Farben</button>';
 }
 /* ============================================================
    FÜHRUNGS-DASHBOARD
@@ -2546,7 +2556,7 @@ function renderAdmin(view){
     });
     const canManageStaff=hasRole('admin');
     c.innerHTML=head('Mitarbeiter',canManageStaff?'Auf einen Mitarbeiter klicken, um alle Daten anzusehen und zu bearbeiten.':'Übersicht über alle Mitarbeiter:innen.')+
-    '<div class="panel"><div class="panel-head"><h3>Team ('+filtered.length+(filtered.length!==staff.length?' von '+staff.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportMitarbeiter()">⬇ CSV</button>'+(canManageStaff?'<button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button>':'')+'</div></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Team ('+filtered.length+(filtered.length!==staff.length?' von '+staff.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportMitarbeiter()">⬇ CSV</button>'+(canManageStaff?'<button class="btn-ghost btn-sm" onclick="openCsvImport(\'staff\')">⬆ CSV-Import</button>':'')+(canManageStaff?'<button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button>':'')+'</div></div>'+
     '<div class="list-toolbar"><input class="search-input" id="staffSearchInput" placeholder="🔍 Mitarbeiter suchen (Name, Funktion, Gebiet)…" value="'+(staffSearch||'').replace(/"/g,'&quot;')+'" oninput="staffSearch=this.value;renderAdmin(\'staff\');setTimeout(()=>{const e=document.getElementById(\'staffSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
       '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['login','Mit Login'],['nologin','Ohne Login']].map(([v,l])=>'<span class="chip '+(staffFilter===v?'on':'')+'" onclick="staffFilter=\''+v+'\';renderAdmin(\'staff\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
@@ -2596,7 +2606,7 @@ function renderAdmin(view){
     });
     const canCreateCust=hasRole('admin','buero','callcenter');
     c.innerHTML=head('Kunden',canCreateCust?'Auf einen Kunden klicken, um Daten anzusehen und zu bearbeiten. Über die Knöpfe rechts erstellst du die Dokumente.':'Übersicht über alle Kund:innen.')+
-    '<div class="panel"><div class="panel-head"><h3>Kunden ('+filtered.length+(filtered.length!==customers.length?' von '+customers.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportKunden()">⬇ CSV</button>'+(canCreateCust?'<button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button>':'')+'</div></div>'+
+    '<div class="panel"><div class="panel-head"><h3>Kunden ('+filtered.length+(filtered.length!==customers.length?' von '+customers.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportKunden()">⬇ CSV</button>'+(canCreateCust?'<button class="btn-ghost btn-sm" onclick="openCsvImport(\'kunden\')">⬆ CSV-Import</button>':'')+(canCreateCust?'<button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button>':'')+'</div></div>'+
     '<div class="list-toolbar"><input class="search-input" id="custSearchInput" placeholder="🔍 Kunde suchen (Name, Gebiet, Bedarf)…" value="'+(custSearch||'').replace(/"/g,'&quot;')+'" oninput="custSearch=this.value;renderAdmin(\'customers\');setTimeout(()=>{const e=document.getElementById(\'custSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
       '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['pg3','Pflegegrad 3+'],['ohneabtretung','Ohne Abtretung']].map(([v,l])=>'<span class="chip '+(custFilter===v?'on':'')+'" onclick="custFilter=\''+v+'\';renderAdmin(\'customers\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
@@ -2930,7 +2940,9 @@ function renderAdmin(view){
   if(view==='mailing'){ c.innerHTML=mailingHTML(); }
   if(view==='schulung'){ c.innerHTML=schulungHTML(); }
   if(view==='notes'){ c.innerHTML=head('Notizen','Bemerkungen zu Mitarbeitern und Kunden. Intern = nur Büro, Mitarbeiter = für die Person sichtbar.')+notesAdminHTML(); }
-  if(view==='calendar'){ c.innerHTML=head('Kalender','Alle Einsätze zentral. Klick auf einen Termin für Details.')+calendarHTML(null); }
+  if(view==='calendar'){ c.innerHTML=head('Kalender','Alle Einsätze zentral. Klick auf einen Termin für Details.')+
+    '<div style="display:flex;justify-content:flex-end;margin:-8px 0 12px"><button class="btn-ghost btn-sm" onclick="openScreenshotImport()">📷 Termine aus Screenshot importieren</button></div>'+
+    calendarHTML(null); }
 }
 
 /* ---- Auftrags-Zusammenfassung (Modal) ---- */
@@ -3690,7 +3702,9 @@ function renderStaff(view){
         '</div></div>';}).join(''):placeholder('☑','Keine Aufgaben','Aktuell hat dir das Büro keine Aufgaben mit diesem Status zugewiesen.'))+
     '</div></div>';
   }
-  if(view==='calendar'){ c.innerHTML=head('Meine Termine','Deine vereinbarten Einsätze. Termine entstehen, wenn du bei „Meine Kunden” einen Termin vereinbarst.')+calendarHTML(myId); }
+  if(view==='calendar'){ c.innerHTML=head('Meine Termine','Deine vereinbarten Einsätze. Termine entstehen, wenn du bei „Meine Kunden” einen Termin vereinbarst.')+
+    '<div style="display:flex;justify-content:flex-end;margin:-8px 0 12px"><button class="btn-ghost btn-sm" onclick="openScreenshotImport()">📷 Termine aus Screenshot importieren</button></div>'+
+    calendarHTML(myId); }
   if(view==='hours'){
     const mine=timesheets.filter(t=>t.staffId===myId);
     c.innerHTML=head('Stundenzettel','Deine Einsätze. Vom Kunden unterschriebene Einsätze kannst du als Leistungsnachweis-PDF herunterladen.')+
@@ -3725,6 +3739,14 @@ function renderStaff(view){
   }
   if(view==='profile'){
     c.innerHTML=head('Mein Profil','Deine Daten, Verfügbarkeit und Status – pflegst du selbst.')+
+    // Profilbild: wird verkleinert gespeichert und erscheint in Kopfzeile & Listen
+    '<div class="panel" style="margin-bottom:16px"><div class="panel-body" style="display:flex;align-items:center;gap:18px;padding:18px 20px;flex-wrap:wrap">'+
+      '<span id="pfAvatarPreview">'+v4AvatarHtml(m,64)+'</span>'+
+      '<div style="flex:1;min-width:220px"><b>Profilbild</b><div style="font-size:13px;color:var(--muted);margin:2px 0 10px">Dein Bild in der Kopfzeile. Es wird automatisch verkleinert.</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-primary btn-sm" style="width:auto" onclick="document.getElementById(\'pfAvatarFile\').click()">📷 Bild hochladen</button>'+
+      (m.avatar?'<button class="btn-ghost btn-sm" onclick="v4RemoveAvatar()">Entfernen</button>':'')+
+      '<input id="pfAvatarFile" type="file" accept="image/*" style="display:none" onchange="v4UploadAvatar(this)"></div></div>'+
+    '</div></div>'+
     '<div class="cards grid-2">'+
       '<div class="panel"><div class="panel-head"><h3>Status & Verfügbarkeit</h3></div>'+
         '<div class="panel-body content-form" style="padding-top:16px">'+
@@ -8360,6 +8382,692 @@ document.addEventListener('keydown',function(e){
 });
 // Stimmen früh laden (manche Browser liefern sie erst nach diesem Event)
 if('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged=function(){};
+})();
+</script>
+
+<!-- ============================================================
+     VERSION 4 (Produktiv) – 04.07.2026
+     1) Neues Design nach Material 3 Expressive (Pills, große Radien,
+        tonale Flächen) – gilt für Mitarbeiter-App und Büro-Ansichten
+     2) Farb-Einstellungen je Nutzer (Admin- & Mitarbeiter-Bereich)
+        + bewegter, interaktiver Hintergrund
+     3) Profilbild-Upload für Mitarbeiter
+     4) CSV-Import für Kunden und Mitarbeiter
+     5) Termin-Import aus Kalender-Screenshot (KI, Edge Function
+        "kalender-import")
+     © 2026 Alltagshilfe Hannover UG (haftungsbeschränkt) – alle Rechte vorbehalten.
+     ============================================================ -->
+<style id="v4Theme">
+  /* ---------- Material 3 Expressive: Formen & Flächen ---------- */
+  html{background:var(--bg)}
+  body{background:transparent}
+  button{transition:transform .12s ease, box-shadow .15s ease, background .15s ease, color .15s ease, border-color .15s ease, filter .15s ease}
+  button:active{transform:scale(.965)}
+  /* Buttons als Pills */
+  .btn-primary,.btn-ghost,.btn-danger-ghost,.btn-accept,.btn-apply,.btn-sm,.logout,.cal-today-btn{border-radius:999px}
+  .btn-primary{box-shadow:0 4px 14px rgba(0,0,0,.14)}
+  .btn-primary:hover{box-shadow:0 6px 18px rgba(0,0,0,.20)}
+  .btn-ghost{background:var(--petrol-soft);border-color:transparent;color:var(--petrol-dark)}
+  .btn-ghost:hover{border-color:transparent;filter:brightness(.96)}
+  /* Eingabefelder: weich, tonal, große Radien */
+  .field input,.content-form input,.content-form select,.content-form textarea{border-radius:16px;background:#fdfcff}
+  .field input{border-radius:18px}
+  .search-input,.gsearch input{border-radius:999px}
+  .role-toggle{border-radius:999px;padding:6px}
+  .role-toggle button{border-radius:999px}
+  /* Chips & Segmente: gefüllte Pille mit Häkchen (wie „Going / Not Going") */
+  .chip{border-radius:999px;padding:8px 15px}
+  .chip.on{box-shadow:0 3px 10px rgba(0,0,0,.14)}
+  .chip.on::before{content:"✓ "}
+  .seg button{border-radius:999px}
+  .seg button.on{background:var(--petrol);border-color:var(--petrol);color:#fff}
+  .seg button.on::before{content:"✓ "}
+  .check{border-radius:999px}
+  .check.on::before{content:"✓ "}
+  .day{border-radius:14px}
+  .tag,.role-pill,.reject-chip{border-radius:999px}
+  /* Navigation: Pillen-Menüpunkte, aktive Punkte kräftig gefüllt */
+  .nav-item{border-radius:999px;padding:11px 16px;margin:1px 0}
+  .nav-item.active{background:var(--petrol);color:#fff;font-weight:700}
+  .nav-item.active:hover{background:var(--petrol-dark);color:#fff}
+  .nav-item.active .badge{background:rgba(255,255,255,.92);color:var(--petrol-dark)}
+  /* Karten, Panels, Modals: große Radien */
+  .panel,.stat,.job{border-radius:26px}
+  .modal{border-radius:28px}
+  .modal-head .x{border-radius:50%}
+  .timer-box{border-radius:22px}
+  .summary{border-radius:18px}
+  details.rowmenu summary{border-radius:999px}
+  .rowmenu-list{border-radius:16px}
+  .gsearch-results{border-radius:18px}
+  /* Kalender-Segmente */
+  .cal-seg{border-radius:999px;padding:4px;background:var(--petrol-soft)}
+  .cal-seg button{border-radius:999px}
+  .cal-seg button.on{background:var(--petrol);color:#fff;box-shadow:none}
+  .cal-arrows button{border-radius:50%}
+  /* Login-Seite folgt der gewählten Farbe */
+  .login-art{background:linear-gradient(150deg,var(--petrol),var(--petrol-dark) 45%,var(--amber))}
+  .btn-apply{background:linear-gradient(135deg,var(--petrol),var(--amber))}
+  .company-logo{background:linear-gradient(135deg,var(--petrol),var(--amber))}
+  /* Avatare rund + Bild-Unterstützung */
+  .who .avatar{overflow:hidden;background-size:cover;background-position:center}
+
+  /* ---------- Interaktiver Hintergrund (Farbverlauf-Kugeln) ---------- */
+  #v4Bg{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+  .login-wrap,.app{position:relative;z-index:1}
+  #v4Bg .bw{position:absolute;will-change:transform;transition:transform 2.6s cubic-bezier(.22,.61,.36,1)}
+  #v4Bg .b{border-radius:50%;filter:blur(80px)}
+  #v4Bg .bw1{left:-140px;top:-120px}
+  #v4Bg .bw1 .b{width:520px;height:520px;background:var(--petrol);opacity:.11;animation:v4drift1 26s ease-in-out infinite alternate}
+  #v4Bg .bw2{right:-140px;top:30%}
+  #v4Bg .bw2 .b{width:460px;height:460px;background:var(--amber);opacity:.10;animation:v4drift2 32s ease-in-out infinite alternate}
+  #v4Bg .bw3{left:35%;bottom:-180px}
+  #v4Bg .bw3 .b{width:430px;height:430px;background:var(--petrol-dark);opacity:.08;animation:v4drift3 38s ease-in-out infinite alternate}
+  @keyframes v4drift1{from{transform:translate(0,0) scale(1)}to{transform:translate(90px,60px) scale(1.14)}}
+  @keyframes v4drift2{from{transform:translate(0,0) scale(1.08)}to{transform:translate(-110px,-70px) scale(.94)}}
+  @keyframes v4drift3{from{transform:translate(0,0)}to{transform:translate(70px,-80px) scale(1.18)}}
+  @media (prefers-reduced-motion: reduce){#v4Bg .b{animation:none}#v4Bg .bw{transition:none}}
+  body.v4-noanim #v4Bg{display:none}
+
+  /* ---------- Design-Einstellungen ---------- */
+  .v4-swatches{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 6px}
+  .v4-swatch{width:46px;height:46px;border-radius:50%;cursor:pointer;border:3px solid transparent;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+  .v4-swatch.on{border-color:var(--ink)}
+  .v4-colorrow{display:flex;gap:12px;align-items:center;margin:12px 0;flex-wrap:wrap}
+  .v4-colorrow label{font-size:13.5px;font-weight:600;min-width:130px}
+  .v4-colorrow input[type=color]{width:52px;height:36px;border:1px solid var(--line);border-radius:12px;padding:2px;background:#fff;cursor:pointer}
+
+  /* ---------- CSV-Import & Screenshot-Import ---------- */
+  .v4-drop{border:2px dashed var(--line);border-radius:22px;padding:28px 18px;text-align:center;color:var(--muted);cursor:pointer;background:#fdfcff;transition:.15s}
+  .v4-drop:hover{border-color:var(--petrol);background:var(--petrol-soft)}
+  .v4-map-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin-top:6px}
+  @media(max-width:640px){.v4-map-grid{grid-template-columns:1fr}}
+  .v4-map-grid label{font-size:12.5px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px}
+  .v4-map-grid select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:13px}
+  .v4-prev{overflow:auto;max-height:200px;border:1px solid var(--line);border-radius:16px;margin-top:12px}
+  .v4-prev table{font-size:12px;min-width:600px}
+  .v4-prev th,.v4-prev td{padding:7px 8px;white-space:nowrap}
+  .v4-shot-rows{overflow:auto;max-height:320px;border:1px solid var(--line);border-radius:16px;margin-top:12px}
+  .v4-shot-rows table{font-size:13px;min-width:640px}
+  .v4-shot-rows th,.v4-shot-rows td{padding:7px 8px;white-space:nowrap}
+  .v4-shot-rows input,.v4-shot-rows select{padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:13px}
+  .v4-status{margin-top:12px;font-size:13.5px;color:var(--muted)}
+  .v4-status.err{color:var(--danger)}
+</style>
+<script>
+(function(){
+'use strict';
+/* V4-Modul: kapselt alle neuen Funktionen; Fehler hier dürfen die App nie blockieren. */
+function v4Safe(fn,fb){ try{ return fn(); }catch(e){ console.warn('V4:',e&&(e.message||e)); return fb; } }
+function v4Esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function v4EscA(s){ return v4Esc(s).replace(/"/g,'&quot;'); }
+function v4HasCloud(){ try{ return !!(CLOUD && sb); }catch(e){ return false; } }
+
+/* ============ 1) FARB-THEME (je Nutzer, auf diesem Gerät) ============ */
+const V4_PRESETS=[
+  {name:'Flieder', a:'#6d28d9', b:'#ff6b9d'},
+  {name:'Ozean',   a:'#0369a1', b:'#f59e0b'},
+  {name:'Wald',    a:'#047857', b:'#f97316'},
+  {name:'Beere',   a:'#be185d', b:'#7c3aed'},
+  {name:'Sonne',   a:'#c2410c', b:'#7c3aed'},
+  {name:'Graphit', a:'#334155', b:'#e11d48'}
+];
+function v4LoadTheme(){
+  try{ const t=JSON.parse(localStorage.getItem('dailydo-design-v4')||'{}');
+    return { a:/^#[0-9a-fA-F]{6}$/.test(t.a||'')?t.a:'#6d28d9', b:/^#[0-9a-fA-F]{6}$/.test(t.b||'')?t.b:'#ff6b9d', anim:t.anim!==false };
+  }catch(e){ return {a:'#6d28d9',b:'#ff6b9d',anim:true}; }
+}
+function v4SaveTheme(t){ try{ localStorage.setItem('dailydo-design-v4',JSON.stringify(t)); }catch(e){} }
+function v4HexHsl(hex){
+  const n=parseInt(hex.slice(1),16), r=(n>>16&255)/255, g=(n>>8&255)/255, b=(n&255)/255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b); let h=0,s=0; const l=(mx+mn)/2;
+  if(mx!==mn){ const d=mx-mn; s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+    h= mx===r ? (g-b)/d+(g<b?6:0) : mx===g ? (b-r)/d+2 : (r-g)/d+4; h/=6; }
+  return [h*360, s*100, l*100];
+}
+function v4HslHex(h,s,l){
+  h/=360; s/=100; l/=100;
+  const f=(p,q,t)=>{ if(t<0)t+=1; if(t>1)t-=1; if(t<1/6)return p+(q-p)*6*t; if(t<1/2)return q; if(t<2/3)return p+(q-p)*(2/3-t)*6; return p; };
+  let r,g,b;
+  if(s===0){ r=g=b=l; }
+  else{ const q=l<0.5?l*(1+s):l+s-l*s, p=2*l-q; r=f(p,q,h+1/3); g=f(p,q,h); b=f(p,q,h-1/3); }
+  const to=x=>Math.round(x*255).toString(16).padStart(2,'0');
+  return '#'+to(r)+to(g)+to(b);
+}
+function v4ApplyTheme(t){
+  const r=document.documentElement.style;
+  const [h,s,l]=v4HexHsl(t.a), [h2,s2]=v4HexHsl(t.b);
+  r.setProperty('--petrol',t.a);
+  r.setProperty('--petrol-dark',v4HslHex(h,Math.min(s+6,96),Math.max(l-16,12)));
+  r.setProperty('--petrol-soft',v4HslHex(h,Math.min(s,85),95));
+  r.setProperty('--blue',t.a);
+  r.setProperty('--blue-soft',v4HslHex(h,Math.min(s,85),95));
+  r.setProperty('--amber',t.b);
+  r.setProperty('--amber-soft',v4HslHex(h2,Math.min(s2,90),94));
+  r.setProperty('--bg',v4HslHex(h,34,98));
+  r.setProperty('--line',v4HslHex(h,32,91));
+  r.setProperty('--shadow','0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.08)');
+  document.body.classList.toggle('v4-noanim',!t.anim);
+}
+function v4SetTheme(t){ v4SaveTheme(t); v4ApplyTheme(t); }
+function openDesignSettings(){
+  const t=v4LoadTheme();
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Design & Farben';
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin-bottom:6px">Wähle dein Farbschema. Die Einstellung gilt nur für dich auf diesem Gerät – jede:r im Team kann sich die App selbst einfärben.</p>'+
+    '<div class="section-label">Fertige Farbwelten</div>'+
+    '<div class="v4-swatches">'+V4_PRESETS.map((p,i)=>
+      '<span class="v4-swatch '+(t.a.toLowerCase()===p.a?'on':'')+'" title="'+p.name+'" style="background:linear-gradient(135deg,'+p.a+' 50%,'+p.b+' 50%)" onclick="v4PickPreset('+i+')"></span>').join('')+'</div>'+
+    '<div class="section-label">Eigene Farben</div>'+
+    '<div class="v4-colorrow"><label>Hauptfarbe</label><input type="color" id="v4ColA" value="'+t.a+'" oninput="v4ColorInput()"><span style="font-size:12.5px;color:var(--muted)">Menü, Knöpfe, Überschriften</span></div>'+
+    '<div class="v4-colorrow"><label>Akzentfarbe</label><input type="color" id="v4ColB" value="'+t.b+'" oninput="v4ColorInput()"><span style="font-size:12.5px;color:var(--muted)">Hinweise, Markierungen</span></div>'+
+    '<div class="section-label">Hintergrund</div>'+
+    '<label style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer;padding:6px 0"><input type="checkbox" id="v4Anim" '+(t.anim?'checked':'')+' onchange="v4ColorInput()" style="width:18px;height:18px"> Bewegter Farbverlauf im Hintergrund</label>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="v4ResetTheme()">Zurücksetzen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 22px" onclick="closeModal()">Fertig</button>';
+  openModal();
+}
+function v4PickPreset(i){ const p=V4_PRESETS[i]; if(!p)return; v4SetTheme({a:p.a,b:p.b,anim:v4LoadTheme().anim}); openDesignSettings(); }
+function v4ColorInput(){
+  const a=document.getElementById('v4ColA'), b=document.getElementById('v4ColB'), an=document.getElementById('v4Anim');
+  v4SetTheme({ a:a?a.value:'#6d28d9', b:b?b.value:'#ff6b9d', anim:an?an.checked:true });
+}
+function v4ResetTheme(){ v4SetTheme({a:'#6d28d9',b:'#ff6b9d',anim:true}); openDesignSettings(); }
+
+/* ============ 2) INTERAKTIVER HINTERGRUND ============ */
+function v4EnsureBg(){
+  if(document.getElementById('v4Bg')) return;
+  const d=document.createElement('div'); d.id='v4Bg';
+  d.innerHTML='<div class="bw bw1"><div class="b"></div></div><div class="bw bw2"><div class="b"></div></div><div class="bw bw3"><div class="b"></div></div>';
+  document.body.prepend(d);
+  let raf=null;
+  window.addEventListener('pointermove',function(e){
+    if(raf || document.body.classList.contains('v4-noanim')) return;
+    raf=requestAnimationFrame(function(){
+      raf=null;
+      const x=(e.clientX/window.innerWidth-.5), y=(e.clientY/window.innerHeight-.5);
+      const w=d.querySelectorAll('.bw');
+      if(w[0]) w[0].style.transform='translate('+(x*46)+'px,'+(y*34)+'px)';
+      if(w[1]) w[1].style.transform='translate('+(x*-64)+'px,'+(y*-42)+'px)';
+      if(w[2]) w[2].style.transform='translate('+(x*28)+'px,'+(y*-26)+'px)';
+    });
+  },{passive:true});
+}
+
+/* ============ 3) PROFILBILD (Mitarbeiter) ============ */
+function v4AvatarHtml(m,size){
+  size=size||34;
+  const av=m&&m.avatar;
+  const ini=v4Safe(function(){ return initials(m); },'');
+  return '<span class="avatar" style="display:inline-grid;place-items:center;border-radius:50%;background:var(--amber);color:#fff;font-weight:700;width:'+size+'px;height:'+size+'px;font-size:'+Math.round(size*.4)+'px;'+
+    (av?'background-image:url('+av+');background-size:cover;background-position:center;color:transparent;':'')+'">'+v4Esc(ini)+'</span>';
+}
+function v4ApplyTopbarAvatar(m){
+  const el=document.getElementById('avatar'); if(!el) return;
+  if(m&&m.avatar){ el.style.backgroundImage='url('+m.avatar+')'; el.style.backgroundSize='cover'; el.style.backgroundPosition='center'; el.textContent=''; }
+  else{ el.style.backgroundImage=''; if(m) el.textContent=v4Safe(function(){return initials(m);},''); }
+}
+function v4UploadAvatar(input){
+  const f=input&&input.files&&input.files[0]; if(!f) return;
+  if((f.type||'').indexOf('image/')!==0){ toast('Bitte eine Bilddatei wählen',true); return; }
+  if(f.size>8*1024*1024){ toast('Bild zu groß (max. 8 MB)',true); return; }
+  const url=URL.createObjectURL(f);
+  const img=new Image();
+  img.onload=function(){
+    try{
+      const S=192, c=document.createElement('canvas'); c.width=S; c.height=S;
+      const side=Math.min(img.width,img.height);
+      c.getContext('2d').drawImage(img,(img.width-side)/2,(img.height-side)/2,side,side,0,0,S,S);
+      const data=c.toDataURL('image/jpeg',0.82);
+      URL.revokeObjectURL(url);
+      const m=me(); if(!m){ toast('Profil nicht gefunden',true); return; }
+      m.avatar=data;
+      v4SaveAvatarQuiet(m);
+      v4ApplyTopbarAvatar(m);
+      toast('Profilbild gespeichert');
+      renderStaff('profile');
+    }catch(e){ toast('Bild konnte nicht verarbeitet werden',true); }
+  };
+  img.onerror=function(){ URL.revokeObjectURL(url); toast('Bild konnte nicht gelesen werden',true); };
+  img.src=url;
+}
+async function v4SaveAvatarQuiet(m){
+  if(!v4HasCloud()||!m||!m.id) return;
+  try{
+    const {error}=await sb.from('mitarbeiter').update({avatar:m.avatar||null}).eq('id',m.id);
+    if(error){ console.warn('Profilbild speichern: '+error.message+' – bitte V4_MIGRATION.sql ausführen');
+      toast('Hinweis: Bild nur auf diesem Gerät gespeichert (Datenbank-Spalte fehlt – V4_MIGRATION.sql)',true); }
+  }catch(e){ console.warn('Profilbild speichern',e); }
+}
+function v4RemoveAvatar(){
+  const m=me(); if(!m) return;
+  m.avatar='';
+  v4SaveAvatarQuiet(m);
+  v4ApplyTopbarAvatar(m);
+  renderStaff('profile');
+}
+
+/* ============ 4) CSV-IMPORT (Kunden & Mitarbeiter) ============ */
+/* Ziel-Felder je Import-Art: [interner Name, Anzeigename, Erkennungs-Wörter] */
+const V4_FIELDS={
+  staff:[
+    ['first','Vorname *',['vorname','first','firstname']],
+    ['last','Nachname *',['nachname','last','lastname','familienname','name']],
+    ['role','Funktion',['funktion','rolle','position','taetigkeit','tätigkeit']],
+    ['phone','Telefon',['telefon','phone','handy','mobil','telefonnummer']],
+    ['email','E-Mail',['email','e-mail','mail']],
+    ['area','Gebiet',['gebiet','stadtteil','einsatzgebiet','bezirk']],
+    ['birth','Geburtsdatum',['geburtsdatum','geboren','geb.','geburtstag']],
+    ['address','Adresse',['adresse','anschrift','wohnort']],
+    ['taxId','Steuer-ID',['steuer-id','steuerid','steuer id','identifikationsnummer','idnr']],
+    ['taxClass','Steuerklasse',['steuerklasse','stkl']],
+    ['employment','Anstellungsart',['anstellungsart','anstellung','beschaeftigung','beschäftigung','vertragsart']],
+    ['kvNr','KV-Nummer',['kv-nummer','kvnr','versichertennummer','kv nummer']],
+    ['kasse','Krankenkasse',['krankenkasse','kasse']],
+    ['citizenship','Staatsbürgerschaft',['staatsbuergerschaft','staatsbürgerschaft','staatsangehoerigkeit','staatsangehörigkeit','nationalitaet','nationalität']],
+    ['iban','IBAN',['iban']],
+    ['wage','Stundenlohn (€)',['stundenlohn','lohn','wage','stundensatz']]
+  ],
+  kunden:[
+    ['first','Vorname *',['vorname','first','firstname']],
+    ['last','Nachname *',['nachname','last','lastname','familienname','name']],
+    ['street','Straße',['strasse','straße','street']],
+    ['houseNo','Hausnummer',['hausnummer','hausnr','haus-nr','nr']],
+    ['plz','PLZ',['plz','postleitzahl']],
+    ['city','Ort',['ort','stadt','city','wohnort']],
+    ['area','Gebiet/Stadtteil',['gebiet','stadtteil','bezirk']],
+    ['phoneMobile','Telefon mobil',['telefon mobil','mobil','handy','mobilnummer']],
+    ['phoneLandline','Telefon Festnetz',['festnetz','telefon festnetz','telefon','telefonnummer']],
+    ['email','E-Mail',['email','e-mail','mail']],
+    ['birth','Geburtsdatum',['geburtsdatum','geboren','geb.','geburtstag']],
+    ['pgrad','Pflegegrad',['pflegegrad','pg']],
+    ['status','Status',['status']],
+    ['insuranceType','Versicherungsart',['versicherungsart','versicherung']],
+    ['kasse','Krankenkasse',['krankenkasse','kasse']],
+    ['kvNr','KV-Nummer',['kv-nummer','kvnr','versichertennummer']],
+    ['need','Bedarf/Leistungen',['bedarf','leistung','leistungen']],
+    ['notes','Notizen',['notizen','notiz','bemerkung','bemerkungen','hinweis']]
+  ]
+};
+let __v4Csv=null; // {kind, headers, rows}
+function v4CsvNorm(s){
+  return String(s||'').toLowerCase()
+    .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
+    .replace(/[^a-z0-9]+/g,' ').trim();
+}
+function openCsvImport(kind){
+  if(kind==='staff'){ if(!requireAdminAction()) return; }
+  else{ if(!requireRoleAction('admin','buero','callcenter')) return; }
+  __v4Csv={kind:kind,headers:null,rows:null};
+  const label=kind==='staff'?'Mitarbeiter':'Kunden';
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent=label+' aus CSV importieren';
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin-bottom:12px">Lade eine CSV-Datei hoch (z. B. aus Excel: „Speichern unter → CSV"). '+
+    'Danach ordnest du die Spalten zu und siehst eine Vorschau, bevor etwas gespeichert wird.'+
+    (kind==='kunden'?' Importierte Kunden werden ohne automatischen Auftrag angelegt – Aufträge kannst du danach gezielt freigeben.':'')+'</p>'+
+    '<div class="v4-drop" onclick="document.getElementById(\'v4CsvFile\').click()">📄 CSV-Datei auswählen<br><span style="font-size:12px">Trennzeichen ; oder , – Umlaute werden automatisch erkannt</span></div>'+
+    '<input type="file" id="v4CsvFile" accept=".csv,text/csv,text/plain" style="display:none" onchange="v4CsvFileChosen(this)">'+
+    '<div style="margin-top:10px;text-align:center"><button class="btn-ghost btn-sm" onclick="v4CsvTemplate(\''+kind+'\')">⬇ Muster-CSV herunterladen</button></div>'+
+    '<div id="v4CsvMap"></div>'+
+    '<div id="v4CsvStatus" class="v4-status"></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal();document.getElementById(\'modalBox\').classList.remove(\'wide\')">Abbrechen</button>'+
+    '<button class="btn-primary" id="v4CsvGo" style="width:auto;padding:11px 22px;display:none" onclick="v4RunCsvImport()">Importieren</button>';
+  openModal();
+}
+function v4CsvTemplate(kind){
+  const cols=V4_FIELDS[kind].map(f=>f[1].replace(' *',''));
+  const example=kind==='staff'
+    ? ['Maria','Muster','Haushaltshilfe','0511 123456','maria@example.de','Hannover-Linden','01.05.1990','Musterweg 1, 30159 Hannover','12345678901','I','Minijob','A123456789','AOK','Deutsch','DE00 0000 0000 0000 0000 00','14,00']
+    : ['Erika','Beispiel','Musterstraße','2a','30159','Hannover','Hannover-Mitte','0170 1234567','0511 987654','erika@example.de','12.03.1948','2','aktiv','gesetzlich','AOK','A123456789','Haushaltshilfe, Einkaufsservice','Bitte vormittags anrufen'];
+  const csv='﻿'+cols.join(';')+'\n'+example.join(';')+'\n'; // BOM: Excel erkennt UTF-8
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download=(kind==='staff'?'mitarbeiter':'kunden')+'_vorlage.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); },4000);
+}
+function v4CsvFileChosen(input){
+  const f=input&&input.files&&input.files[0]; if(!f) return;
+  if(f.size>5*1024*1024){ v4CsvStatus('Datei zu groß (max. 5 MB)',true); return; }
+  const r=new FileReader();
+  r.onload=function(){
+    let text='';
+    try{ text=new TextDecoder('utf-8',{fatal:false}).decode(r.result); }catch(e){}
+    if(text.indexOf('�')>-1){ // Ersetzungszeichen -> vermutlich Windows-Kodierung (Excel-Standard)
+      try{ text=new TextDecoder('windows-1252').decode(r.result); }catch(e){}
+    }
+    text=text.replace(/^﻿/,'');
+    const rows=v4ParseCsv(text);
+    if(rows.length<2){ v4CsvStatus('Die Datei enthält keine Datenzeilen (erste Zeile = Spaltenüberschriften, danach die Daten).',true); return; }
+    __v4Csv.headers=rows[0].map(h=>String(h||'').trim());
+    __v4Csv.rows=rows.slice(1);
+    v4CsvMapUI();
+  };
+  r.readAsArrayBuffer(f);
+}
+function v4ParseCsv(text){
+  const nl=text.indexOf('\n');
+  const firstLine=nl>-1?text.slice(0,nl):text;
+  const cand=[[';',(firstLine.match(/;/g)||[]).length],[',',(firstLine.match(/,/g)||[]).length],['\t',(firstLine.match(/\t/g)||[]).length]];
+  cand.sort(function(a,b){return b[1]-a[1];});
+  const delim=cand[0][1]>0?cand[0][0]:';';
+  const rows=[]; let row=[],cur='',inQ=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(inQ){
+      if(ch==='"'){ if(text[i+1]==='"'){ cur+='"'; i++; } else inQ=false; }
+      else cur+=ch;
+    }
+    else if(ch==='"') inQ=true;
+    else if(ch===delim){ row.push(cur); cur=''; }
+    else if(ch==='\n'||ch==='\r'){
+      if(ch==='\r'&&text[i+1]==='\n') i++;
+      row.push(cur); cur='';
+      if(row.some(function(c){return String(c).trim()!=='';})) rows.push(row);
+      row=[];
+    }
+    else cur+=ch;
+  }
+  if(cur!==''||row.length){ row.push(cur); if(row.some(function(c){return String(c).trim()!=='';})) rows.push(row); }
+  return rows;
+}
+function v4CsvStatus(msg,err){
+  const el=document.getElementById('v4CsvStatus');
+  if(el){ el.textContent=msg; el.classList.toggle('err',!!err); }
+}
+function v4CsvMapUI(){
+  const kind=__v4Csv.kind, headers=__v4Csv.headers, rows=__v4Csv.rows;
+  const opts=function(sel){
+    return '<option value="">— nicht importieren —</option>'+headers.map(function(h,i){
+      return '<option value="'+i+'" '+(sel===i?'selected':'')+'>'+v4Esc(h||('Spalte '+(i+1)))+'</option>';
+    }).join('');
+  };
+  // Spalten automatisch anhand der Überschrift vorschlagen
+  const normHeaders=headers.map(v4CsvNorm);
+  const guess=function(aliases){
+    for(let a=0;a<aliases.length;a++){
+      const alias=v4CsvNorm(aliases[a]);
+      let idx=normHeaders.indexOf(alias);
+      if(idx>-1) return idx;
+      idx=normHeaders.findIndex(function(h){ return h&&alias&&(h.indexOf(alias)>-1||alias.indexOf(h)>-1); });
+      if(idx>-1) return idx;
+    }
+    return null;
+  };
+  const used={};
+  const mapHtml=V4_FIELDS[kind].map(function(f){
+    let g=guess(f[2]);
+    if(g!==null&&used[g]) g=null; // jede Spalte nur einmal vorschlagen
+    if(g!==null) used[g]=true;
+    return '<div><label>'+v4Esc(f[1])+'</label><select id="v4map_'+f[0]+'">'+opts(g)+'</select></div>';
+  }).join('');
+  const prevHead=headers.map(function(h){return '<th>'+v4Esc(h)+'</th>';}).join('');
+  const prevRows=rows.slice(0,5).map(function(r){
+    return '<tr>'+headers.map(function(_,i){return '<td>'+v4Esc(r[i]||'')+'</td>';}).join('')+'</tr>';
+  }).join('');
+  document.getElementById('v4CsvMap').innerHTML=
+    '<div class="section-label">Spalten zuordnen</div>'+
+    '<div class="v4-map-grid">'+mapHtml+'</div>'+
+    '<div class="section-label">Vorschau ('+rows.length+' Datenzeilen)</div>'+
+    '<div class="v4-prev"><table><thead><tr>'+prevHead+'</tr></thead><tbody>'+prevRows+'</tbody></table></div>';
+  v4CsvStatus(rows.length+' Zeilen erkannt. Bitte Zuordnung prüfen und auf „Importieren" klicken.');
+  const go=document.getElementById('v4CsvGo'); if(go) go.style.display='';
+}
+function v4DateIso(v){
+  v=String(v||'').trim(); if(!v) return '';
+  let m=v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if(m) return m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
+  m=v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  return '';
+}
+function v4RunCsvImport(){
+  const kind=__v4Csv&&__v4Csv.kind;
+  if(!__v4Csv||!__v4Csv.rows){ v4CsvStatus('Bitte zuerst eine Datei wählen.',true); return; }
+  if(kind==='staff'){ if(!requireAdminAction()) return; }
+  else{ if(!requireRoleAction('admin','buero','callcenter')) return; }
+  const map={};
+  V4_FIELDS[kind].forEach(function(f){
+    const el=document.getElementById('v4map_'+f[0]);
+    map[f[0]]=(el&&el.value!=='')?parseInt(el.value):null;
+  });
+  if(map.first===null||map.last===null){ v4CsvStatus('Bitte mindestens Vorname und Nachname zuordnen.',true); return; }
+  const get=function(row,key){ return map[key]===null?'':cleanInput(String(row[map[key]]||'').trim(),300); };
+  let created=0, skipped=0, faulty=0;
+  const inserts=[];
+  __v4Csv.rows.forEach(function(row){
+    const first=get(row,'first'), last=get(row,'last');
+    if(!first&&!last){ faulty++; return; }
+    // Duplikate überspringen (gleicher Vor- + Nachname existiert bereits)
+    const list=kind==='staff'?staff:customers;
+    const dup=list.some(function(x){ return (x.first||'').toLowerCase()===first.toLowerCase() && (x.last||'').toLowerCase()===last.toLowerCase(); });
+    if(dup){ skipped++; return; }
+    if(kind==='staff'){
+      const s={ id:nextStaffId++, first:first, last:last,
+        role:get(row,'role')||'Haushaltshilfe', status:'aktiv',
+        skills:[], area:get(row,'area'), phone:get(row,'phone'), email:get(row,'email'),
+        maxHours:20, days:[], window:'Flexibel', hasLogin:false, login:'',
+        color:nextColor(), wage:parseEuroNum(get(row,'wage'))||14,
+        bonus:{earned:0,pending:0,reason:''}, daysWorked:0,
+        intern:{ birth:get(row,'birth'), address:get(row,'address'), taxId:get(row,'taxId'),
+          taxClass:get(row,'taxClass')||'I', kvNr:get(row,'kvNr'), kasse:get(row,'kasse'),
+          employment:get(row,'employment')||'Minijob', citizenship:get(row,'citizenship'), iban:get(row,'iban') } };
+      if(s.email&&!isValidEmail(s.email)) s.email='';
+      staff.push(s);
+      if(v4HasCloud()) inserts.push(cloudInsert('mitarbeiter',staffToRow(s)).then(function(r){ if(r&&r.id) s.id=r.id; }));
+      created++;
+    }else{
+      const street=get(row,'street'), houseNo=get(row,'houseNo'), plz=get(row,'plz'), city=get(row,'city');
+      const mobile=get(row,'phoneMobile'), landline=get(row,'phoneLandline');
+      const address=(street?(street+(houseNo?' '+houseNo:'')):'')+((plz||city)?((street?', ':'')+plz+(city?' '+city:'')):'');
+      const statusRaw=get(row,'status').toLowerCase();
+      const c={ id:nextCustomerId++, first:first, last:last,
+        street:street, houseNo:houseNo, plz:plz, city:city,
+        address:address||'—', area:get(row,'area')||city||'',
+        phoneMobile:mobile, phoneLandline:landline, phone:mobile||landline||'—',
+        email:get(row,'email'), birth:v4DateIso(get(row,'birth')),
+        pgrad:(get(row,'pgrad').match(/[1-5]/)||['1'])[0],
+        status:statusRaw.indexOf('interess')>-1?'Interessent':'aktiv',
+        need:get(row,'need')?get(row,'need').split(/[,;\/]+/).map(function(x){return x.trim();}).filter(Boolean):[],
+        freqNum:1, freqUnit:'pro Woche', timeWindows:[], pets:[], petNote:'', angehoerige:[],
+        contactName:'', contactPhone:'', noContact:false, noNotes:false,
+        notes:get(row,'notes'),
+        insuranceType:(get(row,'insuranceType').toLowerCase().indexOf('priv')>-1)?'privat':'gesetzlich', beihilfePct:'',
+        intern:{ kvNr:get(row,'kvNr'), kasse:get(row,'kasse'), budget:'', budgetUsed:'' },
+        leistungen:[], leadQuelle:'', startDatum:'', endeDatum:'', endeGrund:'' };
+      if(c.email&&!isValidEmail(c.email)) c.email='';
+      customers.push(c);
+      if(v4HasCloud()) inserts.push(cloudInsert('kunden',custToRow(c)).then(function(r){
+        if(r&&r.id){ c.id=r.id; saveCustomerExtrasQuiet(c); }
+      }));
+      created++;
+    }
+  });
+  Promise.all(inserts).catch(function(){});
+  logActivity('CSV-Import: '+created+' '+(kind==='staff'?'Mitarbeiter':'Kunden')+' angelegt'+(skipped?(', '+skipped+' Duplikate übersprungen'):''));
+  closeModal();
+  document.getElementById('modalBox').classList.remove('wide');
+  toast(created+' '+(kind==='staff'?'Mitarbeiter':'Kunden')+' importiert'+(skipped?(' · '+skipped+' Duplikate übersprungen'):'')+(faulty?(' · '+faulty+' Zeilen ohne Namen ignoriert'):''));
+  renderAdmin(kind==='staff'?'staff':'customers');
+}
+
+/* ============ 5) TERMIN-IMPORT AUS KALENDER-SCREENSHOT (KI) ============ */
+let __v4Shot=null; // {b64,type} nach Bildwahl; Ergebnis in __v4ShotRows
+let __v4ShotRows=[];
+function openScreenshotImport(){
+  __v4Shot=null; __v4ShotRows=[];
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Termine aus Screenshot importieren';
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin-bottom:12px">Lade einen Screenshot aus einem anderen Kalender hoch (Foto oder Bildschirmfoto). '+
+    'Die KI liest Datum, Uhrzeit, Dauer und Kundennamen heraus. Du prüfst alles in einer Vorschau – erst mit „Termine anlegen" wird gespeichert.</p>'+
+    '<div class="v4-drop" onclick="document.getElementById(\'v4ShotFile\').click()" id="v4ShotDrop">📷 Screenshot auswählen<br><span style="font-size:12px">PNG oder JPG, max. 8 MB</span></div>'+
+    '<input type="file" id="v4ShotFile" accept="image/*" style="display:none" onchange="v4ShotChosen(this)">'+
+    '<div id="v4ShotPrev" style="margin-top:12px"></div>'+
+    '<label style="display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin:12px 0 4px">Hinweis für die KI (optional)</label>'+
+    '<input id="v4shot_hint" placeholder="z. B. Wochenansicht, KW 28, Namen sind Nachnamen der Kunden" style="width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:14px">'+
+    '<div id="v4ShotRows"></div>'+
+    '<div id="v4ShotStatus" class="v4-status"></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal();document.getElementById(\'modalBox\').classList.remove(\'wide\')">Abbrechen</button>'+
+    '<button class="btn-primary" id="v4ShotAnalyze" style="width:auto;padding:11px 22px;display:none" onclick="v4AnalyzeShot()">🤖 Analysieren</button>'+
+    '<button class="btn-primary" id="v4ShotCreate" style="width:auto;padding:11px 22px;display:none" onclick="v4CreateShotAppts()">Termine anlegen</button>';
+  openModal();
+}
+function v4ShotStatus(msg,err){
+  const el=document.getElementById('v4ShotStatus');
+  if(el){ el.textContent=msg; el.classList.toggle('err',!!err); }
+}
+function v4ShotChosen(input){
+  const f=input&&input.files&&input.files[0]; if(!f) return;
+  if((f.type||'').indexOf('image/')!==0){ v4ShotStatus('Bitte eine Bilddatei wählen (PNG/JPG).',true); return; }
+  if(f.size>8*1024*1024){ v4ShotStatus('Bild zu groß (max. 8 MB).',true); return; }
+  const url=URL.createObjectURL(f);
+  const img=new Image();
+  img.onload=function(){
+    try{
+      // Verkleinern spart Übertragung und KI-Kosten, bleibt aber gut lesbar
+      const MAX=1500;
+      let w=img.width,h=img.height;
+      if(Math.max(w,h)>MAX){ const k=MAX/Math.max(w,h); w=Math.round(w*k); h=Math.round(h*k); }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      const dataUrl=c.toDataURL('image/jpeg',0.85);
+      URL.revokeObjectURL(url);
+      __v4Shot={ b64:dataUrl.split(',')[1], type:'image/jpeg' };
+      const prev=document.getElementById('v4ShotPrev');
+      if(prev) prev.innerHTML='<img src="'+dataUrl+'" style="max-width:100%;max-height:220px;border-radius:16px;border:1px solid var(--line)">';
+      const b=document.getElementById('v4ShotAnalyze'); if(b) b.style.display='';
+      v4ShotStatus('Bild bereit. Klicke auf „Analysieren".');
+    }catch(e){ v4ShotStatus('Bild konnte nicht verarbeitet werden.',true); }
+  };
+  img.onerror=function(){ URL.revokeObjectURL(url); v4ShotStatus('Bild konnte nicht gelesen werden.',true); };
+  img.src=url;
+}
+async function v4AnalyzeShot(){
+  if(!__v4Shot){ v4ShotStatus('Bitte zuerst einen Screenshot wählen.',true); return; }
+  if(!v4HasCloud()){ v4ShotStatus('Keine Cloud-Verbindung – Analyse nicht möglich.',true); return; }
+  const btn=document.getElementById('v4ShotAnalyze'); if(btn){ btn.disabled=true; btn.textContent='⏳ KI liest den Screenshot …'; }
+  v4ShotStatus('Die KI analysiert den Screenshot – das dauert einige Sekunden …');
+  try{
+    const {data:sd}=await sb.auth.getSession();
+    const token=sd&&sd.session&&sd.session.access_token;
+    if(!token) throw new Error('Keine gültige Sitzung');
+    const res=await fetch(SUPABASE_URL+'/functions/v1/kalender-import',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body:JSON.stringify({ image:__v4Shot.b64, mediaType:__v4Shot.type,
+        hinweis:cleanInput(val('v4shot_hint')||'',300), jahr:new Date().getFullYear() })
+    });
+    const data=await res.json().catch(function(){ return {}; });
+    if(!res.ok||data.error) throw new Error(data.error||('HTTP '+res.status+' – ist die Edge Function „kalender-import" in Supabase deployt?'));
+    const termine=Array.isArray(data.termine)?data.termine:[];
+    if(!termine.length){ v4ShotStatus('Die KI konnte keine Termine im Bild erkennen. Versuche einen deutlicheren Ausschnitt oder ergänze einen Hinweis.',true); return; }
+    __v4ShotRows=termine.slice(0,60).map(function(t){
+      const match=v4MatchCustomer(t.kunde||t.name||'');
+      return { on:true, date:v4DateIso(t.date||t.datum||'')||todayISO(), time:String(t.time||t.uhrzeit||'09:00').slice(0,5),
+        duration:parseInt(t.duration||t.dauer)||60, kunde:String(t.kunde||t.name||''),
+        customerId:match?match.id:'', note:cleanInput(String(t.note||t.notiz||''),200) };
+    });
+    v4RenderShotRows();
+    v4ShotStatus(__v4ShotRows.length+' Termine erkannt. Bitte Zuordnung prüfen – ohne Kunden-Zuordnung wird eine Zeile nicht angelegt.');
+  }catch(e){
+    v4ShotStatus('Fehler: '+(e&&e.message||e),true);
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='🤖 Analysieren'; }
+  }
+}
+function v4Norm2(s){
+  return String(s||'').toLowerCase().replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function v4MatchCustomer(name){
+  const n=v4Norm2(name); if(!n) return null;
+  let best=null,bestScore=0;
+  customers.forEach(function(c){
+    const full=v4Norm2((c.first||'')+' '+(c.last||'')), last=v4Norm2(c.last||''), first=v4Norm2(c.first||'');
+    let score=0;
+    if(full===n) score=100;
+    else if(last&&n===last) score=90;
+    else if(last&&n.indexOf(last)>-1) score=75;
+    else if(first&&n.indexOf(first)>-1) score=40;
+    else n.split(' ').forEach(function(t){ if(t.length>2&&full.indexOf(t)>-1) score+=30; });
+    if(score>bestScore){ bestScore=score; best=c; }
+  });
+  return bestScore>=30?best:null;
+}
+function v4RenderShotRows(){
+  const office=v4Safe(function(){ return isOfficeRole(); },false);
+  const custOpts=function(sel){
+    return '<option value="">— Kunde wählen —</option>'+customers.slice().sort(function(a,b){return (a.last||'').localeCompare(b.last||'');}).map(function(c){
+      return '<option value="'+c.id+'" '+(String(sel)===String(c.id)?'selected':'')+'>'+v4Esc(fullName(c))+'</option>';
+    }).join('');
+  };
+  const staffOpts=function(sel){
+    return '<option value="">— Mitarbeiter —</option>'+staff.map(function(s){
+      return '<option value="'+s.id+'" '+(String(sel)===String(s.id)?'selected':'')+'>'+v4Esc(fullName(s))+'</option>';
+    }).join('');
+  };
+  const rows=__v4ShotRows.map(function(r,i){
+    return '<tr>'+
+      '<td><input type="checkbox" '+(r.on?'checked':'')+' onchange="__v4ShotRows['+i+'].on=this.checked"></td>'+
+      '<td><input type="date" value="'+v4EscA(r.date)+'" onchange="__v4ShotRows['+i+'].date=this.value" style="width:140px"></td>'+
+      '<td><input type="time" value="'+v4EscA(r.time)+'" onchange="__v4ShotRows['+i+'].time=this.value" style="width:92px"></td>'+
+      '<td><input type="number" value="'+(r.duration||60)+'" min="15" step="15" onchange="__v4ShotRows['+i+'].duration=parseInt(this.value)||60" style="width:70px"> min</td>'+
+      '<td title="Im Screenshot erkannt: '+v4EscA(r.kunde)+'"><select onchange="__v4ShotRows['+i+'].customerId=this.value" style="max-width:190px">'+custOpts(r.customerId)+'</select>'+
+        (r.customerId?'':'<div style="font-size:11px;color:var(--danger)">erkannt: „'+v4Esc(r.kunde||'?')+'" – bitte zuordnen</div>')+'</td>'+
+      (office?'<td><select onchange="__v4ShotRows['+i+'].staffId=this.value" style="max-width:160px">'+staffOpts(r.staffId||'')+'</select></td>':'')+
+      '<td><input value="'+v4EscA(r.note||'')+'" onchange="__v4ShotRows['+i+'].note=this.value" placeholder="Notiz" style="width:130px"></td>'+
+    '</tr>';
+  }).join('');
+  document.getElementById('v4ShotRows').innerHTML=
+    '<div class="v4-shot-rows"><table><thead><tr><th></th><th>Datum</th><th>Uhrzeit</th><th>Dauer</th><th>Kunde</th>'+(office?'<th>Mitarbeiter</th>':'')+'<th>Notiz</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  const b=document.getElementById('v4ShotCreate'); if(b) b.style.display='';
+}
+function v4CreateShotAppts(){
+  const office=v4Safe(function(){ return isOfficeRole(); },false);
+  if(!office){ if(!requireStaffAction()) return; }
+  let created=0, missing=0;
+  const inserts=[];
+  __v4ShotRows.forEach(function(r){
+    if(!r.on) return;
+    // Achtung: IDs können 0 sein (falsy) – deshalb isNaN statt !x prüfen
+    const staffId=office?parseInt(r.staffId):myId;
+    const customerId=parseInt(r.customerId);
+    if(!r.date||!r.time||isNaN(customerId)||(office&&(r.staffId===''||r.staffId==null||isNaN(staffId)))){ missing++; return; }
+    const appt={ id:nextApptId++, staffId:staffId, customerId:customerId, date:r.date, time:r.time,
+      duration:r.duration||60, note:r.note||'Import aus Screenshot', type:'einsatz', status:'geplant' };
+    appointments.push(appt);
+    if(v4HasCloud()) inserts.push(cloudInsert('termine',apptToRow(appt)).then(function(x){ if(x&&x.id) appt.id=x.id; }));
+    created++;
+  });
+  if(!created){ v4ShotStatus('Keine Zeile ist vollständig (Datum, Uhrzeit, Kunde'+(office?', Mitarbeiter':'')+' nötig).',true); return; }
+  Promise.all(inserts).catch(function(){});
+  logActivity('Screenshot-Import: '+created+' Termine angelegt');
+  closeModal();
+  document.getElementById('modalBox').classList.remove('wide');
+  toast(created+' Termine angelegt'+(missing?(' · '+missing+' unvollständige Zeilen übersprungen'):''));
+  v4Safe(function(){ refreshCal(); });
+  if(office) renderAdmin('calendar'); else renderStaff('calendar');
+}
+
+/* ---- Global verfügbar machen (für onclick-Attribute) ---- */
+window.openDesignSettings=openDesignSettings; window.v4PickPreset=v4PickPreset;
+window.v4ColorInput=v4ColorInput; window.v4ResetTheme=v4ResetTheme;
+window.v4AvatarHtml=v4AvatarHtml; window.v4UploadAvatar=v4UploadAvatar;
+window.v4RemoveAvatar=v4RemoveAvatar; window.v4ApplyTopbarAvatar=v4ApplyTopbarAvatar;
+window.openCsvImport=openCsvImport; window.v4CsvTemplate=v4CsvTemplate;
+window.v4CsvFileChosen=v4CsvFileChosen; window.v4RunCsvImport=v4RunCsvImport;
+window.openScreenshotImport=openScreenshotImport; window.v4ShotChosen=v4ShotChosen;
+window.v4AnalyzeShot=v4AnalyzeShot; window.v4CreateShotAppts=v4CreateShotAppts;
+Object.defineProperty(window,'__v4ShotRows',{get:function(){return __v4ShotRows;},set:function(v){__v4ShotRows=v;}});
+
+/* ---- Start: Theme anwenden + Hintergrund einhängen ---- */
+v4Safe(function(){ v4ApplyTheme(v4LoadTheme()); });
+v4Safe(v4EnsureBg);
 })();
 </script>
 </body>
