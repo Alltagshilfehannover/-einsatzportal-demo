@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>DailyDo – Testversion 3 (NEXUS)</title>
 <style>
   :root{
@@ -598,6 +598,8 @@ let aufgaben=[];
 let nextAufgabeId=1;
 let activityLog=[];
 let currentUserLabel='—';
+let marketingMaterial=[];   // Marketing-Material (Flyer etc., Tabelle marketing_material)
+let lohnabrechnungen=[];    // Lohnabrechnungen vom Steuerberater (Tabelle lohnabrechnungen)
 
 /* ============================================================
    SUPABASE-ANBINDUNG (Testphase)
@@ -675,9 +677,9 @@ function requireAdminAction(){
    buchhaltung (Abrechnung & kaufmännische Übersicht). */
 const ROLE_VIEWS={
   admin:null, // null = alle Views erlaubt
-  buero:['dashboard','karte','staff','customers','newcustomer','applications','kommunikation','hours','leistungen','calendar','vorlagen','mailing','schulung','mylogin'],
-  callcenter:['dashboard','customers','newcustomer','kommunikation','calendar','schulung','mylogin'],
-  buchhaltung:['dashboard','rechnungen','lexware','bank','hours','customers','staff','kostentraeger','leistungen','standorte','calendar','schulung','mylogin']
+  buero:['dashboard','karte','staff','customers','newcustomer','applications','kommunikation','hours','leistungen','calendar','vorlagen','mailing','marketing','schulung','mylogin'],
+  callcenter:['dashboard','customers','newcustomer','kommunikation','calendar','marketing','schulung','mylogin'],
+  buchhaltung:['dashboard','rechnungen','lexware','bank','hours','payroll','customers','staff','kostentraeger','leistungen','standorte','calendar','marketing','schulung','mylogin']
 };
 const ROLE_LABELS={admin:'Büro',buero:'Büro',callcenter:'CallCenter',buchhaltung:'Buchhaltung',staff:'Mitarbeiter'};
 function hasRole(...roles){ return roles.includes(currentRole); }
@@ -733,6 +735,7 @@ function rowToStaff(r){return {
   bonus:{earned:Number(r.bonus_earned),pending:Number(r.bonus_pending),reason:r.bonus_reason},
   daysWorked:r.days_worked,color:r.color,hasLogin:r.has_login,login:r.login,
   contracts:[], // werden separat geladen
+  schulungen:r.schulungen||{}, // abgeschlossene Pflichtschulungen {id:{done,datum}}
   intern:{birth:r.birth,address:r.address,taxId:r.tax_id,taxClass:r.tax_class,kvNr:r.kv_nr,kasse:r.kasse,employment:r.employment,citizenship:r.citizenship,iban:r.iban}
 };}
 function custToRow(c){return {
@@ -763,7 +766,8 @@ function rowToCust(r){return {
   kostentraegerId:r.kostentraeger_id||null, leistungen:r.leistungen||[],
   bedarfsanalyse:r.bedarfsanalyse||null, vertrag:r.vertrag||null,
   lexwareId:r.lexware_id||null,
-  leadQuelle:r.lead_quelle||'', startDatum:r.start_datum||'', endeDatum:r.ende_datum||'', endeGrund:r.ende_grund||''
+  leadQuelle:r.lead_quelle||'', startDatum:r.start_datum||'', endeDatum:r.ende_datum||'', endeGrund:r.ende_grund||'',
+  birth:r.birth||'', petNote:r.pet_note||'', angehoerige:r.angehoerige||[]
 };}
 /* Auswertungs-Felder still in der DB nachtragen (eigene Spalten, damit ein
    fehlendes DASHBOARD_MIGRATION.sql das normale Speichern nicht blockiert). */
@@ -775,6 +779,12 @@ async function saveCustomerExtrasQuiet(c){
       ende_datum:c.endeDatum||null, ende_grund:c.endeGrund||null
     }).eq('id',c.id);
     if(error) console.warn('Auswertungs-Felder speichern: '+error.message+' – bitte DASHBOARD_MIGRATION.sql ausführen');
+    // V3-Felder (Geburtsdatum, Tier-Hinweis, Angehörige) – eigene stille
+    // Abfrage, damit eine fehlende V3_MIGRATION.sql nichts anderes blockiert
+    const {error:e3}=await sb.from('kunden').update({
+      birth:c.birth||null, pet_note:c.petNote||null, angehoerige:c.angehoerige||[]
+    }).eq('id',c.id);
+    if(e3) console.warn('V3-Kundenfelder speichern: '+e3.message+' – bitte V3_MIGRATION.sql ausführen');
   }catch(e){ console.warn('Auswertungs-Felder speichern',e); }
 }
 /* ============ KOSTENTRÄGER / RECHNUNGEN: DB-Mapping ============ */
@@ -976,6 +986,22 @@ async function loadFromCloud(){
     DIAG.push('bewerbungen: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER bewerbungen: '+(e.message||e)); console.error('Laden bewerbungen fehlgeschlagen:', e.message||e); }
 
+  // Marketing-Material (standortübergreifend; Tabelle kommt mit V3_MIGRATION.sql)
+  try{
+    const {data,error}=await sb.from('marketing_material').select('id,name,typ,created_at').order('created_at',{ascending:false});
+    if(error) throw error;
+    if(data) marketingMaterial=data.map(r=>({id:r.id,name:r.name,typ:r.typ,createdAt:r.created_at}));
+    DIAG.push('marketing: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER marketing (V3_MIGRATION.sql ausführen?): '+(e.message||e)); }
+
+  // Lohnabrechnungen (Rückläufer vom Steuerberater; Tabelle kommt mit V3_MIGRATION.sql)
+  try{
+    const {data,error}=await sb.from('lohnabrechnungen').select('id,mitarbeiter_id,monat,status,datei_name,freigegeben_am,created_at').eq('standort_id',currentStandortId).order('monat',{ascending:false});
+    if(error) throw error;
+    if(data) lohnabrechnungen=data.map(r=>({id:r.id,staffId:r.mitarbeiter_id,monat:r.monat,status:r.status||'erhalten',dateiName:r.datei_name,freigegebenAm:r.freigegeben_am,createdAt:r.created_at}));
+    DIAG.push('lohnabrechnungen: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER lohnabrechnungen (V3_MIGRATION.sql ausführen?): '+(e.message||e)); }
+
   // Termine
   try{
     const {data,error}=await sb.from('termine').select('*').eq('standort_id',currentStandortId).order('id');
@@ -1058,7 +1084,7 @@ async function loadFromCloud(){
   if(staff.length){ myId=staff[0].id; }
 }
 function rowToTimesheet(r){
-  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, start:r.start, end:r.ende, task:r.task, status:r.status||'offen', proof:r.proof, signature:r.signature, signedAt:r.signed_at, hasAbtretung:!!r.signature, billable:r.billable!==false };
+  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, start:r.start, end:r.ende, task:r.task, status:r.status||'offen', proof:r.proof, signature:r.signature, signedAt:r.signed_at, hasAbtretung:!!r.signature, billable:r.billable!==false, rejectGrund:r.reject_grund||'' };
 }
 // Sichtbarer Diagnose-Kasten (per Klick auf das Status-Badge aufrufbar)
 function showDiag(){
@@ -1329,11 +1355,45 @@ const SCHULUNGEN=[
     ] }
 ];
 let __schulung={id:null, idx:0};
+/* --- Pflichtschulungen: erst wenn alle bestätigt sind, dürfen Aufträge
+       angenommen werden. Status liegt je Mitarbeiter in mitarbeiter.schulungen
+       (jsonb, V3_MIGRATION.sql). --- */
+function schulungenKomplett(m){
+  if(!m) return false;
+  return SCHULUNGEN.every(t=>m.schulungen&&m.schulungen[t.id]);
+}
+function schulungAbschliessen(id){
+  if(currentRole!=='staff'){ closeModal(); return; }
+  const m=me(); if(!m){ closeModal(); return; }
+  m.schulungen=m.schulungen||{};
+  if(!m.schulungen[id]){
+    m.schulungen[id]={done:true,datum:todayISO()};
+    if(CLOUD&&sb){
+      sb.from('mitarbeiter').update({schulungen:m.schulungen}).eq('id',m.id)
+        .then(({error})=>{ if(error) console.warn('Schulungsstatus speichern: '+error.message+' – V3_MIGRATION.sql ausführen'); });
+    }
+    logActivity('Schulung abgeschlossen: '+id+' – '+staffName(m.id));
+  }
+  closeModal();
+  toast(schulungenKomplett(m)?'✓ Alle Schulungen bestätigt – du kannst jetzt Aufträge annehmen!':'Schulung bestätigt ✓');
+  renderStaff('schulung');
+}
 function schulungHTML(){
+  const m=(currentRole==='staff')?me():null;
+  const doneCount=m?SCHULUNGEN.filter(t=>m.schulungen&&m.schulungen[t.id]).length:0;
+  const banner=m?(
+    schulungenKomplett(m)
+      ? '<div class="example-id" style="background:var(--good-soft);border-color:#bbf7d0;margin-bottom:16px"><div style="font-size:20px">✅</div><div><b>Alle Schulungen bestätigt.</b> Du kannst Aufträge in der Börse annehmen.</div></div>'
+      : '<div class="example-id" style="background:var(--amber-soft);border-color:#f0dcc2;margin-bottom:16px"><div style="font-size:20px">🎓</div><div><b>'+doneCount+' von '+SCHULUNGEN.length+' Schulungen abgeschlossen.</b> Bitte sieh dir alle Schulungen bis zur letzten Folie an – erst danach kannst du Aufträge annehmen.</div></div>'
+  ):'';
   return head('Schulung','Kurze Einführungen für neue und bestehende Mitarbeiter:innen – direkt in der App ansehen oder als PowerPoint herunterladen.')+
+  banner+
   '<div class="cards grid-3">'+SCHULUNGEN.map(t=>
     '<div class="panel" style="cursor:pointer" onclick="openSchulung(\''+t.id+'\')"><div class="panel-body" style="padding:20px">'+
-      '<div style="width:48px;height:48px;border-radius:13px;background:'+t.color+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">'+t.num+'</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start"><div style="width:48px;height:48px;border-radius:13px;background:'+t.color+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">'+t.num+'</div>'+
+      (m?(m.schulungen&&m.schulungen[t.id]
+        ?'<span class="tag green">✓ bestätigt am '+fmtDate(m.schulungen[t.id].datum)+'</span>'
+        :'<span class="tag amber">offen</span>'):'')+'</div>'+
       '<h3 style="margin:14px 0 5px;font-size:18px">'+t.title+'</h3>'+
       '<div style="color:var(--muted);font-size:13.5px;min-height:40px">'+t.subtitle+'</div>'+
       '<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">'+t.slides.length+' Folien</div>'+
@@ -1369,7 +1429,9 @@ function renderSchulungSlide(){
     '<button class="btn-ghost" style="width:auto'+(i===0?';opacity:.4':'')+'" '+(i===0?'disabled':'')+' onclick="schulungNav(-1)">← Zurück</button>'+
     (i<t.slides.length-1
       ? '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="schulungNav(1)">Weiter →</button>'
-      : '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="closeModal()">Fertig ✓</button>');
+      : (currentRole==='staff'
+          ? '<button class="btn-primary" style="width:auto;padding:10px 18px;background:var(--good)" onclick="schulungAbschliessen(\''+t.id+'\')">Schulung abschließen &amp; bestätigen ✓</button>'
+          : '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="closeModal()">Fertig ✓</button>'));
   openModal();
 }
 
@@ -1912,6 +1974,7 @@ function buildAdminNav(active){
       viewAllowed('kostentraeger')?navItem('kostentraeger','🏦','Kostenträger',active==='kostentraeger'):'',
       viewAllowed('vorlagen')?navItem('vorlagen','✉','E-Mail-Vorlagen',active==='vorlagen'):'',
       viewAllowed('mailing')?navItem('mailing','📣','E-Mail-Marketing',active==='mailing'):'',
+      viewAllowed('marketing')?navItem('marketing','🖼','Marketing-Material',active==='marketing'):'',
       viewAllowed('aktivitaeten')?navItem('aktivitaeten','📜','Aktivitätsprotokoll',active==='aktivitaeten'):'',
       viewAllowed('zugaenge')?navItem('zugaenge','👥','Zugänge & Rollen',active==='zugaenge'):''
     ]],
@@ -2016,9 +2079,27 @@ function adminDashboardHTML(open,newApps){
   const ohneLeistungen=aktive.filter(c=>!(c.leistungen&&c.leistungen.length));
   const ohneKt=aktive.filter(c=>c.insuranceType==='gesetzlich'&&!c.kostentraegerId);
   // §45b-Budget: ungenutztes Potenzial bei Kunden mit gepflegter Budget-Angabe
-  let budgetKunden=0, budgetFrei=0;
+  let budgetKunden=0, budgetFrei=0; const budgetListe=[];
   aktive.forEach(c=>{ const b=parseEuroNum(c.intern&&c.intern.budget); if(b===null) return;
-    const u=parseEuroNum(c.intern&&c.intern.budgetUsed)||0; budgetKunden++; budgetFrei+=Math.max(0,b-u); });
+    const u=parseEuroNum(c.intern&&c.intern.budgetUsed)||0; budgetKunden++; const frei=Math.max(0,b-u); budgetFrei+=frei;
+    if(frei>0) budgetListe.push({id:c.id,name:fullName(c),sub:'frei: '+fmtEuro(frei)+' von '+fmtEuro(b)}); });
+  budgetListe.sort((a,b)=>parseEuroNum(b.sub)-parseEuroNum(a.sub));
+
+  /* ---- Drilldown-Daten: Klick auf Warnung zeigt NUR die Betroffenen + was zu tun ist ---- */
+  window.__warnDrill={
+    abtretung:{title:'Aktive Kunden ohne Abtretungserklärung',
+      hint:'Ohne unterschriebene Abtretungserklärung kann nicht an die Kasse abgerechnet werden. Kundenprofil öffnen → „Abtretung starten" und vom Kunden unterschreiben lassen.',
+      items:ohneAbtretung.map(c=>({id:c.id,name:fullName(c),sub:(c.area||'')+(c.phone&&c.phone!=='—'?' · '+c.phone:'')}))},
+    kt:{title:'Gesetzlich Versicherte ohne Kostenträger',
+      hint:'Rechnungen können sonst nicht an die Pflegekasse gehen. Kundenprofil öffnen → Abschnitt „Krankenversicherung" → Kostenträger auswählen.',
+      items:ohneKt.map(c=>({id:c.id,name:fullName(c),sub:(c.intern&&c.intern.kasse)?('Kasse laut Profil: '+c.intern.kasse):'Kasse unbekannt'}))},
+    leistungen:{title:'Aktive Kunden ohne hinterlegte Leistungen',
+      hint:'Ohne zugeordnete Leistung ist keine Rechnung möglich. Kundenprofil öffnen → Abschnitt „Abgerechnete Leistungen" → mindestens eine Leistung anhaken.',
+      items:ohneLeistungen.map(c=>({id:c.id,name:fullName(c),sub:c.area||''}))},
+    budget:{title:'Ungenutztes §45b-Budget je Kunde',
+      hint:'Diese Kunden haben noch freies Entlastungsbudget – zusätzliches Umsatzpotenzial. Kontakt aufnehmen und weitere Einsätze anbieten (Verfall zum 30.06. beachten).',
+      items:budgetListe}
+  };
   // Strukturen
   const count=(arr,fn)=>{const m={};arr.forEach(x=>{const k=fn(x)||'—';m[k]=(m[k]||0)+1;});return Object.entries(m).sort((a,b)=>b[1]-a[1]);};
   const pgrade=count(aktive,c=>'Pflegegrad '+(c.pgrad||'—'));
@@ -2045,9 +2126,9 @@ function adminDashboardHTML(open,newApps){
   const warn=[];
   if(ueberf.length) warn.push({tag:'red',t:ueberf.length+' überfällige Rechnung(en) über '+fmtEuro(ueberfSum),s:'älter als 14 Tage – mahnen oder Status pflegen',go:"renderAdmin('rechnungen')"});
   if(readyTs.length) warn.push({tag:'amber',t:fmtEuro(unbilledEur)+' noch nicht abgerechnet',s:readyTs.length+' freigegebene Stundenzettel warten auf Rechnung',go:"renderAdmin('rechnungen')"});
-  if(ohneAbtretung.length) warn.push({tag:'amber',t:ohneAbtretung.length+' aktive Kunden ohne Abtretungserklärung',s:'blockiert die Abrechnung: '+ohneAbtretung.slice(0,3).map(fullName).join(', ')+(ohneAbtretung.length>3?' +'+(ohneAbtretung.length-3):''),go:"renderAdmin('customers')"});
-  if(ohneKt.length) warn.push({tag:'amber',t:ohneKt.length+' gesetzlich Versicherte ohne Kostenträger',s:'Rechnung kann sonst nicht an die Kasse gehen',go:"renderAdmin('customers')"});
-  if(ohneLeistungen.length) warn.push({tag:'amber',t:ohneLeistungen.length+' aktive Kunden ohne hinterlegte Leistungen',s:'ohne Leistung keine Rechnung möglich',go:"renderAdmin('customers')"});
+  if(ohneAbtretung.length) warn.push({tag:'amber',t:ohneAbtretung.length+' aktive Kunden ohne Abtretungserklärung',s:'Klicken zeigt genau diese Kunden + was zu tun ist',go:"showWarnDrill('abtretung')"});
+  if(ohneKt.length) warn.push({tag:'amber',t:ohneKt.length+' gesetzlich Versicherte ohne Kostenträger',s:'Klicken zeigt genau diese Kunden + was zu tun ist',go:"showWarnDrill('kt')"});
+  if(ohneLeistungen.length) warn.push({tag:'amber',t:ohneLeistungen.length+' aktive Kunden ohne hinterlegte Leistungen',s:'Klicken zeigt genau diese Kunden + was zu tun ist',go:"showWarnDrill('leistungen')"});
   if(open>0) warn.push({tag:'blue',t:open+' unbesetzte Aufträge',s:'jeder unbesetzte Auftrag ist entgangener Umsatz',go:"renderAdmin('jobs')"});
   leaving.forEach(m=>warn.push({tag:'amber',t:fullName(m)+' – 70-Tage-Grenze',s:(m.daysWorked||0)+'/70 Tage, Nachfolge planen',go:"renderAdmin('staff')"}));
   unreliable.forEach(m=>warn.push({tag:'red',t:fullName(m)+' – hohe Absagequote ('+Math.round(staffReject(m)*100)+'%)',s:'Zuteilung prüfen / Gespräch führen',go:"renderAdmin('staff')"}));
@@ -2083,7 +2164,7 @@ function adminDashboardHTML(open,newApps){
     statClick('Aktive Kunden',aktive.length,(neuMonat?'+'+neuMonat+' neu diesen Monat':'Leistungsbeginn im Formular pflegen'),"renderAdmin('customers')")+
     statClick('Interessenten',interessenten.length,'Pipeline – noch nicht aktiv',"renderAdmin('customers')")+
     statClick('Verloren ('+thisYear+')',verlorenJahr.length,(gruende.length?'häufigster Grund: '+gruende[0][0]:'Grund im Kundenformular pflegen'),"renderAdmin('customers')")+
-    statClick('§45b ungenutzt',fmtEuro(budgetFrei),(budgetKunden?'freies Budget bei '+budgetKunden+' Kunden = Umsatzpotenzial':'Budget im Kundenformular pflegen'),"renderAdmin('customers')")+
+    statClick('§45b ungenutzt',fmtEuro(budgetFrei),(budgetKunden?'freies Budget bei '+budgetKunden+' Kunden – klicken für Details je Kunde':'Budget im Kundenformular pflegen'),"showWarnDrill('budget')")+
   '</div><div style="height:16px"></div>'+
   '<div class="cards grid-2">'+
     '<div class="panel"><div class="panel-head"><h3>Kundenstruktur (aktiv: '+aktive.length+')</h3></div><div class="panel-body" style="padding-top:10px">'+
@@ -2121,6 +2202,149 @@ function adminDashboardHTML(open,newApps){
     '<div class="panel-body"><table><thead><tr><th>Auftrag</th><th>Kunde</th><th>Gebiet</th><th>Status</th></tr></thead><tbody>'+
     jobs.slice(0,8).map(j=>{const cu=custById(j.customerId);return '<tr><td><b>'+j.title+'</b></td><td>'+(j.status==='available'?'<span style="color:var(--muted)">verdeckt</span>':(cu?fullName(cu):'—'))+'</td><td>'+(cu?cu.area:'—')+'</td><td>'+jobStatusTag(j)+'</td></tr>';}).join('')+
     '</tbody></table></div></div>';
+}
+
+/* Drilldown aus dem Dashboard: zeigt NUR die betroffenen Kunden einer
+   Warnung samt Handlungs-Hinweis („was ist zu tun?") und Direktsprung
+   ins jeweilige Kundenprofil. */
+function showWarnDrill(key){
+  const d=window.__warnDrill&&window.__warnDrill[key];
+  if(!d){ toast('Details bitte über das Dashboard öffnen',true); return; }
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent=d.title+' ('+d.items.length+')';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="info-note" style="margin-bottom:12px">💡 <b>Was ist zu tun?</b> '+d.hint+'</div>'+
+    (d.items.length?d.items.map(it=>
+      '<div class="list-row" style="padding:10px 0;border-bottom:1px solid var(--line)">'+
+      '<div class="li-main"><b>'+it.name+'</b>'+(it.sub?'<div class="li-sub">'+it.sub+'</div>':'')+'</div>'+
+      '<button class="btn-ghost btn-sm" style="flex:none" onclick="closeModal();editCustomer('+it.id+')">Profil öffnen →</button></div>'
+    ).join(''):'<p style="color:var(--muted)">Keine Einträge – alles erledigt.</p>');
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  openModal();
+}
+
+/* ============ MARKETING-MATERIAL (zentraler Upload-Ordner) ============ */
+async function uploadMarketing(input){
+  if(!requireRoleAction('admin','buero','callcenter','buchhaltung')) return;
+  if(!CLOUD||!sb){ toast('Keine Datenbank-Verbindung – Upload nicht möglich',true); input.value=''; return; }
+  const files=[...(input.files||[])]; input.value='';
+  let ok=0;
+  for(const file of files){
+    if(!validateUploadFile(file,{maxSize:SECURITY_MAX_FILE})) continue;
+    const dataUrl=await new Promise(res=>{ const r=new FileReader(); r.onload=e=>res(safeDataUrl(e.target.result)); r.onerror=()=>res(null); r.readAsDataURL(file); });
+    if(!dataUrl){ toast('Datei "'+file.name+'" konnte nicht gelesen werden',true); continue; }
+    try{
+      const {data,error}=await sb.from('marketing_material').insert({name:cleanInput(file.name,120),typ:file.type,data:dataUrl}).select('id,name,typ,created_at').single();
+      if(error) throw error;
+      marketingMaterial.unshift({id:data.id,name:data.name,typ:data.typ,createdAt:data.created_at});
+      ok++;
+    }catch(e){ toast('Upload fehlgeschlagen ('+file.name+'): '+(e.message||e)+' – ggf. V3_MIGRATION.sql ausführen',true); }
+  }
+  if(ok){ logActivity('Marketing-Material hochgeladen ('+ok+' Datei(en))'); toast(ok+' Datei(en) hochgeladen'); }
+  renderAdmin('marketing');
+}
+async function marketingData(id){
+  if(!CLOUD||!sb) return null;
+  try{
+    const {data,error}=await sb.from('marketing_material').select('data,name,typ').eq('id',id).single();
+    if(error) throw error;
+    return data;
+  }catch(e){ toast('Datei konnte nicht geladen werden: '+(e.message||e),true); return null; }
+}
+async function openMarketing(id){
+  const d=await marketingData(id); if(!d||!d.data) return;
+  const w=window.open('','_blank'); if(!w){ toast('Popup blockiert – bitte erlauben',true); return; }
+  if((d.typ||'').indexOf('image')===0) w.document.write('<title>'+cleanInput(d.name,80)+'</title><body style="margin:0;background:#111"><img src="'+d.data+'" style="max-width:100%;display:block;margin:auto"></body>');
+  else w.document.write('<title>'+cleanInput(d.name,80)+'</title><iframe src="'+d.data+'" style="border:0;width:100vw;height:100vh"></iframe>');
+}
+async function downloadMarketing(id){
+  const d=await marketingData(id); if(!d||!d.data) return;
+  const a=document.createElement('a'); a.href=d.data; a.download=d.name||'material';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function deleteMarketing(id){
+  if(!requireAdminAction()) return;
+  const mm=marketingMaterial.find(x=>x.id===id); if(!mm) return;
+  if(!confirm('Datei "'+(mm.name||'')+'" endgültig löschen?')) return;
+  marketingMaterial=marketingMaterial.filter(x=>x.id!==id);
+  cloudDelete('marketing_material',id);
+  logActivity('Marketing-Material gelöscht: '+(mm.name||id));
+  renderAdmin('marketing');
+}
+
+/* ============ LOHNABRECHNUNG (Steuerberater-Workflow) ============ */
+function exportLohnCSV(monat){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const byStaff={};
+  timesheets.filter(t=>t.status==='freigegeben'&&String(t.date||'').slice(0,7)===monat).forEach(t=>{byStaff[t.staffId]=(byStaff[t.staffId]||0)+tsMinutes(t);});
+  if(!Object.keys(byStaff).length){ toast('Keine freigegebenen Stunden in diesem Monat',true); return; }
+  const headers=['monat','mitarbeiter','beschaeftigungsart','freigegebene_stunden','stundenlohn_eur','brutto_richtwert_eur'];
+  const rows=Object.entries(byStaff).map(([sid,min])=>{
+    const s=staff.find(x=>x.id===+sid)||{};
+    return { monat:monat, mitarbeiter:staffName(+sid), beschaeftigungsart:(s.intern&&s.intern.employment)||'',
+      freigegebene_stunden:(min/60).toFixed(2).replace('.',','), stundenlohn_eur:((s.wage)||14).toFixed(2).replace('.',','),
+      brutto_richtwert_eur:(min/60*((s.wage)||14)).toFixed(2).replace('.',',') };
+  });
+  downloadCSV('lohnexport_steuerberater_'+monat+'.csv', toCSV(headers, rows));
+  try{ localStorage.setItem('dailydo-lohn-uebermittelt-'+currentStandortId+'-'+monat, todayISO()); }catch(e){}
+  logActivity('Lohn-Export an Steuerberater erstellt: '+monat);
+  toast('CSV erstellt – bitte an den Steuerberater senden. Monat als übermittelt markiert.');
+  renderAdmin('payroll');
+}
+async function uploadLohn(input, monat){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  if(!CLOUD||!sb){ toast('Keine Datenbank-Verbindung – Upload nicht möglich',true); input.value=''; return; }
+  const file=input.files&&input.files[0]; input.value='';
+  if(!file||!validateUploadFile(file,{maxSize:SECURITY_MAX_FILE})) return;
+  const sid=+(document.getElementById('lohnStaffSel')||{}).value;
+  if(!sid){ toast('Bitte zuerst den Mitarbeiter wählen',true); return; }
+  const dataUrl=await new Promise(res=>{ const r=new FileReader(); r.onload=e=>res(safeDataUrl(e.target.result)); r.onerror=()=>res(null); r.readAsDataURL(file); });
+  if(!dataUrl){ toast('Datei konnte nicht gelesen werden',true); return; }
+  try{
+    const {data,error}=await sb.from('lohnabrechnungen').insert({
+      mitarbeiter_id:sid, monat:monat, status:'erhalten', datei_name:cleanInput(file.name,120), datei_data:dataUrl, standort_id:currentStandortId
+    }).select('id,mitarbeiter_id,monat,status,datei_name,created_at').single();
+    if(error) throw error;
+    lohnabrechnungen.unshift({id:data.id,staffId:data.mitarbeiter_id,monat:data.monat,status:'erhalten',dateiName:data.datei_name,createdAt:data.created_at});
+    logActivity('Lohnabrechnung hochgeladen: '+staffName(sid)+' ('+monat+')');
+    toast('Abrechnung hochgeladen – jetzt prüfen und freigeben');
+  }catch(e){ toast('Upload fehlgeschlagen: '+(e.message||e)+' – ggf. V3_MIGRATION.sql ausführen',true); }
+  renderAdmin('payroll');
+}
+async function openLohn(id){
+  if(!CLOUD||!sb) return;
+  try{
+    const {data,error}=await sb.from('lohnabrechnungen').select('datei_data,datei_name').eq('id',id).single();
+    if(error) throw error;
+    const w=window.open('','_blank'); if(!w){ toast('Popup blockiert – bitte erlauben',true); return; }
+    if(String(data.datei_data||'').indexOf('data:image')===0) w.document.write('<title>'+cleanInput(data.datei_name||'Lohnabrechnung',80)+'</title><body style="margin:0;background:#111"><img src="'+data.datei_data+'" style="max-width:100%;display:block;margin:auto"></body>');
+    else w.document.write('<title>'+cleanInput(data.datei_name||'Lohnabrechnung',80)+'</title><iframe src="'+data.datei_data+'" style="border:0;width:100vw;height:100vh"></iframe>');
+  }catch(e){ toast('Abrechnung konnte nicht geladen werden: '+(e.message||e),true); }
+}
+function lohnFreigeben(id){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const l=lohnabrechnungen.find(x=>x.id===id); if(!l) return;
+  if(!confirm('Abrechnung für '+staffName(l.staffId)+' ('+l.monat+') freigeben?\nDer Mitarbeiter sieht sie danach in seiner App.')) return;
+  l.status='freigegeben'; l.freigegebenAm=todayISO();
+  cloudUpdate('lohnabrechnungen',id,{status:'freigegeben',freigegeben_am:l.freigegebenAm});
+  logActivity('Lohnabrechnung freigegeben: '+staffName(l.staffId)+' ('+l.monat+')');
+  // Mitarbeiter still per E-Mail informieren (falls E-Mail-Versand eingerichtet)
+  const s=staff.find(x=>x.id===l.staffId);
+  if(s&&s.email&&isValidEmail(s.email)){
+    sendEmail({to:s.email,subject:'Deine Lohnabrechnung '+l.monat+' ist verfügbar',
+      text:'Hallo '+(s.first||'')+',\n\ndeine Lohnabrechnung für '+l.monat+' wurde geprüft und freigegeben. Du findest sie in der DailyDo-App unter „Lohnabrechnung".\n\nViele Grüße\nDein Büro-Team'},true);
+  }
+  toast('Freigegeben – der Mitarbeiter sieht die Abrechnung jetzt in seiner App');
+  renderAdmin('payroll');
+}
+function lohnLoeschen(id){
+  if(!requireAdminAction()) return;
+  const l=lohnabrechnungen.find(x=>x.id===id); if(!l) return;
+  if(!confirm('Abrechnung '+staffName(l.staffId)+' ('+l.monat+') endgültig löschen?')) return;
+  lohnabrechnungen=lohnabrechnungen.filter(x=>x.id!==id);
+  cloudDelete('lohnabrechnungen',id);
+  logActivity('Lohnabrechnung gelöscht: '+staffName(l.staffId)+' ('+l.monat+')');
+  renderAdmin('payroll');
 }
 
 /* ============ ADMIN VIEWS ============ */
@@ -2174,12 +2398,14 @@ function renderAdmin(view){
         sortTh('staff','role','Funktion','staffSort')+
         sortTh('staff','area','Gebiet','staffSort')+
         '<th>Login</th>'+
+        '<th>Schulung</th>'+
         sortTh('staff','status','Status','staffSort')+
         (canManageStaff?'<th style="width:52px;text-align:right"></th>':'')+
       '</tr></thead><tbody>'+
       (filtered.length?sortRows(filtered,staffSort,{
         name:s=>fullName(s).toLowerCase(), role:s=>(s.role||'').toLowerCase(), area:s=>(s.area||'').toLowerCase(), status:s=>s.status||''
-      }).map(s=>'<tr'+(canManageStaff?' class="clickable" onclick="editStaff('+s.id+')"':'')+'><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:'+(s.color||'#6d28d9')+';margin-right:7px"></span><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td><td>'+statusTag(s.status)+'</td>'+(canManageStaff?'<td style="text-align:right">'+rowMenu([
+      }).map(s=>'<tr'+(canManageStaff?' class="clickable" onclick="editStaff('+s.id+')"':'')+'><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:'+(s.color||'#6d28d9')+';margin-right:7px"></span><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td>'+
+      '<td>'+(()=>{const n=SCHULUNGEN.filter(t=>s.schulungen&&s.schulungen[t.id]).length;return n===SCHULUNGEN.length?'<span class="tag green">🎓 '+n+'/'+SCHULUNGEN.length+'</span>':'<span class="tag amber" title="Kann erst nach Abschluss aller Schulungen Aufträge annehmen">🎓 '+n+'/'+SCHULUNGEN.length+'</span>';})()+'</td><td>'+statusTag(s.status)+'</td>'+(canManageStaff?'<td style="text-align:right">'+rowMenu([
         ['Öffnen / Bearbeiten','editStaff('+s.id+')'],
         ['SEP',''],
         ['Löschen','deleteStaff('+s.id+')','danger']
@@ -2309,19 +2535,61 @@ function renderAdmin(view){
           return '<span style="color:var(--muted);font-size:12px">—</span>';
         })()+'</td>'+
         '<td>'+(t.status==='offen'
-            ? '<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn-danger-ghost btn-sm" onclick="rejectTimesheet('+t.id+')">Ablehnen</button><button class="btn-primary btn-sm" style="width:auto" onclick="approveTimesheet('+t.id+')">Freigeben</button></div>'
-            : (t.status==='freigegeben'?'<span style="color:var(--good)">✓ freigegeben</span>':'<span style="color:#c0392b">✕ abgelehnt</span>'))+'</td></tr>';}).join('')+
+            ? '<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn-danger-ghost btn-sm" onclick="rejectTimesheet('+t.id+')">✕ Ablehnen</button><button class="btn-primary btn-sm" style="width:auto;background:var(--good);font-weight:700" onclick="approveTimesheet('+t.id+')">✓ Freigeben</button></div>'
+            : (t.status==='freigegeben'?'<span style="color:var(--good)">✓ freigegeben</span>':'<span style="color:#c0392b">✕ abgelehnt</span>'+(t.rejectGrund?'<div style="font-size:11px;color:var(--muted);max-width:160px">Grund: '+t.rejectGrund+'</div>':'')))+'</td></tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">⏱</div><b>Noch keine Stundenzettel</b><p style="margin-top:6px">Sobald Mitarbeiter Einsätze abschließen, erscheinen sie hier.</p></div>')+
     '</div></div>';
   }
   if(view==='payroll'){
+    /* Ablauf laut Betriebsprozess: Die Lohnabrechnung wird NICHT hier erstellt.
+       1) Freigegebene Stunden werden an den Steuerberater (AS Abrechnungsstelle
+          Bremen) übermittelt.  2) Der Steuerberater schickt die fertigen
+          Abrechnungen zurück – sie werden hier je Mitarbeiter hochgeladen.
+       3) Nach Prüfung werden sie freigegeben; erst dann sieht der Mitarbeiter
+          seine Abrechnung in der App. */
+    const monat=window.__lohnMonat||todayISO().slice(0,7);
+    window.__lohnMonat=monat;
     const byStaff={};
-    timesheets.filter(t=>t.status==='freigegeben').forEach(t=>{byStaff[t.staffId]=(byStaff[t.staffId]||0)+tsMinutes(t);});
-    c.innerHTML=head('Lohnabrechnung','Freigegebene Stunden je Mitarbeiter – Basis für die Abrechnung (Export an AS Bremen vorgesehen).')+
-    '<div class="panel"><div class="panel-body" style="padding-top:16px">'+
-    (Object.keys(byStaff).length?'<table><thead><tr><th>Mitarbeiter</th><th>Freigegebene Stunden (Monat)</th><th></th></tr></thead><tbody>'+
-      Object.entries(byStaff).map(([sid,min])=>'<tr><td><b>'+staffName(+sid)+'</b></td><td>'+(min/60).toFixed(1).replace('.',',')+' Std.</td><td><button class="btn-ghost btn-sm" onclick="toast(\'Abrechnung erstellt & bereitgestellt\')">Abrechnung erstellen</button></td></tr>').join('')+
-      '</tbody></table>':'<div class="empty"><div class="big">€</div><b>Noch nichts freigegeben</b><p style="margin-top:6px">Gib zuerst unter „Stundenzettel“ Zeiten frei – sie erscheinen dann hier zur Abrechnung.</p></div>')+
+    timesheets.filter(t=>t.status==='freigegeben'&&String(t.date||'').slice(0,7)===monat).forEach(t=>{byStaff[t.staffId]=(byStaff[t.staffId]||0)+tsMinutes(t);});
+    let uebermittelt=null; try{ uebermittelt=localStorage.getItem('dailydo-lohn-uebermittelt-'+currentStandortId+'-'+monat); }catch(e){}
+    const abr=lohnabrechnungen.filter(l=>l.monat===monat);
+    const canManage=hasRole('admin','buchhaltung');
+    c.innerHTML=head('Lohnabrechnung','Dreistufiger Ablauf: 1) Stunden an den Steuerberater übermitteln → 2) fertige Abrechnungen hochladen → 3) prüfen und für die Mitarbeiter freigeben.')+
+    '<div class="list-toolbar" style="margin-bottom:14px"><label style="font-weight:600;font-size:13.5px;margin-right:8px">Abrechnungsmonat:</label><input type="month" value="'+monat+'" onchange="window.__lohnMonat=this.value;renderAdmin(\'payroll\')" style="width:auto"></div>'+
+
+    '<div class="panel"><div class="panel-head"><h3>Schritt 1 · Stunden an den Steuerberater übermitteln</h3>'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+      (uebermittelt?'<span class="tag green">✓ übermittelt am '+fmtDate(uebermittelt)+'</span>':'<span class="tag amber">noch nicht übermittelt</span>')+
+      (canManage?'<button class="btn-primary btn-sm" style="width:auto" onclick="exportLohnCSV(\''+monat+'\')">⬇ CSV exportieren &amp; als übermittelt markieren</button>':'')+
+      '</div></div>'+
+    '<div class="panel-body" style="padding-top:10px">'+
+    (Object.keys(byStaff).length
+      ? '<table><thead><tr><th>Mitarbeiter</th><th>Freigegebene Stunden</th><th>Stundenlohn</th><th>Brutto (Richtwert)</th></tr></thead><tbody>'+
+        Object.entries(byStaff).map(([sid,min])=>{ const s=staff.find(x=>x.id===+sid); const w=(s&&s.wage)||14;
+          return '<tr><td><b>'+staffName(+sid)+'</b></td><td>'+(min/60).toFixed(2).replace('.',',')+' Std.</td><td>'+w.toFixed(2).replace('.',',')+' €</td><td>'+(min/60*w).toFixed(2).replace('.',',')+' €</td></tr>';}).join('')+
+        '</tbody></table>'
+      : '<p style="color:var(--muted)">Für diesen Monat sind keine freigegebenen Stundenzettel vorhanden – zuerst unter „Stundenzettel" freigeben.</p>')+
+    '</div></div><div style="height:16px"></div>'+
+
+    '<div class="panel"><div class="panel-head"><h3>Schritt 2 + 3 · Abrechnungen hochladen, prüfen &amp; freigeben</h3></div>'+
+    '<div class="panel-body" style="padding-top:12px">'+
+    (canManage?'<div class="form-row" style="align-items:flex-end;gap:10px;margin-bottom:14px">'+
+      '<div style="flex:2"><label>Mitarbeiter</label><select id="lohnStaffSel">'+staff.map(s=>'<option value="'+s.id+'">'+fullName(s)+'</option>').join('')+'</select></div>'+
+      '<div style="flex:none;padding-bottom:2px"><label class="btn-ghost btn-sm" style="cursor:pointer">⬆ Abrechnung vom Steuerberater hochladen (PDF)<input type="file" accept="application/pdf,image/jpeg,image/png" style="display:none" onchange="uploadLohn(this,\''+monat+'\')"></label></div>'+
+    '</div>':'')+
+    (abr.length
+      ? '<table><thead><tr><th>Mitarbeiter</th><th>Datei</th><th>Status</th><th style="text-align:right"></th></tr></thead><tbody>'+
+        abr.map(l=>'<tr><td><b>'+staffName(l.staffId)+'</b></td>'+
+          '<td><button class="btn-ghost btn-sm" onclick="openLohn('+l.id+')">👁 '+cleanInput(l.dateiName||'Abrechnung',50)+'</button></td>'+
+          '<td>'+(l.status==='freigegeben'
+              ?'<span class="tag green">✓ freigegeben am '+fmtDate(l.freigegebenAm)+'</span><div style="font-size:11px;color:var(--muted)">für den Mitarbeiter sichtbar</div>'
+              :'<span class="tag amber">erhalten – zu prüfen</span>')+'</td>'+
+          '<td style="text-align:right;display:flex;gap:6px;justify-content:flex-end">'+
+          (canManage&&l.status!=='freigegeben'?'<button class="btn-primary btn-sm" style="width:auto;background:var(--good)" onclick="lohnFreigeben('+l.id+')">✓ Prüfen &amp; freigeben</button>':'')+
+          (hasRole('admin')?'<button class="btn-danger-ghost btn-sm" onclick="lohnLoeschen('+l.id+')">✕</button>':'')+
+          '</td></tr>').join('')+
+        '</tbody></table>'
+      : '<p style="color:var(--muted)">Für diesen Monat wurden noch keine Abrechnungen hochgeladen. (Falls das Hochladen fehlschlägt: V3_MIGRATION.sql ausführen.)</p>')+
     '</div></div>';
   }
   if(view==='standorte'){
@@ -2468,6 +2736,26 @@ function renderAdmin(view){
       '<p style="font-size:13px;color:var(--muted);margin-top:10px">Sicherheit: Daily Do sieht nie PIN oder TAN – die Anmeldung passiert ausschließlich auf den Seiten der Bank. Gespeichert werden nur Konto-Kennungen für den Lesezugriff. Der Zugriff ist auf Lesen beschränkt (keine Überweisungen möglich) und läuft nach spätestens 90 Tagen automatisch ab.</p>'+
     '</div></div>';
     setTimeout(bankViewInit,60);
+  }
+  if(view==='marketing'){
+    const canDelete=hasRole('admin');
+    c.innerHTML=head('Marketing-Material','Zentraler Ordner für Flyer, Vorlagen, Logos und sonstiges Marketingmaterial. Alle Büro-Rollen können zugreifen und herunterladen.')+
+    '<div class="panel"><div class="panel-head"><h3>'+marketingMaterial.length+' Dateien</h3>'+
+      '<label class="btn-primary btn-sm" style="width:auto;cursor:pointer">⬆ Material hochladen<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple style="display:none" onchange="uploadMarketing(this)"></label></div>'+
+    '<div class="panel-body" style="padding-top:14px">'+
+    (marketingMaterial.length
+      ? '<div class="cards grid-3">'+marketingMaterial.map(mm=>
+          '<div class="panel" style="margin:0"><div class="panel-body" style="padding:16px">'+
+          '<div style="height:110px;display:flex;align-items:center;justify-content:center;background:var(--petrol-soft);border-radius:10px;font-size:40px;overflow:hidden" id="mmPrev'+mm.id+'">'+((mm.typ||'').indexOf('image')===0?'🖼️':'📄')+'</div>'+
+          '<div style="font-weight:600;font-size:14px;margin-top:10px;word-break:break-word">'+cleanInput(mm.name||'Datei',80)+'</div>'+
+          '<div style="font-size:12px;color:var(--muted)">'+((mm.typ||'').indexOf('pdf')>-1?'PDF':'Bild')+(mm.createdAt?' · '+fmtDate(String(mm.createdAt).slice(0,10)):'')+'</div>'+
+          '<div style="display:flex;gap:7px;margin-top:12px">'+
+            '<button class="btn-ghost btn-sm" onclick="openMarketing('+mm.id+')">👁 Ansehen</button>'+
+            '<button class="btn-ghost btn-sm" onclick="downloadMarketing('+mm.id+')">⬇ Laden</button>'+
+            (canDelete?'<button class="btn-danger-ghost btn-sm" onclick="deleteMarketing('+mm.id+')">✕</button>':'')+
+          '</div></div></div>').join('')+'</div>'
+      : '<div class="empty"><div class="big">🖼️</div><b>Noch kein Material hochgeladen</b><p style="margin-top:6px">Lade Flyer, Preislisten oder Logos hoch – das ganze Büro kann dann darauf zugreifen. (Falls das Hochladen fehlschlägt: V3_MIGRATION.sql in Supabase ausführen.)</p></div>')+
+    '</div></div>';
   }
   if(view==='vorlagen'){
     const canManage=hasRole('admin','buero');
@@ -2655,7 +2943,7 @@ function customerFormHTML(c){
     '<div><label>Telefon (Festnetz)</label><input id="nc_landline" value="'+(c.phoneLandline||'')+'"></div></div>'+
     '<label>E-Mail (für Terminbestätigungen &amp; Rundmails, optional)</label><input id="nc_email" value="'+(c.email||'')+'" placeholder="kunde@example.de">'+
     '<div class="form-row"><div><label>Pflegegrad</label><select id="nc_pgrad">'+['1','2','3','4','5'].map(p=>'<option '+(c.pgrad===p?'selected':'')+'>'+p+'</option>').join('')+'</select></div>'+
-    '<div><label>Geburtsdatum</label><input id="nc_birth" type="date" value="'+(c.birth||'')+'"></div></div>'+
+    '<div><label>Geburtsdatum *</label><input id="nc_birth" type="date" value="'+(c.birth||'')+'"></div></div>'+
 
     '<div class="section-label">Herkunft &amp; Kundenzeitraum <span style="font-weight:400;color:var(--muted)">(für Auswertungen im Dashboard)</span></div>'+
     '<div class="form-row"><div><label>Wie ist der Kunde auf uns gekommen?</label><select id="nc_leadQuelle"><option value="">— unbekannt —</option>'+
@@ -2675,6 +2963,8 @@ function customerFormHTML(c){
     '<div class="checks" id="nc_window">'+['Morgens','Mittags','Abends'].map(w=>'<span class="check '+(tw.includes(w)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+w+'</span>').join('')+'</div>'+
     '<label>Haustiere</label>'+
     '<div class="checks" id="nc_pets">'+['Hund','Katze','Andere Kleintiere'].map(p=>'<span class="check '+(pets.includes(p)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+p+'</span>').join('')+'</div>'+
+    '<label>Hinweise zu Tieren / Phobien / Allergien (Freitext)</label>'+
+    '<input id="nc_petNote" value="'+(c.petNote||'').replace(/"/g,'&quot;')+'" placeholder="z. B. Mitarbeiterin sollte keine Vogelphobie haben; Katzenhaarallergie beachten">'+
 
     '<div class="section-label">Kontaktperson (Angehörige)</div>'+
     '<div class="confirm-box" style="background:#fff;border-color:var(--line);margin-bottom:10px" onclick="toggleCustChk(\'nc_noContact\')"><input type="checkbox" id="nc_noContact" '+(c.noContact?'checked':'')+' onclick="event.stopPropagation();custNoContact(this.checked)"><label>Keine Kontaktperson vorhanden</label></div>'+
@@ -2682,6 +2972,11 @@ function customerFormHTML(c){
       '<div class="form-row"><div><label>Name</label><input id="nc_contactName" value="'+(c.contactName||'')+'"></div>'+
       '<div><label>Telefonnummer</label><input id="nc_contactPhone" value="'+(c.contactPhone||'')+'"></div></div>'+
     '</div>'+
+
+    '<div class="section-label">Weitere Angehörige &amp; Bevollmächtigte</div>'+
+    '<p style="font-size:13px;color:var(--muted);margin-bottom:8px">Beziehungen zum Kunden (Kinder, Betreuer, Notfallkontakte). Vollmachten bitte im Kundenprofil unter „Dokumente" hochladen.</p>'+
+    '<div id="nc_angeList">'+(c.angehoerige||[]).map(angeRowHTML).join('')+'</div>'+
+    '<button class="btn-ghost btn-sm" style="margin-bottom:6px" onclick="addAngeRow()">＋ Person hinzufügen</button>'+
 
     '<div class="section-label">Hinweise</div>'+
     '<div class="confirm-box" style="background:#fff;border-color:var(--line);margin-bottom:10px" onclick="toggleCustChk(\'nc_noNotes\')"><input type="checkbox" id="nc_noNotes" '+(c.noNotes?'checked':'')+' onclick="event.stopPropagation();custNoNotes(this.checked)"><label>Keine Hinweise</label></div>'+
@@ -2725,6 +3020,22 @@ function customerFormHTML(c){
       : '<button class="btn-primary" style="width:auto;padding:12px 24px;margin-top:8px" onclick="updateCustomer('+c.id+')">Änderungen speichern</button>')+
   '</div></div>';
 }
+/* --- Angehörige/Bevollmächtigte: dynamische Zeilen im Kundenformular --- */
+const ANGE_BEZIEHUNGEN=['Tochter','Sohn','Ehepartner/in','Betreuer/in (gesetzlich)','Enkel/in','Nachbar/in','Sonstige'];
+function angeRowHTML(a){
+  a=a||{};
+  return '<div class="form-row ange-row" style="align-items:flex-end;gap:8px">'+
+    '<div style="flex:2"><label>Name</label><input class="ange-name" value="'+(a.name||'').replace(/"/g,'&quot;')+'"></div>'+
+    '<div style="flex:1.5"><label>Beziehung</label><select class="ange-rel">'+ANGE_BEZIEHUNGEN.map(b=>'<option '+(a.beziehung===b?'selected':'')+'>'+b+'</option>').join('')+'</select></div>'+
+    '<div style="flex:1.6"><label>Telefon</label><input class="ange-tel" value="'+(a.telefon||'').replace(/"/g,'&quot;')+'"></div>'+
+    '<div style="flex:none;text-align:center;padding-bottom:8px"><label style="font-size:11px;display:block">Bevollm.</label><input type="checkbox" class="ange-bv" style="width:auto" '+(a.bevollmaechtigt?'checked':'')+'></div>'+
+    '<div style="flex:none;padding-bottom:5px"><button class="btn-danger-ghost btn-sm" onclick="this.closest(\'.ange-row\').remove()">✕</button></div>'+
+  '</div>';
+}
+function addAngeRow(){
+  const box=document.getElementById('nc_angeList');
+  if(box) box.insertAdjacentHTML('beforeend',angeRowHTML({}));
+}
 function toggleCustChk(id){ const el=document.getElementById(id); el.checked=!el.checked; if(id==='nc_noContact')custNoContact(el.checked); if(id==='nc_noNotes')custNoNotes(el.checked); }
 function custNoContact(checked){ document.getElementById('nc_contactFields').style.display=checked?'none':'block'; }
 function custNoNotes(checked){ document.getElementById('nc_notesField').style.display=checked?'none':'block'; }
@@ -2756,6 +3067,13 @@ function gatherCustomer(c){
   c.window=c.timeWindows.join(', ')||'flexibel';
   c.pets=[...document.querySelectorAll('#nc_pets .check.on')].map(e=>e.textContent);
   c.pet=c.pets.join(', ')||'—';
+  c.petNote=val('nc_petNote');
+  c.angehoerige=[...document.querySelectorAll('#nc_angeList .ange-row')].map(r=>({
+    name:r.querySelector('.ange-name').value.trim(),
+    beziehung:r.querySelector('.ange-rel').value,
+    telefon:r.querySelector('.ange-tel').value.trim(),
+    bevollmaechtigt:r.querySelector('.ange-bv').checked
+  })).filter(a=>a.name);
   c.noContact=document.getElementById('nc_noContact').checked;
   c.contactName=c.noContact?'':val('nc_contactName');
   c.contactPhone=c.noContact?'':val('nc_contactPhone');
@@ -2786,6 +3104,7 @@ function createCustomer(){
   if(!isValidPhone(c.phoneMobile) || !isValidPhone(c.phoneLandline) || !isValidPhone(c.contactPhone)) missing.push('gültige Telefonnummer');
   if(!c.address||c.address==='—') missing.push('Adresse');
   if(!c.phone||c.phone==='—') missing.push('Telefon');
+  if(!c.birth) missing.push('Geburtsdatum');
   if(!c.need||!c.need.length) missing.push('Leistung');
   if(missing.length){toast('Kunde unvollständig – fehlt: '+missing.join(', '),true);return;}
   const job={id:nextJobId++,customerId:c.id,title:(c.need[0]||'Neuer Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]};
@@ -2962,7 +3281,14 @@ function showApplication(id){
     '<div style="margin-top:10px;font-size:14px"><b>Motivation:</b> '+a.motivation+'</div>'+
     '<div class="section-label">Personalfragebogen</div>'+pfbRows+
     '<div class="section-label">Erklärung & Nachweise</div>'+
-    declRow('Keine Vorstrafen',decl.noCrime)+declRow('Führungszeugnis wird nachgereicht',decl.bringCertificate)+declRow('Erste-Hilfe-Kurs wird absolviert',decl.bringFirstAid)+declRow('KV-Karte wird eingesendet',decl.sendKvCard)+
+    declRow('Keine Vorstrafen',decl.noCrime)+
+    (decl.certificateStatus==='vorhanden'
+      ? fileRow('Führungszeugnis (bereits vorhanden – prüfen!)',!!di.fzg,'fzg')
+      : declRow('Führungszeugnis wird nachgereicht',decl.bringCertificate))+
+    (decl.firstAidStatus==='vorhanden'
+      ? fileRow('Erste-Hilfe-Bescheinigung (bereits vorhanden – Umfang/Gültigkeit prüfen!)',!!di.erstehilfe,'erstehilfe')
+      : declRow('Erste-Hilfe-Kurs wird absolviert',decl.bringFirstAid))+
+    declRow('KV-Karte wird eingesendet',decl.sendKvCard)+
     '<div class="section-label">Signierte Verträge</div>'+contractRow('Arbeitsvertrag')+contractRow('Datenschutzvertrag')+contractRow('NDA')+contractRow('Haftungserklärung')+
     '<div class="section-label">Identität & Bestätigungen</div>'+
     fileRow('Personalausweis Vorderseite',a.idFront,'idFront')+fileRow('Personalausweis Rückseite',a.idBack,'idBack')+fileRow('Selfie',a.selfie,'selfie')+
@@ -3171,13 +3497,19 @@ function renderStaff(view){
       return;
     }
     const avail=availableForMe();
+    const schulungHinweis=!schulungenKomplett(m)
+      ? '<div class="example-id" style="background:var(--amber-soft);border-color:#f0dcc2;margin-bottom:16px"><div style="font-size:20px">🎓</div><div><b>Schulungen noch nicht abgeschlossen.</b> Du kannst die Aufträge ansehen, aber erst annehmen, wenn du alle Schulungen bestätigt hast. <button class="btn-primary btn-sm" style="width:auto;margin-left:6px" onclick="renderStaff(\'schulung\')">Zu den Schulungen →</button></div></div>'
+      : '';
     c.innerHTML=head('Auftragsbörse','Neue Kunden in deinem Gebiet. Vor der Annahme siehst du eine Zusammenfassung – aber keinen Namen oder Adresse. Wer zuerst annimmt, bekommt den Auftrag.')+
+    schulungHinweis+
     (avail.length?'<div class="cards grid-2" id="board">'+avail.map(jobCard).join('')+'</div>':emptyBoard());
+    setTimeout(fillDistances,60);
   }
   if(view==='mine'){
     const mine=jobs.filter(j=>j.status==='assigned'&&j.assignedTo===myId);
     c.innerHTML=head('Meine Kunden','Angenommene Aufträge mit vollständigen Kontaktdaten. Vereinbare jetzt selbst einen Termin.')+
     (mine.length?'<div class="cards grid-2">'+mine.map(mineCard).join('')+'</div>':placeholder('✓','Noch keine Kunden angenommen','Geh zur Auftragsbörse und nimm einen Auftrag an – die vollständigen Daten erscheinen dann hier.'));
+    setTimeout(fillDistances,60);
   }
   if(view==='aufgaben'){
     const all=aufgaben.filter(a=>a.mitarbeiterId===myId);
@@ -3207,7 +3539,7 @@ function renderStaff(view){
     (mine.length?'<table><thead><tr><th>Datum</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Status</th><th>Leistungsnachweis</th></tr></thead><tbody>'+
       mine.map(t=>{const cu=custById(t.customerId);
         const st = t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
-                 : t.status==='abgelehnt'?'<span class="tag red">abgelehnt</span>'
+                 : t.status==='abgelehnt'?'<span class="tag red">abgelehnt</span>'+(t.rejectGrund?'<div style="font-size:11px;color:var(--danger);max-width:180px;margin-top:3px">Grund: '+t.rejectGrund+'</div>':'')
                  : '<span class="tag amber">wartet auf Freigabe</span>';
         return '<tr><td>'+fmtDate(t.date)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+tsDuration(t)+'</td><td>'+st+'</td><td>'+
         (t.signature?'<img src="'+t.signature+'" style="height:30px;border:1px solid var(--line);border-radius:5px;background:#fff;vertical-align:middle"> <button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ PDF</button>':'<span style="color:var(--muted);font-size:12.5px">—</span>')+
@@ -3216,14 +3548,20 @@ function renderStaff(view){
     '</div></div>';
   }
   if(view==='payroll'){
-    const mine=timesheets.filter(t=>t.staffId===myId&&t.status==='freigegeben');
+    const thisMonth=todayISO().slice(0,7);
+    const mine=timesheets.filter(t=>t.staffId===myId&&t.status==='freigegeben'&&String(t.date||'').slice(0,7)===thisMonth);
     const totalMin=mine.reduce((n,t)=>n+tsMinutes(t),0);
-    c.innerHTML=head('Lohnabrechnung','Deine freigegebenen Stunden und Abrechnungen.')+
+    const meineAbr=lohnabrechnungen.filter(l=>l.staffId===myId&&l.status==='freigegeben')
+      .sort((a,b)=>String(b.monat).localeCompare(String(a.monat)));
+    c.innerHTML=head('Lohnabrechnung','Deine freigegebenen Stunden und die vom Büro geprüften Lohnabrechnungen.')+
     '<div class="cards grid-2"><div class="stat"><div class="label">Freigegebene Stunden (Monat)</div><div class="value">'+(totalMin/60).toFixed(1).replace('.',',')+'</div><div class="foot">Basis für die Abrechnung</div></div>'+
-    '<div class="stat"><div class="label">Abrechnungen</div><div class="value">'+(totalMin>0?'1':'0')+'</div><div class="foot">zum Download bereit</div></div></div>'+
+    '<div class="stat"><div class="label">Abrechnungen</div><div class="value">'+meineAbr.length+'</div><div class="foot">geprüft &amp; freigegeben</div></div></div>'+
     '<div style="height:16px"></div>'+
-    (totalMin>0?'<div class="panel"><div class="panel-body" style="padding-top:16px"><table><thead><tr><th>Zeitraum</th><th>Stunden</th><th></th></tr></thead><tbody><tr><td>Juni 2026</td><td>'+(totalMin/60).toFixed(1).replace('.',',')+' Std.</td><td><button class="btn-ghost btn-sm" onclick="toast(\'Download startet (Demo)\')">⬇ Herunterladen</button></td></tr></tbody></table></div></div>'
-      :placeholder('€','Noch keine Abrechnung','Sobald das Büro deine erfassten Stunden freigibt, erscheint hier deine Abrechnung.'));
+    (meineAbr.length
+      ? '<div class="panel"><div class="panel-head"><h3>Meine Lohnabrechnungen</h3></div><div class="panel-body" style="padding-top:10px"><table><thead><tr><th>Monat</th><th>Freigegeben am</th><th></th></tr></thead><tbody>'+
+        meineAbr.map(l=>'<tr><td><b>'+l.monat+'</b></td><td>'+(l.freigegebenAm?fmtDate(l.freigegebenAm):'—')+'</td><td><button class="btn-ghost btn-sm" onclick="openLohn('+l.id+')">👁 Ansehen / Herunterladen</button></td></tr>').join('')+
+        '</tbody></table></div></div>'
+      : placeholder('€','Noch keine Abrechnung','Deine Stunden gehen an den Steuerberater. Sobald das Büro die fertige Abrechnung geprüft und freigegeben hat, erscheint sie hier.'));
   }
   if(view==='profile'){
     c.innerHTML=head('Mein Profil','Deine Daten, Verfügbarkeit und Status – pflegst du selbst.')+
@@ -3287,7 +3625,67 @@ function saveProfile(){
 }
 
 /* ---- Job-Karten mit Zusammenfassung ---- */
-function distanceKm(customerId){return 3+((customerId*7)%22);} // Demo: stabile Pseudo-Entfernung 3–24 km
+/* Echte Entfernung Wohnort-Mitarbeiter ↔ Kunde (statt der früheren Demo-Zahl).
+   Geodaten kommen aus dem Karten-Zwischenspeicher (Nominatim), fehlende
+   Adressen werden im Hintergrund einmalig ermittelt. Luftlinie × 1,35
+   Straßenfaktor. Solange nichts vorliegt: „wird ermittelt …" */
+let __kmCache={};
+function haversineKm(a,b){
+  const R=6371,rad=Math.PI/180;
+  const dLat=(b.lat-a.lat)*rad,dLon=(b.lon-a.lon)*rad;
+  const x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return 2*R*Math.asin(Math.sqrt(x));
+}
+function distanceKm(customerId){ // null = noch nicht berechnet
+  const v=__kmCache[myId+'_'+customerId];
+  return (v===undefined)?null:v;
+}
+function distSlot(custId){
+  const km=distanceKm(custId);
+  return '<span class="km-slot" data-cid="'+custId+'">'+(km!=null?('ca. '+String(km).replace('.',',')+' km von dir'):'Entfernung wird ermittelt …')+'</span>';
+}
+function staffHomeAddress(){
+  const m=me();
+  const a=m&&m.intern&&m.intern.address;
+  return a?String(a).trim()+', Deutschland':null;
+}
+let __distBusy=false;
+async function fillDistances(){
+  if(__distBusy) return; __distBusy=true;
+  try{
+    const slots=[...document.querySelectorAll('.km-slot')];
+    if(!slots.length) return;
+    const homeAddr=staffHomeAddress();
+    if(!homeAddr){ slots.forEach(s=>{ s.textContent='Entfernung: eigene Adresse fehlt (Personalfragebogen)'; }); return; }
+    const cache=geoCacheGet();
+    async function geo(addr){
+      if(!addr) return null;
+      if(cache[addr]!==undefined) return cache[addr];
+      try{
+        const res=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&q='+encodeURIComponent(addr));
+        const js=await res.json();
+        cache[addr]=(js&&js[0])?{lat:+js[0].lat,lon:+js[0].lon}:null;
+        geoCacheSet(cache);
+        await new Promise(r=>setTimeout(r,1100)); // Nominatim: max ~1 Anfrage/Sek.
+      }catch(e){ return undefined; }
+      return cache[addr];
+    }
+    const home=await geo(homeAddr);
+    for(const s of slots){
+      if(!document.body.contains(s)) continue; // Ansicht inzwischen gewechselt
+      const cu=custById(+s.dataset.cid); if(!cu) continue;
+      const key=myId+'_'+cu.id;
+      if(__kmCache[key]===undefined){
+        const ca=custAddressString(cu);
+        const pos=ca?await geo(ca):null;
+        __kmCache[key]=(home&&pos)?Math.round(haversineKm(home,pos)*1.35*10)/10:null;
+      }
+      if(document.body.contains(s)){
+        s.textContent=(__kmCache[key]!=null)?('ca. '+String(__kmCache[key]).replace('.',',')+' km von dir'):'Entfernung nicht ermittelbar (Adresse prüfen)';
+      }
+    }
+  }finally{ __distBusy=false; }
+}
 const STAFF_COLORS=['#0f5b63','#e08a2b','#2c6e9b','#7a4ca0','#2f8f5b','#b5402f','#c79a00','#1f7a8c'];
 function nextColor(){return STAFF_COLORS[staff.length % STAFF_COLORS.length];}
 function jobEstHours(j){const cu=custById(j.customerId);const per=cu&&cu.freqUnit==='pro Woche'?(cu.freqNum||1):1;return Math.max(2,per*2);} // grobe Schätzung h/Woche
@@ -3299,10 +3697,9 @@ function myRejectRate(){
 }
 function jobCard(j){
   const cu=custById(j.customerId);
-  const km=distanceKm(cu.id);
   // weniger detailreich: Tätigkeit, Entfernung, Häufigkeit, kurze Zusammenfassung
   return '<div class="job" id="job-'+j.id+'">'+
-    '<div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+' · ca. '+km+' km von dir</div></div><span class="tag green">verfügbar</span></div>'+
+    '<div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+' · '+distSlot(cu.id)+'</div></div><span class="tag green">verfügbar</span></div>'+
     '<div class="job-tags">'+j.skills.map(s=>'<span class="tag grey">'+s+'</span>').join('')+'</div>'+
     '<div class="summary"><div class="sh">Kurzinfo</div>'+cu.need.join(', ')+' · '+freqText(cu)+' · '+cu.window+'</div>'+
     '<div class="locked">🔒 Genaue Adresse & Name erst nach Annahme</div>'+
@@ -3322,7 +3719,7 @@ function mineCard(j){
       timerHtml='<div class="example-id" style="background:var(--danger-soft);border-color:#eccfc8;margin-bottom:12px"><div style="font-size:20px">⚠️</div><div><b>Frist abgelaufen</b> – bitte umgehend Termin vereinbaren oder zurückgeben.</div></div>';
     }
   }
-  return '<div class="job"><div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+' · ca. '+distanceKm(cu.id)+' km</div></div><span class="tag green">angenommen</span></div>'+
+  return '<div class="job"><div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+' · '+distSlot(cu.id)+'</div></div><span class="tag green">angenommen</span></div>'+
     timerHtml+
     '<div class="reveal"><div class="rh">✓ Vollständige Kundendaten</div>'+
       '<div class="reveal-row"><span class="k">Name</span><span class="v">'+fullName(cu)+'</span></div>'+
@@ -3338,13 +3735,20 @@ function emptyBoard(){return '<div class="empty"><div class="big">🎉</div><b>A
 
 function askCommit(id){
   const j=jobs.find(x=>x.id===id);if(!j)return;
+  // Schulungspflicht: erst alle Schulungen bestätigen, dann Aufträge annehmen
+  if(!schulungenKomplett(me())){
+    toast('Bitte zuerst alle Schulungen abschließen – danach kannst du Aufträge annehmen',true);
+    renderStaff('schulung');
+    return;
+  }
   if(j.status!=='available'){toast('Leider schon vergeben an '+staffName(j.assignedTo),true);renderStaff('board');return;}
   const m=me();const cu=custById(j.customerId);
   const est=jobEstHours(j);const load=myWeeklyLoad();const cap=m.maxHours||20;
   const wouldBe=load+est;
   const overCap=wouldBe>cap;
   const highRisk=myRejectRate()>=0.5;
-  const km=distanceKm(cu.id);
+  const kmVal=distanceKm(cu.id);
+  const km=(kmVal!=null)?String(kmVal).replace('.',','):'?';
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent='Auftrag verbindlich annehmen';
   document.getElementById('modalBody').innerHTML=
@@ -3426,6 +3830,8 @@ function renderWizard(){
   const steps=[wizAbout,wizTasks,wizRequirements,wizDataForm,wizQuestionnaire,wizContracts,wizDeclaration,wizIdSelfie,wizAgb,wizDone];
   w.innerHTML='<div class="wiz-step active">'+steps[wizStep]()+'</div>';
   if(wizStep===5) setTimeout(initSignPads,30);
+  // AGB-Schritt: falls der Text ohne Scrollen komplett sichtbar ist, Häkchen sofort freigeben
+  if(wizStep===8) setTimeout(function(){ agbScrollCheck(document.getElementById('agbScroll')); },80);
 }
 function wizNumLabel(n){return '<div class="wiz-num">Schritt '+n+' von '+WIZ_TOTAL+'</div>';}
 
@@ -3529,6 +3935,36 @@ function validIban(v){
   let rem=0; for(let i=0;i<num.length;i++){ rem=(rem*10+parseInt(num[i],10))%97; }
   return rem===1;
 }
+/* --- Eingabe-Helfer (Usability-Feedback aus der Präsentation 03.07.) --- */
+function ibanAutoFormat(el){ // automatische 4er-Gruppen mit Leerzeichen
+  let v=el.value.replace(/\s+/g,'').toUpperCase().slice(0,22);
+  el.value=v.replace(/(.{4})/g,'$1 ').trim();
+}
+function dateAutoFormat(el){ // Ziffern werden automatisch zu TT.MM.JJJJ
+  const d=el.value.replace(/\D/g,'').slice(0,8);
+  let out=d.slice(0,2);
+  if(d.length>2) out+='.'+d.slice(2,4);
+  if(d.length>4) out+='.'+d.slice(4,8);
+  el.value=out;
+}
+function parseGermanDate(v){
+  const m=String(v||'').trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if(!m) return null;
+  const d=+m[1], mo=+m[2], y=+m[3];
+  if(y<1900||y>2100) return null;
+  // Datum lokal prüfen (ohne UTC-Umrechnung, sonst Zeitzonen-Fehler)
+  const dt=new Date(y,mo-1,d);
+  if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d) return null;
+  return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+}
+function isoToGerman(v){
+  const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m?(m[3]+'.'+m[2]+'.'+m[1]):String(v||'');
+}
+function splitStreetHouseNo(v){ // "Bahnhofstraße 85a" -> Straße + Hausnr.
+  const m=String(v||'').trim().match(/^(.*?)[\s,]+(\d+\s*[a-zA-Z]?(?:\s*[\/-]\s*\d+[a-zA-Z]?)?)$/);
+  return m?{street:m[1].trim(),houseNo:m[2].replace(/\s+/g,'')}:{street:String(v||'').trim(),houseNo:''};
+}
 let pfbIndex=0;
 function wizQuestionnaire(){
   const q=wizData.questionnaire||{};
@@ -3538,15 +3974,14 @@ function wizQuestionnaire(){
   '<div class="wiz-form">'+
     '<div class="form-row"><div><label>Vorname *</label><input id="pf_first" value="'+(wizData.first||'')+'"></div>'+
     '<div><label>Nachname *</label><input id="pf_last" value="'+(wizData.last||'')+'"></div></div>'+
-    '<div class="form-row"><div style="flex:3"><label>Straße *</label><input id="pf_street" value="'+(q.street||'')+'"></div>'+
-    '<div style="flex:1"><label>Hausnr. *</label><input id="pf_houseno" value="'+(q.houseNo||'')+'"></div></div>'+
-    '<div class="form-row"><div style="flex:1"><label>PLZ *</label><input id="pf_plz" value="'+(q.plz||'')+'"></div>'+
+    '<label>Straße und Hausnummer *</label><input id="pf_streetfull" value="'+(((q.street||'')+' '+(q.houseNo||'')).trim())+'" placeholder="z. B. Bahnhofstraße 85">'+
+    '<div class="form-row"><div style="flex:1"><label>PLZ *</label><input id="pf_plz" inputmode="numeric" value="'+(q.plz||'')+'"></div>'+
     '<div style="flex:2"><label>Ort *</label><input id="pf_city" value="'+(q.city||'')+'"></div></div>'+
-    '<label>Geburtsdatum *</label><input id="pf_birth" type="date" value="'+(q.birth||'')+'">'+
-    '<label>Steuer-Identifikationsnummer *</label><input id="pf_taxid" value="'+(q.taxId||'')+'" placeholder="11 Ziffern">'+
+    '<label>Geburtsdatum *</label><input id="pf_birth" inputmode="numeric" placeholder="TT.MM.JJJJ" oninput="dateAutoFormat(this)" value="'+isoToGerman(q.birth||'')+'">'+
+    '<label>Steuer-Identifikationsnummer *</label><input id="pf_taxid" inputmode="numeric" value="'+(q.taxId||'')+'" placeholder="11 Ziffern">'+
     '<label>Krankenversicherungsnummer *</label><input id="pf_kvnr" value="'+(q.kvNr||'')+'" placeholder="1 Buchstabe + 9 Ziffern">'+
     '<label>Krankenkasse *</label><input id="pf_kasse" value="'+(q.kasse||'')+'" placeholder="z. B. AOK Niedersachsen">'+
-    '<label>IBAN *</label><input id="pf_iban" value="'+(q.iban||'')+'" placeholder="DE..">'+
+    '<label>IBAN *</label><input id="pf_iban" oninput="ibanAutoFormat(this)" value="'+(q.iban||'')+'" placeholder="DE12 3456 7890 …">'+
     '<label>Beschäftigungsart *</label>'+
     '<select id="pf_employment"><option value="">Bitte wählen …</option>'+['Minijob','Midijob','Werkstudent','Kurzfristige Beschäftigung'].map(e=>'<option '+(q.employment===e?'selected':'')+'>'+e+'</option>').join('')+'</select>'+
     '<label>Übst du weitere Beschäftigungen aus? *</label>'+
@@ -3575,16 +4010,20 @@ function handleEnrollFile(input){
 }
 function savePfb(){
   const q=wizData.questionnaire||{};
-  q.street=val('pf_street');q.houseNo=val('pf_houseno');q.plz=val('pf_plz');q.city=val('pf_city');
+  const sh=splitStreetHouseNo(val('pf_streetfull'));
+  q.street=sh.street;q.houseNo=sh.houseNo;q.plz=val('pf_plz');q.city=val('pf_city');
   q.address=(q.street+' '+q.houseNo+', '+q.plz+' '+q.city).trim();
-  q.birth=val('pf_birth');q.taxId=val('pf_taxid');q.kvNr=val('pf_kvnr');q.kasse=val('pf_kasse');q.iban=val('pf_iban');
+  const birthIso=parseGermanDate(val('pf_birth'));
+  q.birth=birthIso||'';
+  q.taxId=val('pf_taxid');q.kvNr=val('pf_kvnr');q.kasse=val('pf_kasse');q.iban=val('pf_iban');
   q.employment=document.getElementById('pf_employment').value;
   q.otherJob=document.getElementById('pf_otherjob').value;
   wizData.questionnaire=q;
   wizData.first=val('pf_first');wizData.last=val('pf_last');
   // Pflichtprüfung
-  if(!q.street||!q.houseNo||!q.plz||!q.city){toast('Bitte die komplette Anschrift ausfüllen',true);return;}
-  if(!q.birth){toast('Bitte Geburtsdatum angeben',true);return;}
+  if(!q.street||!q.houseNo){toast('Bitte Straße mit Hausnummer angeben (z. B. Bahnhofstraße 85)',true);return;}
+  if(!q.plz||!q.city){toast('Bitte PLZ und Ort ausfüllen',true);return;}
+  if(!birthIso){toast('Bitte Geburtsdatum im Format TT.MM.JJJJ angeben',true);return;}
   if(!validTaxId(q.taxId)){toast('Steuer-ID muss aus genau 11 Ziffern bestehen',true);return;}
   if(!validKvNr(q.kvNr)){toast('KV-Nummer: 1 Buchstabe gefolgt von 9 Ziffern',true);return;}
   if(!q.kasse){toast('Bitte Krankenkasse angeben',true);return;}
@@ -3637,14 +4076,38 @@ function checkContracts(){
 /* ---- Schritt 7: Erklärung (Führungszeugnis / Erste-Hilfe) ---- */
 function wizDeclaration(){
   const d=wizData.declaration;
-  const chk=(key,label,sub)=>'<div class="confirm-box" style="background:#fff;border-color:var(--line)" onclick="toggleDecl(\''+key+'\')"><input type="checkbox" '+(d[key]?'checked':'')+' onclick="event.stopPropagation();toggleDecl(\''+key+'\')"><label><b>'+label+'</b>'+(sub?'<div style="font-weight:400;color:var(--muted);font-size:12.5px;margin-top:2px">'+sub+'</div>':'')+'</label></div>';
+  // Je Nachweis: „reiche ich nach" ODER „bereits vorhanden" (dann Upload-Pflicht)
+  const block=(key,uploadKey,title,sub)=>{
+    const mode=d[key+'Status']||''; // '' | 'nachreichen' | 'vorhanden'
+    const hasFile=!!wizData[uploadKey+'Img'];
+    return '<div style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;background:#fff">'+
+      '<b>'+title+'</b><div style="color:var(--muted);font-size:12.5px;margin:2px 0 10px">'+sub+'</div>'+
+      '<div class="seg" id="decl_'+key+'">'+
+        '<button class="'+(mode==='nachreichen'?'on':'')+'" onclick="setDeclMode(\''+key+'\',\'nachreichen\')">Reiche ich in 2–3 Monaten nach</button>'+
+        '<button class="'+(mode==='vorhanden'?'on':'')+'" onclick="setDeclMode(\''+key+'\',\'vorhanden\')">Bereits vorhanden</button>'+
+      '</div>'+
+      (mode==='vorhanden'
+        ? '<div style="margin-top:10px">'+
+          (hasFile?'<div style="color:var(--good);font-size:13px;font-weight:600">✓ Nachweis hochgeladen</div>'
+                  :'<label class="ub2-btn" style="display:inline-flex">📎 Nachweis hochladen (Foto oder PDF)<input type="file" accept="image/*,application/pdf" style="display:none" onchange="handleIdFile(\''+uploadKey+'\',this)"></label>')+
+          '</div>'
+        : '')+
+    '</div>';
+  };
   return wizNumLabel(7)+
-  '<div class="wiz-card"><h2>Nachweise & Bonus</h2>'+
-  '<p class="lead">Fast geschafft. Bitte bestätige die folgenden Punkte.</p>'+
-  chk('bringCertificate','Ich reiche innerhalb der ersten 2–3 Monate ein erweitertes Führungszeugnis nach','Pflicht für die Tätigkeit bei schutzbedürftigen Personen.')+
-  chk('bringFirstAid','Ich absolviere innerhalb der ersten 2–3 Monate einen Erste-Hilfe-Kurs','Die Kosten werden nach Vorlage erstattet.')+
+  '<div class="wiz-card"><h2>Nachweise</h2>'+
+  '<p class="lead">Fast geschafft. Sag uns, wie es bei dir mit den Pflichtnachweisen aussieht.</p>'+
+  block('certificate','fzg','Erweitertes Führungszeugnis','Pflicht für die Tätigkeit bei schutzbedürftigen Personen. Falls schon vorhanden: bitte direkt hochladen – wir prüfen es dann im Büro.')+
+  block('firstAid','erstehilfe','Erste-Hilfe-Kurs','Falls schon absolviert: Teilnahmebescheinigung hochladen (wir prüfen Umfang und Gültigkeit). Kurskosten werden nach Vorlage erstattet.')+
   '<div class="example-id" style="background:var(--good-soft);border-color:#bbf7d0;margin-top:16px"><div style="font-size:22px">🎁</div><div><b>Bonus:</b> Wer Führungszeugnis und Erste-Hilfe-Nachweis fristgerecht einreicht, erhält einen einmaligen Bonus von 100 €.</div></div>'+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="declNext" onclick="checkDeclaration()">Weiter →</button></div></div>';
+}
+function setDeclMode(key,mode){
+  wizData.declaration[key+'Status']=mode;
+  // Abwärtskompatibel zu den bisherigen Feldern (Anzeige im Büro)
+  if(key==='certificate') wizData.declaration.bringCertificate=(mode==='nachreichen');
+  if(key==='firstAid')    wizData.declaration.bringFirstAid=(mode==='nachreichen');
+  renderWizard();
 }
 function toggleDecl(key){
   wizData.declaration[key]=!wizData.declaration[key];
@@ -3652,7 +4115,10 @@ function toggleDecl(key){
 }
 function checkDeclaration(){
   const d=wizData.declaration;
-  if(!d.bringCertificate||!d.bringFirstAid){toast('Bitte Führungszeugnis und Erste-Hilfe bestätigen',true);return;}
+  if(!d.certificateStatus){toast('Bitte beim Führungszeugnis eine Auswahl treffen',true);return;}
+  if(!d.firstAidStatus){toast('Bitte beim Erste-Hilfe-Kurs eine Auswahl treffen',true);return;}
+  if(d.certificateStatus==='vorhanden'&&!wizData.fzgImg){toast('Bitte das Führungszeugnis hochladen',true);return;}
+  if(d.firstAidStatus==='vorhanden'&&!wizData.erstehilfeImg){toast('Bitte die Erste-Hilfe-Bescheinigung hochladen',true);return;}
   wizNext();
 }
 
@@ -3760,7 +4226,7 @@ function compressImageFile(file, maxDim, quality){
 async function handleIdFile(which, input){
   const file=input.files&&input.files[0]; if(!file)return;
   if(!validateUploadFile(file,{maxSize:SECURITY_MAX_FILE, imagesOnly:(which==='selfie'||which==='idFront'||which==='idBack')})){ input.value=''; return; }
-  const labels={idFront:'Vorderseite',idBack:'Rückseite',selfie:'Selfie',enrollment:'Immatrikulationsbescheinigung'};
+  const labels={idFront:'Vorderseite',idBack:'Rückseite',selfie:'Selfie',enrollment:'Immatrikulationsbescheinigung',fzg:'Führungszeugnis',erstehilfe:'Erste-Hilfe-Bescheinigung'};
   const isImage=(which==='selfie'||which==='idFront'||which==='idBack')||(file.type||'').indexOf('image/')===0;
   let dataUrl=null;
   if(isImage){ dataUrl=await compressImageFile(file, 1400, 0.75); }
@@ -3783,16 +4249,34 @@ function checkIds(){
 function wizAgb(){
   return wizNumLabel(9)+
   '<div class="wiz-card"><h2>AGB & Datenschutz</h2>'+
-  '<p class="lead">Zum Abschluss bestätige bitte, dass du unsere Bedingungen gelesen hast.</p>'+
-  '<div class="confirm-box" onclick="document.getElementById(\'agbChk\').click()"><input type="checkbox" id="agbChk" onclick="event.stopPropagation();checkAgb()"><label>Ich habe die <a href="#" style="color:var(--blue);font-weight:600" onclick="event.stopPropagation();event.preventDefault();viewLegal(\'agb\')">AGB</a> und die <a href="#" style="color:var(--blue);font-weight:600" onclick="event.stopPropagation();event.preventDefault();viewLegal(\'datenschutz\')">Datenschutzerklärung</a> gelesen und akzeptiere sie.</label></div>'+
+  '<p class="lead">Bitte lies die Bedingungen bis zum Ende – erst danach lässt sich das Häkchen setzen.</p>'+
+  '<div id="agbScroll" onscroll="agbScrollCheck(this)" style="border:1px solid var(--line);border-radius:10px;padding:14px 16px;max-height:260px;overflow:auto;font-size:12.5px;line-height:1.6;white-space:pre-wrap;background:#fff">'+legalText('agb')+'\n\n————————————————\n\n'+legalText('datenschutz')+'</div>'+
+  '<div id="agbScrollHint" style="font-size:12.5px;color:var(--muted);margin:8px 2px 0">⬇ Bitte bis zum Ende scrollen …</div>'+
+  '<div class="confirm-box" id="agbBox" style="opacity:.55" onclick="agbBoxClick()"><input type="checkbox" id="agbChk" disabled onclick="event.stopPropagation();checkAgb()"><label>Ich habe die AGB und die Datenschutzerklärung vollständig gelesen und akzeptiere sie.</label></div>'+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="agbNext" disabled onclick="submitApplication()">Bewerbung absenden</button></div></div>';
 }
-function viewLegal(which){
-  const t=which==='agb'
+function agbScrollCheck(el){
+  if(!el) return;
+  // Auch der Fall "Text passt komplett in die Box" gilt als gelesen
+  if(el.scrollHeight<=el.clientHeight+4 || el.scrollTop+el.clientHeight>=el.scrollHeight-12){
+    const chk=document.getElementById('agbChk'); if(chk) chk.disabled=false;
+    const box=document.getElementById('agbBox'); if(box) box.style.opacity='1';
+    const h=document.getElementById('agbScrollHint'); if(h){ h.textContent='✓ Vollständig gelesen – du kannst jetzt bestätigen.'; h.style.color='var(--good)'; }
+  }
+}
+function agbBoxClick(){
+  const chk=document.getElementById('agbChk');
+  if(chk&&!chk.disabled){ chk.checked=!chk.checked; checkAgb(); }
+  else toast('Bitte zuerst die Bedingungen bis zum Ende scrollen',true);
+}
+function legalText(which){
+  return which==='agb'
     ? 'ALLGEMEINE GESCHÄFTSBEDINGUNGEN (DailyDo)\n\n§1 Geltungsbereich\nDiese AGB gelten für die Vermittlung von Alltagshilfe-Dienstleistungen über die Plattform DailyDo.\n\n§2 Leistungen\nDailyDo vermittelt Helfer:innen an hilfesuchende Personen für Haushalt, Einkäufe, Begleitdienste und weitere Alltagsleistungen.\n\n§3 Pflichten der Mitarbeiter\nMitarbeiter verpflichten sich zu zuverlässiger, sorgfältiger Leistungserbringung und zur Einhaltung der vereinbarten Termine.\n\n§4 Vergütung\nDie Abrechnung erfolgt auf Basis der erfassten und vom Kunden bestätigten Stunden.\n\n§5 Haftung\nEs gelten die gesetzlichen Haftungsregelungen.\n\n(Demo-Text – die endgültigen AGB werden vor dem Echtbetrieb juristisch erstellt.)'
     : 'DATENSCHUTZERKLÄRUNG (DailyDo)\n\n1. Verantwortlicher\nDailyDo, Alltagshilfe Hannover.\n\n2. Verarbeitete Daten\nWir verarbeiten die im Bewerbungs- und Einsatzprozess angegebenen personenbezogenen Daten (Name, Kontaktdaten, Ausweisdaten, Steuer- und Sozialversicherungsdaten) ausschließlich zum Zweck der Beschäftigung und Einsatzvermittlung.\n\n3. Rechtsgrundlage\nArt. 6 Abs. 1 DSGVO sowie § 26 BDSG (Beschäftigtendatenschutz).\n\n4. Speicherung\nDie Daten werden auf Servern in der EU (Frankfurt) gespeichert und nur so lange aufbewahrt, wie es gesetzlich erforderlich ist.\n\n5. Deine Rechte\nDu hast das Recht auf Auskunft, Berichtigung, Löschung und Widerspruch.\n\n(Demo-Text – die endgültige Datenschutzerklärung wird vor dem Echtbetrieb juristisch erstellt.)';
+}
+function viewLegal(which){
   document.getElementById('modalTitle').textContent=which==='agb'?'AGB':'Datenschutzerklärung';
-  document.getElementById('modalBody').innerHTML='<div class="doc-text" style="max-height:60vh;white-space:pre-wrap">'+t+'</div>';
+  document.getElementById('modalBody').innerHTML='<div class="doc-text" style="max-height:60vh;white-space:pre-wrap">'+legalText(which)+'</div>';
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
   openModal();
 }
@@ -3802,7 +4286,7 @@ async function submitApplication(){
   if(btn){ btn.disabled=true; btn.textContent='Wird gesendet …'; }
   const app={id:nextAppId++,first:wizData.first,last:wizData.last,gender:wizData.gender,email:wizData.email,phone:wizData.phone,area:wizData.area||'—',citizenship:wizData.citizenship,skills:wizData.skills.length?wizData.skills:['Haushaltshilfe'],motivation:wizData.motivation||'—',status:'neu',docs:Object.assign({},wizData.docs),signatures:Object.assign({},wizData.signatures||{}),questionnaire:Object.assign({},wizData.questionnaire||{}),declaration:Object.assign({},wizData.declaration||{}),idFront:wizData.idFront,idBack:wizData.idBack,selfie:wizData.selfie,agb:true,isStudent:!!wizData.isStudent,enrollmentFile:!!wizData.enrollmentFile,pets:wizData.pets||[],
     // Bilddaten der eingereichten Dokumente (zur Prüfung im Büro)
-    docImages:{idFront:wizData.idFrontImg||null, idBack:wizData.idBackImg||null, selfie:wizData.selfieImg||null, enrollment:wizData.enrollmentImg||null}};
+    docImages:{idFront:wizData.idFrontImg||null, idBack:wizData.idBackImg||null, selfie:wizData.selfieImg||null, enrollment:wizData.enrollmentImg||null, fzg:wizData.fzgImg||null, erstehilfe:wizData.erstehilfeImg||null}};
   const safeApp=sanitizeDeep(app);
   // Bewerber sind NICHT eingeloggt: Der Insert darf deshalb nicht am
   // CLOUD-Schalter hängen (der wird erst nach dem Login gesetzt), sondern
@@ -4368,11 +4852,18 @@ function approveTimesheet(id){
 function rejectTimesheet(id){
   if(!requireAdminAction()) return;
   const t=timesheets.find(x=>x.id===id); if(!t)return;
-  if(!confirm('Diesen Stundenzettel ablehnen? Er wird als abgelehnt markiert und zählt nicht zur Abrechnung.'))return;
-  t.status='abgelehnt';
-  if(CLOUD){ cloudUpdate('stundenzettel', id, { status:'abgelehnt' }); }
-  logActivity('Stundenzettel abgelehnt: '+staffName(t.staffId)+', '+fmtDate(t.date));
-  toast('Stundenzettel abgelehnt',true); renderAdmin('hours');
+  // Begründung ist Pflicht – der Mitarbeiter sieht sie in seiner App
+  const grund=prompt('Stundenzettel ablehnen – warum?\nDie Begründung wird dem Mitarbeiter in seiner App angezeigt.');
+  if(grund===null) return; // abgebrochen
+  if(!grund.trim()){ toast('Bitte eine Begründung angeben',true); return; }
+  t.status='abgelehnt'; t.rejectGrund=cleanInput(grund,300);
+  if(CLOUD){
+    cloudUpdate('stundenzettel', id, { status:'abgelehnt' });
+    // Begründung separat speichern, damit eine fehlende V3_MIGRATION.sql die Ablehnung nicht blockiert
+    sb.from('stundenzettel').update({reject_grund:t.rejectGrund}).eq('id',id).then(({error})=>{ if(error) console.warn('Ablehnungsgrund speichern: '+error.message+' – V3_MIGRATION.sql ausführen'); });
+  }
+  logActivity('Stundenzettel abgelehnt ('+t.rejectGrund+'): '+staffName(t.staffId)+', '+fmtDate(t.date));
+  toast('Stundenzettel abgelehnt – Begründung gespeichert',true); renderAdmin('hours');
 }
 /* Plausibilitäts-Check der Unterschrift (kein forensischer Vergleich!):
    Prüft nur, ob überhaupt eine inhaltlich gefüllte Unterschrift vorliegt –
@@ -4847,7 +5338,8 @@ function openBeratung(customerId){
     '<p style="color:var(--muted);font-size:13.5px;margin:0 0 12px">Führe das Gespräch entlang dieser Punkte und hake ab, was besprochen wurde. Am Ende – wenn der Kunde zustimmt – wird die Vereinbarung mit Unterschriftsprobe unterschrieben.</p>'+
     BERATUNG_LEITFADEN.map((s,si)=>
       '<div class="section-label" style="margin-top:'+(si?'14px':'0')+'">'+s.t+'</div>'+
-      s.p.map((p,pi)=>'<label style="display:flex;gap:9px;align-items:flex-start;padding:5px 0;font-size:14px;cursor:pointer"><input type="checkbox" class="ber-chk" data-p="'+s.t+' – '+p.replace(/"/g,'&quot;')+'" style="width:auto;margin-top:3px">'+p+'</label>').join('')
+      s.p.map((p,pi)=>'<label style="display:flex;gap:9px;align-items:flex-start;padding:5px 0;font-size:14px;cursor:pointer"><input type="checkbox" class="ber-chk" data-p="'+s.t+' – '+p.replace(/"/g,'&quot;')+'" style="width:auto;margin-top:3px">'+p+'</label>').join('')+
+      '<textarea class="ber-antwort" data-t="'+s.t.replace(/"/g,'&quot;')+'" rows="2" placeholder="Antworten / Wünsche des Kunden zu diesem Abschnitt (optional)" style="width:100%;margin-top:4px;font-size:13px"></textarea>'
     ).join('');
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Später fortsetzen</button>'+
@@ -4859,6 +5351,10 @@ function beratungWeiter(){
   const ctx=window.__beratungCtx; if(!ctx) return;
   const cu=custById(ctx.customerId); if(!cu) return;
   ctx.punkte=[...document.querySelectorAll('.ber-chk:checked')].map(c=>c.dataset.p);
+  // Kundenantworten je Abschnitt mit aufnehmen (landen mit in der Dokumentation)
+  [...document.querySelectorAll('.ber-antwort')].forEach(t=>{
+    if(t.value.trim()) ctx.punkte.push('💬 Antwort des Kunden ('+t.dataset.t+'): '+cleanInput(t.value,400));
+  });
   const datum=todayISO();
   document.getElementById('modalTitle').textContent='Vereinbarung – '+fullName(cu);
   document.getElementById('modalBody').innerHTML=
@@ -5592,11 +6088,19 @@ function buildRechnungPdf(re, cu){
   const pageW=doc.internal.pageSize.getWidth(); const margin=52; let y=margin;
   doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(110);
   doc.text('www.hannoverhilfe.de',margin,y); y+=16;
+  // Absender aus den Standort-Stammdaten (Pflichtangaben § 14 UStG),
+  // Fallback: bisherige feste Angaben Alltagshilfe Hannover
+  const st=standorte.find(s=>s.id===currentStandortId)||{};
   doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(10.5);
-  doc.text('Alltagshilfe Hannover UG (haftungsbeschränkt)',margin,y); y+=14;
+  doc.text(st.firma||st.name||'Alltagshilfe Hannover UG (haftungsbeschränkt)',margin,y); y+=14;
   doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(80);
-  doc.text('Bahnhofstraße 85 · 31515 Wunstorf',margin,y); y+=12;
-  doc.text('Tel: 05031 5165899 · email: info@hannoverhilfe.de',margin,y); y+=34;
+  doc.text((st.strasse||'Bahnhofstraße 85')+' · '+((st.plz||'31515')+' '+(st.ort||'Wunstorf')),margin,y); y+=12;
+  doc.text('Tel: '+(st.telefon||'05031 5165899')+' · E-Mail: '+(st.email||'info@hannoverhilfe.de'),margin,y); y+=12;
+  const regZeile=[st.handelsregister?('Handelsregister: '+st.handelsregister):null,
+                  st.ustId?('USt-IdNr.: '+st.ustId):null,
+                  st.ikNummer?('IK-Nummer: '+st.ikNummer):null].filter(Boolean).join('  ·  ');
+  if(regZeile){ doc.text(regZeile,margin,y); y+=12; }
+  y+=22;
   doc.setTextColor(0);
   // Empfänger-Adresse
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);
@@ -5609,6 +6113,9 @@ function buildRechnungPdf(re, cu){
   doc.text(re.kostentraegerId?'Kostenträger-Rechnung':'Privatrechnung',margin,y); y+=20;
   doc.setTextColor(0);doc.setFontSize(10);
   doc.text('Rechnungsdatum: '+fmtDate(re.datum),margin,y); y+=14;
+  // Leistungsdatum (§ 14 Abs. 4 Nr. 6 UStG) aus dem zugrunde liegenden Stundenzettel
+  const lts=timesheets.find(t=>t.id===re.stundenzettelId);
+  doc.text('Leistungsdatum: '+fmtDate((lts&&lts.date)||re.datum),margin,y); y+=14;
   doc.text('Leistungsempfänger / Versicherte(r): '+fullName(cu),margin,y); y+=14;
   if(cu.intern&&cu.intern.kvNr){ doc.text('Versichertennummer: '+cu.intern.kvNr,margin,y); y+=14; }
   y+=20;
@@ -5630,7 +6137,10 @@ function buildRechnungPdf(re, cu){
   y+=34;
   doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(90);
   const hint=doc.splitTextToSize('Die Abrechnung erfolgt auf Basis der unterschriebenen Abtretungserklärung und des beigefügten Leistungsnachweises gemäß § 45b SGB XI.',pageW-margin*2);
-  doc.text(hint,margin,y);
+  doc.text(hint,margin,y); y+=hint.length*12+8;
+  const hintUst=doc.splitTextToSize('Der Rechnungsbetrag enthält keine Umsatzsteuer: umsatzsteuerfreie Leistung gemäß § 4 Nr. 16 UStG (nach Landesrecht anerkanntes Angebot zur Unterstützung im Alltag, §§ 45a, 45b SGB XI).',pageW-margin*2);
+  doc.text(hintUst,margin,y); y+=hintUst.length*12+8;
+  doc.text('Zahlbar ohne Abzug innerhalb von 14 Tagen nach Rechnungseingang.',margin,y);
   return doc;
 }
 function downloadRechnung(id){
@@ -6822,6 +7332,39 @@ async function initTourMap(){
 </script>
 
 <!-- ============================================================
+     ZOOM-SPERRE & MOBILE TABELLEN (Testversion 3)
+     Zoomen (Pinch, Strg+Mausrad, Strg+Plus/Minus, Doppeltipp)
+     verändert das Layout und führt zu Darstellungsfehlern –
+     deshalb hier deaktiviert. Tabellen scrollen auf schmalen
+     Bildschirmen horizontal statt das Layout zu sprengen.
+     ============================================================ -->
+<style>
+  html,body{touch-action:pan-x pan-y}
+  @media(max-width:900px){ .panel-body{overflow-x:auto;-webkit-overflow-scrolling:touch} }
+</style>
+<script>
+(function(){
+  // Strg/Cmd + Mausrad (Browser-Zoom am Desktop)
+  document.addEventListener('wheel',function(e){ if(e.ctrlKey||e.metaKey) e.preventDefault(); },{passive:false});
+  // Strg/Cmd + Plus/Minus/0
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&['+','-','=','0'].indexOf(e.key)>-1) e.preventDefault();
+  });
+  // Pinch-Zoom (Safari/iOS Gesten)
+  ['gesturestart','gesturechange','gestureend'].forEach(function(ev){
+    document.addEventListener(ev,function(e){ e.preventDefault(); },{passive:false});
+  });
+  // Doppeltipp-Zoom (iOS) – zweiten Tipp innerhalb 320 ms abfangen
+  var lastTouch=0;
+  document.addEventListener('touchend',function(e){
+    var now=Date.now();
+    if(now-lastTouch<320 && e.cancelable) e.preventDefault();
+    lastTouch=now;
+  },{passive:false});
+})();
+</script>
+
+<!-- ============================================================
      DAILYDO NEXUS (Testversion 3)
      Betriebs-Copilot: Befehlszeile (Strg/⌘+K), Sprachsteuerung,
      Morgen-Briefing mit Vorlesefunktion, Insight-Radar mit
@@ -7083,6 +7626,7 @@ const NX_VIEWS={
   'kalender':'calendar','termine':'calendar','rechnungen':'rechnungen','abrechnung':'rechnungen',
   'lexware':'lexware','bank':'bank','konto':'bank','kostenträger':'kostentraeger','kostentraeger':'kostentraeger','kassen':'kostentraeger',
   'leistungen':'leistungen','standorte':'standorte','vorlagen':'vorlagen','mailing':'mailing','rundschreiben':'mailing',
+  'marketing':'marketing','flyer':'marketing','lohn':'payroll','lohnabrechnung':'payroll','gehalt':'payroll',
   'schulung':'schulung','schulungen':'schulung','aufgaben':'kommunikation','kommunikation':'kommunikation','aufträge':'jobs','auftraege':'jobs','notizen':'notes'
 };
 function nxAnswer(html){ const box=document.getElementById('nxAnswer'); if(box){ box.innerHTML=html; box.style.display='block'; } const r=document.getElementById('nxResults'); if(r) r.innerHTML=''; }
