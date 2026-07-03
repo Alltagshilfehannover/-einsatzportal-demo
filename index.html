@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>DailyDo</title>
+<title>DailyDo – Testversion 3 (NEXUS)</title>
 <style>
   :root{
     --petrol:#6d28d9;--petrol-dark:#4c1d95;--petrol-soft:#f0e9ff;
@@ -3804,15 +3804,24 @@ async function submitApplication(){
     // Bilddaten der eingereichten Dokumente (zur Prüfung im Büro)
     docImages:{idFront:wizData.idFrontImg||null, idBack:wizData.idBackImg||null, selfie:wizData.selfieImg||null, enrollment:wizData.enrollmentImg||null}};
   const safeApp=sanitizeDeep(app);
-  if(CLOUD){
-    const r=await cloudInsert('bewerbungen',appToRow(safeApp),{needsReturn:false});
-    if(!r){
-      // Speichern fehlgeschlagen – NICHT zur „Danke“-Seite weiterspringen, sonst denkt der Bewerber fälschlich, alles sei angekommen.
+  // Bewerber sind NICHT eingeloggt: Der Insert darf deshalb nicht am
+  // CLOUD-Schalter hängen (der wird erst nach dem Login gesetzt), sondern
+  // nur am initialisierten Supabase-Client. Die Datenbank erlaubt der
+  // anonymen Rolle gezielt NUR das Einfügen in "bewerbungen"
+  // (siehe BEWERBUNGEN_ANON_INSERT.sql).
+  if(sb){
+    let gespeichert=false;
+    try{
+      const {error}=await sb.from('bewerbungen').insert(sanitizeDeep(appToRow(safeApp)));
+      if(error) console.warn('Bewerbung speichern:', error.message);
+      else gespeichert=true;
+    }catch(e){ console.warn('Bewerbung speichern:', e&&(e.message||e)); }
+    if(!gespeichert){
+      // NICHT zur „Danke“-Seite weiterspringen, sonst denkt der Bewerber fälschlich, alles sei angekommen.
       if(btn){ btn.disabled=false; btn.textContent='Bewerbung absenden'; }
       toast('Bewerbung konnte nicht gespeichert werden – bitte versuche es erneut oder kontaktiere uns telefonisch.', true);
       return;
     }
-    // Kein r.id verfügbar (anonymer Insert ohne Rückgabe) – lokale ID bleibt bis zum nächsten Laden bestehen.
   }
   applications.unshift(safeApp);
   wizNext();
@@ -6810,6 +6819,634 @@ async function initTourMap(){
   }
   if(prog) prog.textContent=bounds.length+' Kunden auf der Karte'+(missing?' · '+missing+' Adresse(n) nicht gefunden (bitte Schreibweise prüfen)':'');
 }
+</script>
+
+<!-- ============================================================
+     DAILYDO NEXUS (Testversion 3)
+     Betriebs-Copilot: Befehlszeile (Strg/⌘+K), Sprachsteuerung,
+     Morgen-Briefing mit Vorlesefunktion, Insight-Radar mit
+     Business-Puls und Tour-Optimierer (Nearest-Neighbor + 2-Opt).
+     Eigenständiges Modul – greift nur lesend auf die App-Daten zu
+     und nutzt vorhandene Funktionen (renderAdmin, editCustomer …).
+     ============================================================ -->
+<style>
+  #nxOrb{position:fixed;left:18px;bottom:18px;z-index:9000;width:54px;height:54px;border-radius:50%;
+    background:radial-gradient(circle at 30% 30%,#a78bfa,#6d28d9 60%,#4c1d95);color:#fff;display:none;
+    align-items:center;justify-content:center;font-size:22px;box-shadow:0 6px 24px rgba(109,40,217,.45);
+    border:2px solid rgba(255,255,255,.35);transition:transform .15s}
+  #nxOrb:hover{transform:scale(1.08)}
+  #nxOrb .nx-ring{position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(167,139,250,.5);animation:nxPulse 2.4s infinite}
+  @keyframes nxPulse{0%{transform:scale(.9);opacity:.9}70%{transform:scale(1.25);opacity:0}100%{opacity:0}}
+  #nxOverlay{position:fixed;inset:0;z-index:9100;display:none;background:rgba(31,22,51,.55);backdrop-filter:blur(6px)}
+  #nxOverlay.open{display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px 16px}
+  .nx-panel{width:100%;max-width:860px;max-height:88vh;display:flex;flex-direction:column;background:var(--card);
+    border-radius:20px;box-shadow:0 24px 80px rgba(31,22,51,.45);overflow:hidden}
+  .nx-head{display:flex;align-items:center;gap:14px;padding:16px 20px;background:linear-gradient(120deg,#4c1d95,#6d28d9 55%,#db2777);color:#fff}
+  .nx-head .nx-logo{width:38px;height:38px;border-radius:12px;background:rgba(255,255,255,.16);display:grid;place-items:center;font-size:20px}
+  .nx-head h3{font-size:17px;font-weight:700;line-height:1.2}
+  .nx-head .nx-sub{font-size:12px;opacity:.8}
+  .nx-pulsbox{margin-left:auto;text-align:center;background:rgba(255,255,255,.14);border-radius:12px;padding:6px 14px}
+  .nx-pulsbox b{font-size:20px;display:block;line-height:1}
+  .nx-pulsbox span{font-size:10.5px;opacity:.85;letter-spacing:.4px}
+  .nx-close{color:#fff;font-size:20px;opacity:.8;padding:4px 8px}
+  .nx-close:hover{opacity:1}
+  .nx-tabs{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid var(--line);background:var(--card)}
+  .nx-tab{padding:9px 14px;border-radius:10px 10px 0 0;font-size:13.5px;font-weight:600;color:var(--muted)}
+  .nx-tab.active{background:var(--petrol-soft);color:var(--petrol)}
+  .nx-body{padding:16px 20px;overflow-y:auto;flex:1}
+  .nx-inputrow{display:flex;gap:8px;align-items:center}
+  #nxInput{flex:1;padding:13px 16px;border:2px solid var(--petrol);border-radius:12px;font-size:16px;outline:none}
+  .nx-mic{width:46px;height:46px;border-radius:12px;background:var(--petrol-soft);color:var(--petrol);font-size:19px;flex:none}
+  .nx-mic.rec{background:var(--danger);color:#fff;animation:nxPulse2 1s infinite}
+  @keyframes nxPulse2{50%{opacity:.55}}
+  .nx-hint{font-size:12.5px;color:var(--muted);margin:8px 2px 0}
+  .nx-results{margin-top:12px}
+  .nx-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;border:1px solid transparent}
+  .nx-row:hover,.nx-row.sel{background:var(--petrol-soft);border-color:var(--line)}
+  .nx-row .nx-ic{width:32px;height:32px;flex:none;border-radius:9px;background:var(--blue-soft);display:grid;place-items:center;font-size:15px}
+  .nx-row b{font-size:14.5px}
+  .nx-row .nx-sub2{font-size:12px;color:var(--muted)}
+  .nx-answer{margin-top:12px;background:var(--petrol-soft);border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.55}
+  .nx-card{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+  .nx-card h4{font-size:14.5px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .nx-sev{width:10px;height:10px;border-radius:50%;flex:none}
+  .nx-chip{display:inline-block;background:var(--petrol-soft);color:var(--petrol);border-radius:8px;padding:3px 9px;font-size:12.5px;margin:2px 4px 2px 0;cursor:pointer;font-weight:600}
+  .nx-chip:hover{background:var(--petrol);color:#fff}
+  .nx-brief{font-size:14.5px;line-height:1.7;white-space:pre-wrap}
+  .nx-toolrow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+  .nx-btn{background:var(--petrol);color:#fff;border-radius:10px;padding:9px 16px;font-size:13.5px;font-weight:600}
+  .nx-btn.ghost{background:var(--petrol-soft);color:var(--petrol)}
+  .nx-btn:disabled{opacity:.5;cursor:default}
+  .nx-select,.nx-date{padding:8px 10px;border:1px solid var(--line);border-radius:10px;font-size:14px;background:#fff}
+  #nxTourMap{height:340px;border-radius:12px;margin-top:12px;display:none}
+  .nx-pin{background:none;border:none}
+  .nx-pin div{width:26px;height:26px;border-radius:50%;color:#fff;display:grid;place-items:center;font-size:12.5px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4)}
+  .nx-stat{display:inline-block;margin:2px 14px 2px 0;font-size:13px}
+  .nx-stat b{font-size:15px}
+  .nx-save{color:var(--good);font-weight:700}
+  @media(max-width:640px){#nxOverlay.open{padding:2vh 6px 6px}.nx-head{padding:12px 14px}.nx-body{padding:12px}}
+</style>
+<script>
+(function(){
+'use strict';
+/* ---------- Grund-Helfer (alles abgesichert, damit NEXUS nie die App stört) ---------- */
+function nxSafe(fn,fb){ try{ return fn(); }catch(e){ console.warn('NEXUS:',e); return fb; } }
+function nxEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];}); }
+function nxNorm(s){
+  return String(s||'').toLowerCase()
+    .replace(/ä/g,'a').replace(/ö/g,'o').replace(/ü/g,'u').replace(/ß/g,'ss')
+    .replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+}
+function nxScore(query,text){ // unscharfer Namensabgleich: Wortanfänge zählen doppelt
+  const q=nxNorm(query), t=nxNorm(text);
+  if(!q||!t) return 0;
+  if(t===q) return 100;
+  let s=0;
+  q.split(' ').forEach(function(w){
+    if(!w) return;
+    if(t.split(' ').some(function(tw){ return tw.indexOf(w)===0; })) s+=40;
+    else if(t.indexOf(w)>=0) s+=20;
+  });
+  return s;
+}
+function nxToday(){ return (typeof todayISO==='function')?todayISO():new Date().toISOString().slice(0,10); }
+function nxDaysAgo(iso){ if(!iso) return 9999; return Math.floor((new Date(nxToday())-new Date(iso))/86400000); }
+function nxEuro(n){ return nxSafe(function(){ return (typeof fmtEuro==='function')?fmtEuro(n):(Number(n||0).toFixed(2).replace('.',',')+' €'); }, n+' €'); }
+function nxMin2HHMM(min){ min=Math.max(0,Math.round(min)); const h=Math.floor(min/60),m=min%60; return (h<10?'0':'')+h+':'+(m<10?'0':'')+m; }
+function nxHHMM2Min(t){ const p=String(t||'08:00').split(':'); return (+p[0]||0)*60+(+p[1]||0); }
+function nxViewGo(view){
+  if(typeof viewAllowed==='function'&&!viewAllowed(view)){ toast('Kein Zugriff auf diesen Bereich',true); return; }
+  nxClose(); nxSafe(function(){ renderAdmin(view); });
+}
+
+/* ============================================================
+   INSIGHT-RADAR – durchsucht die Betriebsdaten nach Risikomustern
+   ============================================================ */
+function nxRadarScan(){
+  const findings=[]; const heute=nxToday();
+  // 1) Aktive Kunden ohne (auch zukünftigen) Termin seit > 21 Tagen
+  nxSafe(function(){
+    const risk=[];
+    (customers||[]).filter(function(c){return c.status==='aktiv';}).forEach(function(c){
+      const dates=(appointments||[]).filter(function(a){return a.customerId===c.id&&a.status!=='abgesagt';}).map(function(a){return a.date;});
+      const last=dates.length?dates.sort().slice(-1)[0]:null;
+      const d=last?nxDaysAgo(last):9999;
+      if(last&&last>=heute) return;                 // zukünftiger Termin vorhanden -> alles gut
+      if(d>21) risk.push({c:c,d:(last?d:null)});
+    });
+    if(risk.length){
+      risk.sort(function(a,b){return (b.d||9999)-(a.d||9999);});
+      findings.push({key:'churn',sev:risk.some(function(r){return (r.d||9999)>45;})?3:2,icon:'📉',
+        title:risk.length+' aktive Kunde(n) ohne Termin seit über 3 Wochen',
+        desc:'Abwanderungsrisiko – Kontakt aufnehmen oder Status prüfen.',
+        chips:risk.slice(0,8).map(function(r){return {label:nxSafe(function(){return fullName(r.c);},'Kunde')+(r.d&&r.d<9000?' ('+r.d+' T.)':' (nie)'),act:function(){nxClose();editCustomer(r.c.id);}};}),
+        more:Math.max(0,risk.length-8),nav:{label:'Zur Kundenliste',view:'customers'},count:risk.length});
+    }
+  });
+  // 2) Rechnungen offen > 14 Tage
+  nxSafe(function(){
+    const alt=(rechnungen||[]).filter(function(r){return r.status==='offen'&&nxDaysAgo(r.datum)>14;});
+    if(alt.length){
+      const sum=alt.reduce(function(s,r){return s+(Number(r.betrag)||0);},0);
+      findings.push({key:'invoice',sev:sum>1000?3:2,icon:'💶',
+        title:alt.length+' Rechnung(en) seit über 14 Tagen offen – '+nxEuro(sum),
+        desc:'Liquidität prüfen, ggf. Zahlungserinnerung senden.',
+        nav:{label:'Zu den Rechnungen',view:'rechnungen'},count:alt.length});
+    }
+  });
+  // 3) Stundenzettel unbearbeitet > 7 Tage
+  nxSafe(function(){
+    const alt=(timesheets||[]).filter(function(t){return t.status==='offen'&&nxDaysAgo(t.date)>7;});
+    if(alt.length) findings.push({key:'ts',sev:2,icon:'⏱️',
+      title:alt.length+' Stundenzettel seit über 7 Tagen unbearbeitet',
+      desc:'Abrechnungsstau vermeiden – freigeben oder klären.',
+      nav:{label:'Zu den Stunden',view:'hours'},count:alt.length});
+  });
+  // 4) Überfällige Aufgaben
+  nxSafe(function(){
+    const od=(aufgaben||[]).filter(function(a){return a.status!=='erledigt'&&a.faelligAm&&a.faelligAm<heute;});
+    if(od.length) findings.push({key:'task',sev:od.length>4?3:1,icon:'📌',
+      title:od.length+' überfällige Aufgabe(n)',
+      desc:od.slice(0,3).map(function(a){return '„'+nxEsc(a.title||'')+'" (fällig '+nxSafe(function(){return fmtDate(a.faelligAm);},a.faelligAm)+')';}).join(' · '),
+      nav:{label:'Zu Kommunikation & Aufgaben',view:'kommunikation'},count:od.length});
+  });
+  // 5) Termine der nächsten 7 Tage ohne Mitarbeiterin
+  nxSafe(function(){
+    const in7=new Date(new Date(heute).getTime()+7*86400000).toISOString().slice(0,10);
+    const off=(appointments||[]).filter(function(a){
+      if(a.status==='abgesagt'||!a.date||a.date<heute||a.date>in7) return false;
+      return a.staffId===null||a.staffId===undefined||!(staff||[]).some(function(s){return s.id===a.staffId;});
+    });
+    if(off.length) findings.push({key:'unassigned',sev:3,icon:'🚨',
+      title:off.length+' Termin(e) in den nächsten 7 Tagen ohne Mitarbeiterin',
+      desc:'Diese Einsätze platzen, wenn niemand zugeteilt wird.',
+      nav:{label:'Zum Kalender',view:'calendar'},count:off.length});
+  });
+  // 6) Wochen-Überlastung (> 35 geplante Stunden in der laufenden Woche)
+  nxSafe(function(){
+    const now=new Date(nxToday()); const dow=(now.getDay()+6)%7;
+    const mo=new Date(now.getTime()-dow*86400000).toISOString().slice(0,10);
+    const so=new Date(new Date(mo).getTime()+6*86400000).toISOString().slice(0,10);
+    const load={};
+    (appointments||[]).forEach(function(a){
+      if(a.status==='abgesagt'||!a.date||a.date<mo||a.date>so||a.staffId==null) return;
+      load[a.staffId]=(load[a.staffId]||0)+(Number(a.duration)||60);
+    });
+    const over=Object.keys(load).filter(function(id){return load[id]>35*60;});
+    if(over.length) findings.push({key:'overload',sev:2,icon:'🔥',
+      title:over.length+' Mitarbeiterin(nen) mit über 35 geplanten Wochenstunden',
+      desc:over.map(function(id){return nxSafe(function(){return staffName(+id);},'#'+id)+' ('+(load[id]/60).toFixed(1).replace('.',',')+' h)';}).join(' · '),
+      nav:{label:'Zu den Mitarbeitern',view:'staff'},count:over.length});
+  });
+  findings.sort(function(a,b){return b.sev-a.sev;});
+  return findings;
+}
+/* Business-Puls 0–100: gewichtete Abzüge je Kategorie, gedeckelt */
+function nxPuls(findings){
+  const caps={churn:25,invoice:20,unassigned:20,ts:15,task:15,overload:10};
+  let malus=0;
+  findings.forEach(function(f){ malus+=Math.min(caps[f.key]||10, f.sev*3+Math.min(f.count||1,8)); });
+  return Math.max(5,Math.round(100-malus));
+}
+function nxPulsColor(p){ return p>=80?'#22c55e':(p>=55?'#f59e0b':'#e11d48'); }
+
+/* ============================================================
+   MORGEN-BRIEFING – erzeugt Text (Anzeige + Vorlesen)
+   ============================================================ */
+function nxBriefing(){
+  const heute=nxToday(); const h=new Date().getHours();
+  const gruss=h<11?'Guten Morgen':(h<17?'Guten Tag':'Guten Abend');
+  const datum=nxSafe(function(){return new Date().toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'});},heute);
+  const heutTermine=(appointments||[]).filter(function(a){return a.date===heute&&a.status!=='abgesagt';})
+    .sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
+  const lines=[];
+  lines.push(gruss+'! Hier ist dein Briefing für '+datum+'.');
+  if(!heutTermine.length){ lines.push('Heute stehen keine Termine im Kalender.'); }
+  else{
+    lines.push('Heute gibt es '+heutTermine.length+' Termin'+(heutTermine.length>1?'e':'')+':');
+    const perStaff={};
+    heutTermine.forEach(function(a){
+      const key=a.staffId==null?'Ohne Zuteilung':nxSafe(function(){return staffName(a.staffId);},'Team');
+      (perStaff[key]=perStaff[key]||[]).push(a);
+    });
+    Object.keys(perStaff).forEach(function(name){
+      const t=perStaff[name].map(function(a){
+        const c=nxSafe(function(){return custById(a.customerId);},null);
+        return a.time+' Uhr '+(c?nxSafe(function(){return fullName(c);},''):'');
+      }).join(', ');
+      lines.push('• '+name+': '+t+'.');
+    });
+  }
+  const findings=nxRadarScan();
+  if(findings.length){
+    lines.push('');
+    lines.push('Das Radar meldet '+findings.length+' Punkt'+(findings.length>1?'e':'')+':');
+    findings.slice(0,3).forEach(function(f){ lines.push('• '+f.title+'.'); });
+  } else { lines.push(''); lines.push('Das Radar meldet: alles im grünen Bereich.'); }
+  const offen=(rechnungen||[]).filter(function(r){return r.status==='offen';});
+  const offenSum=offen.reduce(function(s,r){return s+(Number(r.betrag)||0);},0);
+  const tsOffen=(timesheets||[]).filter(function(t){return t.status==='offen';}).length;
+  lines.push('');
+  lines.push('Zahlen: '+offen.length+' offene Rechnung'+(offen.length===1?'':'en')+' über '+nxEuro(offenSum)+
+    ', '+tsOffen+' offene Stundenzettel, Business-Puls '+nxPuls(findings)+' von 100.');
+  lines.push('');
+  lines.push('Einen erfolgreichen Tag!');
+  return lines.join('\n');
+}
+var __nxSpeaking=false;
+function nxSpeak(text){
+  if(!('speechSynthesis' in window)){ toast('Vorlesen wird von diesem Browser nicht unterstützt',true); return; }
+  window.speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text.replace(/[•]/g,''));
+  u.lang='de-DE'; u.rate=1.02;
+  const v=window.speechSynthesis.getVoices().find(function(v){return /de[-_]/i.test(v.lang);});
+  if(v) u.voice=v;
+  u.onend=function(){ __nxSpeaking=false; nxBriefBtns(); };
+  __nxSpeaking=true; nxBriefBtns();
+  window.speechSynthesis.speak(u);
+}
+function nxStopSpeak(){ if('speechSynthesis' in window) window.speechSynthesis.cancel(); __nxSpeaking=false; nxBriefBtns(); }
+function nxBriefBtns(){
+  const a=document.getElementById('nxSpeakBtn'), b=document.getElementById('nxStopBtn');
+  if(a) a.style.display=__nxSpeaking?'none':'inline-block';
+  if(b) b.style.display=__nxSpeaking?'inline-block':'none';
+}
+
+/* ============================================================
+   COPILOT – Intent-Parser für deutsche Alltagssprache
+   ============================================================ */
+const NX_VIEWS={
+  'dashboard':'dashboard','übersicht':'dashboard','uebersicht':'dashboard',
+  'kunden':'customers','kundenliste':'customers','kunde anlegen':'newcustomer','neuer kunde':'newcustomer',
+  'mitarbeiter':'staff','team':'staff','bewerbungen':'applications','bewerber':'applications',
+  'karte':'karte','landkarte':'karte','stunden':'hours','stundenzettel':'hours',
+  'kalender':'calendar','termine':'calendar','rechnungen':'rechnungen','abrechnung':'rechnungen',
+  'lexware':'lexware','bank':'bank','konto':'bank','kostenträger':'kostentraeger','kostentraeger':'kostentraeger','kassen':'kostentraeger',
+  'leistungen':'leistungen','standorte':'standorte','vorlagen':'vorlagen','mailing':'mailing','rundschreiben':'mailing',
+  'schulung':'schulung','schulungen':'schulung','aufgaben':'kommunikation','kommunikation':'kommunikation','aufträge':'jobs','auftraege':'jobs','notizen':'notes'
+};
+function nxAnswer(html){ const box=document.getElementById('nxAnswer'); if(box){ box.innerHTML=html; box.style.display='block'; } const r=document.getElementById('nxResults'); if(r) r.innerHTML=''; }
+var __nxActions=[];
+function nxAct(i){ const a=__nxActions[i]; if(a) nxSafe(a); }
+function nxRow(icon,title,sub,fn){
+  __nxActions.push(fn);
+  return '<div class="nx-row" onclick="nxAct('+(__nxActions.length-1)+')"><div class="nx-ic">'+icon+'</div><div><b>'+title+'</b><div class="nx-sub2">'+sub+'</div></div></div>';
+}
+function nxRun(qRaw){
+  const q=nxNorm(qRaw); if(!q) return;
+  __nxActions=[];
+  const box=document.getElementById('nxResults'); const ans=document.getElementById('nxAnswer');
+  if(ans) ans.style.display='none';
+  if(!box) return;
+  const heute=nxToday();
+
+  // --- feste Absichten ---
+  if(/^(hilfe|was kannst du|befehle|\?)$/.test(q)){
+    nxAnswer('<b>Ich verstehe zum Beispiel:</b><br>„öffne kunde müller" · „gehe zu rechnungen" · „neuer kunde" · „neuer termin" · „was steht heute an" · „termine morgen" · „offene rechnungen" · „wie viele kunden" · „briefing" · „radar" · „tour heute" – oder tippe einfach einen Namen.');
+    return;
+  }
+  if(/briefing/.test(q)){ nxTab('brief'); return; }
+  if(/^radar|frühwarn|fruehwarn|warnung/.test(q)){ nxTab('radar'); return; }
+  if(/tour|route|fahrweg/.test(q)){ nxTab('tour'); if(/morgen/.test(q)){ const d=document.getElementById('nxTourDate'); if(d) d.value=new Date(Date.now()+86400000).toISOString().slice(0,10); } return; }
+  if(/^(neuer|neuen|neue) kunde/.test(q)){ nxViewGo('newcustomer'); return; }
+  if(/^(neuer|neuen|neue) termin/.test(q)){ nxClose(); nxSafe(function(){ renderAdmin('calendar'); setTimeout(function(){ nxSafe(function(){ addAppointment(); }); },150); }); return; }
+  if(/wie viele kunden|anzahl kunden|kundenzahl/.test(q)){
+    const akt=(customers||[]).filter(function(c){return c.status==='aktiv';}).length;
+    nxAnswer('Es gibt aktuell <b>'+(customers||[]).length+' Kunden</b>, davon <b>'+akt+' aktiv</b>.');
+    return;
+  }
+  if(/offene rechnung|unbezahlt/.test(q)){
+    const o=(rechnungen||[]).filter(function(r){return r.status==='offen';});
+    const s=o.reduce(function(a,r){return a+(Number(r.betrag)||0);},0);
+    nxAnswer('<b>'+o.length+' offene Rechnung'+(o.length===1?'':'en')+'</b> über insgesamt <b>'+nxEuro(s)+'</b>.'+
+      (o.length?'<br><span class="nx-chip" onclick="nxViewGo(\'rechnungen\')">Zu den Rechnungen →</span>':''));
+    return;
+  }
+  if(/was steht (heute|an)|termine heute|^heute$|tagesplan/.test(q) || /termine morgen|^morgen$/.test(q)){
+    const tag=/morgen/.test(q)?new Date(Date.now()+86400000).toISOString().slice(0,10):heute;
+    const list=(appointments||[]).filter(function(a){return a.date===tag&&a.status!=='abgesagt';})
+      .sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
+    if(!list.length){ nxAnswer('Für '+(tag===heute?'heute':'morgen')+' sind <b>keine Termine</b> eingetragen.'); return; }
+    nxAnswer('<b>'+list.length+' Termin'+(list.length>1?'e':'')+' '+(tag===heute?'heute':'morgen')+':</b><br>'+
+      list.map(function(a){
+        const c=nxSafe(function(){return custById(a.customerId);},null);
+        return a.time+' Uhr – '+(c?nxEsc(nxSafe(function(){return fullName(c);},'')):'?')+' ('+nxEsc(a.staffId==null?'ohne Zuteilung':nxSafe(function(){return staffName(a.staffId);},'')) +')';
+      }).join('<br>')+'<br><span class="nx-chip" onclick="nxViewGo(\'calendar\')">Zum Kalender →</span>');
+    return;
+  }
+  // --- Ansicht wechseln: "gehe zu X" / "öffne X" / "zeig mir X" ---
+  const navM=q.match(/^(?:gehe zu|geh zu|offne|oeffne|zeige?|zeig mir|zu)\s+(.+)$/)||[null,q];
+  const target=navM[1];
+  let bestView=null,bestVs=0;
+  Object.keys(NX_VIEWS).forEach(function(k){ const s=nxScore(target,k); if(s>bestVs){bestVs=s;bestView=NX_VIEWS[k];} });
+  // --- Kunden & Mitarbeiter unscharf suchen ---
+  const hits=[];
+  nxSafe(function(){ (customers||[]).forEach(function(c){
+    const n=nxSafe(function(){return fullName(c);},''); const s=nxScore(target,n);
+    if(s>=35) hits.push({s:s,html:nxRowData('👤',n,'Kunde'+(c.area?' · '+nxEsc(c.area):'')+(c.status?' · '+nxEsc(c.status):''),function(){nxClose();editCustomer(c.id);})});
+  }); });
+  nxSafe(function(){ (staff||[]).forEach(function(st){
+    const n=nxSafe(function(){return staffName(st.id);},''); const s=nxScore(target,n);
+    if(s>=35) hits.push({s:s,html:nxRowData('🧑‍💼',n,'Mitarbeiterin',function(){nxClose();nxSafe(function(){editStaff(st.id);});})});
+  }); });
+  if(bestVs>=40) hits.push({s:bestVs-5,html:nxRowData('📂','Ansicht öffnen: '+nxEsc(target),'Navigation',function(){nxViewGo(bestView);})});
+  hits.sort(function(a,b){return b.s-a.s;});
+  if(!hits.length){ nxAnswer('Dazu habe ich nichts gefunden. Tippe „hilfe" für Beispiele.'); return; }
+  box.innerHTML=hits.slice(0,7).map(function(h,i){ return h.html.replace('class="nx-row"',i===0?'class="nx-row sel"':'class="nx-row"'); }).join('');
+}
+function nxRowData(icon,title,sub,fn){ __nxActions.push(fn); return '<div class="nx-row" onclick="nxAct('+(__nxActions.length-1)+')"><div class="nx-ic">'+icon+'</div><div><b>'+nxEsc(title).replace(/&lt;(\/?b)&gt;/g,'<$1>')+'</b><div class="nx-sub2">'+sub+'</div></div></div>'; }
+
+/* ---- Spracheingabe (Web Speech API, de-DE) ---- */
+var __nxRec=null;
+function nxMic(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const btn=document.getElementById('nxMicBtn');
+  if(!SR){ toast('Spracherkennung wird von diesem Browser nicht unterstützt (Chrome/Edge nutzen)',true); return; }
+  if(__nxRec){ __nxRec.stop(); return; }
+  __nxRec=new SR(); __nxRec.lang='de-DE'; __nxRec.interimResults=false; __nxRec.maxAlternatives=1;
+  if(btn) btn.classList.add('rec');
+  __nxRec.onresult=function(e){
+    const text=e.results[0][0].transcript;
+    const inp=document.getElementById('nxInput');
+    if(inp) inp.value=text;
+    nxRun(text);
+  };
+  __nxRec.onerror=function(e){ if(e.error==='not-allowed') toast('Mikrofonzugriff wurde blockiert',true); };
+  __nxRec.onend=function(){ __nxRec=null; if(btn) btn.classList.remove('rec'); };
+  __nxRec.start();
+}
+
+/* ============================================================
+   TOUR-OPTIMIERER – TSP-Heuristik (Nearest-Neighbor + 2-Opt)
+   ============================================================ */
+const NX_ROAD=1.35, NX_KMH=28; // Straßenfaktor & Ø-Stadtgeschwindigkeit
+function nxHaversine(a,b){
+  const R=6371,rad=Math.PI/180;
+  const dLat=(b.lat-a.lat)*rad, dLon=(b.lon-a.lon)*rad;
+  const x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return 2*R*Math.asin(Math.sqrt(x))*NX_ROAD;
+}
+function nxRouteKm(order,pts){ let km=0; for(let i=1;i<order.length;i++) km+=nxHaversine(pts[order[i-1]],pts[order[i]]); return km; }
+function nxNearestNeighbor(pts){
+  const n=pts.length, used=new Array(n).fill(false), order=[0]; used[0]=true;
+  for(let step=1;step<n;step++){
+    const last=order[order.length-1]; let best=-1,bd=1e9;
+    for(let i=0;i<n;i++){ if(used[i]) continue; const d=nxHaversine(pts[last],pts[i]); if(d<bd){bd=d;best=i;} }
+    used[best]=true; order.push(best);
+  }
+  return order;
+}
+function nxTwoOpt(order,pts){ // Start (Index 0) bleibt fix
+  let improved=true, guard=0;
+  while(improved&&guard++<300){
+    improved=false;
+    for(let i=1;i<order.length-1;i++){
+      for(let k=i+1;k<order.length;k++){
+        const neu=order.slice(0,i).concat(order.slice(i,k+1).reverse(),order.slice(k+1));
+        if(nxRouteKm(neu,pts)<nxRouteKm(order,pts)-1e-6){ order=neu; improved=true; }
+      }
+    }
+  }
+  return order;
+}
+var __nxTourMapObj=null, __nxTourLayer=null, __nxTourBusy=false;
+async function nxTourCalc(){
+  if(__nxTourBusy) return; __nxTourBusy=true;
+  const out=document.getElementById('nxTourOut'), btn=document.getElementById('nxTourBtn');
+  const tag=(document.getElementById('nxTourDate')||{}).value||nxToday();
+  const staffSel=(document.getElementById('nxTourStaff')||{}).value||'alle';
+  if(btn) btn.disabled=true;
+  try{
+    out.innerHTML='<p style="color:var(--muted)">Berechne …</p>';
+    let list=(appointments||[]).filter(function(a){return a.date===tag&&a.status!=='abgesagt'&&a.customerId!=null;});
+    if(staffSel!=='alle') list=list.filter(function(a){return String(a.staffId)===staffSel;});
+    if(!list.length){ out.innerHTML='<p style="color:var(--muted)">Für diesen Tag'+(staffSel!=='alle'?' und diese Mitarbeiterin':'')+' gibt es keine Termine.</p>'; return; }
+    // Geodaten besorgen (Zwischenspeicher der Karten-Ansicht, fehlende einmalig ermitteln)
+    const cache=nxSafe(geoCacheGet,{})||{};
+    const stops=[]; const fehlend=[];
+    list.forEach(function(a){
+      const c=nxSafe(function(){return custById(a.customerId);},null); if(!c) return;
+      const addr=nxSafe(function(){return custAddressString(c);},'');
+      if(!addr) return;
+      if(cache[addr]) stops.push({a:a,c:c,lat:cache[addr].lat,lon:cache[addr].lon});
+      else if(cache[addr]!==null) fehlend.push({a:a,c:c,addr:addr});
+    });
+    for(let i=0;i<fehlend.length;i++){
+      out.innerHTML='<p style="color:var(--muted)">Ermittle Adresse '+(i+1)+' von '+fehlend.length+' … (nur beim ersten Mal nötig)</p>';
+      try{
+        const res=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&q='+encodeURIComponent(fehlend[i].addr));
+        const js=await res.json();
+        if(js&&js[0]){ cache[fehlend[i].addr]={lat:+js[0].lat,lon:+js[0].lon}; stops.push({a:fehlend[i].a,c:fehlend[i].c,lat:cache[fehlend[i].addr].lat,lon:cache[fehlend[i].addr].lon}); }
+        else cache[fehlend[i].addr]=null;
+        nxSafe(function(){geoCacheSet(cache);});
+      }catch(e){}
+      await new Promise(function(r){setTimeout(r,1100);});
+    }
+    if(!stops.length){ out.innerHTML='<p style="color:var(--danger)">Keine Adressen mit Geodaten gefunden (Karte einmal öffnen oder Adressen prüfen).</p>'; return; }
+    // je Mitarbeiterin gruppieren
+    const groups={};
+    stops.forEach(function(s){ const k=s.a.staffId==null?'x':String(s.a.staffId); (groups[k]=groups[k]||[]).push(s); });
+    // Karte vorbereiten
+    await nxSafe(loadLeaflet,null);
+    const mapEl=document.getElementById('nxTourMap');
+    if(window.L&&mapEl){
+      mapEl.style.display='block';
+      if(!__nxTourMapObj){ __nxTourMapObj=L.map(mapEl).setView([52.42,9.7],10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(__nxTourMapObj); }
+      if(__nxTourLayer) __nxTourLayer.remove();
+      __nxTourLayer=L.layerGroup().addTo(__nxTourMapObj);
+      setTimeout(function(){ __nxTourMapObj.invalidateSize(); },80);
+    }
+    const farben=(typeof MAP_FARBEN!=='undefined')?MAP_FARBEN:['#6d28d9','#c0392b','#1d6f42','#1e5aa8'];
+    let html=''; const allBounds=[]; let gi=0;
+    Object.keys(groups).forEach(function(key){
+      const g=groups[key].sort(function(a,b){return String(a.a.time).localeCompare(String(b.a.time));});
+      const name=key==='x'?'Ohne Zuteilung':nxSafe(function(){return staffName(+key);},'Mitarbeiterin');
+      const col=farben[gi++%farben.length];
+      const pts=g.map(function(s){return {lat:s.lat,lon:s.lon};});
+      const base=pts.map(function(_,i){return i;});
+      const kmBase=nxRouteKm(base,pts);
+      let order=base, kmOpt=kmBase;
+      if(pts.length>2){ order=nxTwoOpt(nxNearestNeighbor(pts),pts); kmOpt=nxRouteKm(order,pts);
+        if(kmOpt>=kmBase){ order=base; kmOpt=kmBase; } }
+      const minBase=kmBase/NX_KMH*60, minOpt=kmOpt/NX_KMH*60;
+      const save=kmBase>0?Math.round((1-kmOpt/kmBase)*100):0;
+      // Zeitvorschlag: erster Termin bleibt, danach Dauer + Fahrzeit fortschreiben
+      let t=nxHHMM2Min(g[order[0]].a.time); const plan=[];
+      order.forEach(function(idx,pos){
+        if(pos>0){ t+=Number(g[order[pos-1]].a.duration)||60; t+=Math.round(nxHaversine(pts[order[pos-1]],pts[idx])/NX_KMH*60/5)*5; }
+        plan.push({s:g[idx],zeit:nxMin2HHMM(t)});
+      });
+      html+='<div class="nx-card"><h4><span class="nx-sev" style="background:'+col+'"></span>'+nxEsc(name)+' – '+g.length+' Stopp'+(g.length>1?'s':'')+'</h4>'+
+        (g.length>1?'<div><span class="nx-stat">Bisher (nach Uhrzeit): <b>'+kmBase.toFixed(1).replace('.',',')+' km</b> / ~'+Math.round(minBase)+' Min. Fahrt</span>'+
+        '<span class="nx-stat">Optimiert: <b>'+kmOpt.toFixed(1).replace('.',',')+' km</b> / ~'+Math.round(minOpt)+' Min.</span>'+
+        (save>0?'<span class="nx-stat nx-save">−'+save+' % Strecke</span>':'<span class="nx-stat" style="color:var(--muted)">Reihenfolge ist bereits optimal</span>')+'</div>':'')+
+        '<div style="margin-top:8px;font-size:13.5px">'+plan.map(function(p,i){
+          return (i+1)+'. <b>'+p.zeit+'</b> '+nxEsc(nxSafe(function(){return fullName(p.s.c);},''))+(i===0?' <span style="color:var(--muted)">(Start, Zeit fix)</span>':'');
+        }).join('<br>')+'</div>'+
+        (save>0?'<div style="font-size:12px;color:var(--muted);margin-top:8px">Vorschlag – Zeiten sind Richtwerte (Ø '+NX_KMH+' km/h). Es wird nichts automatisch umgebucht.</div>':'')+
+        '</div>';
+      // auf Karte zeichnen
+      if(window.L&&__nxTourLayer){
+        const latlngs=order.map(function(idx){return [pts[idx].lat,pts[idx].lon];});
+        L.polyline(latlngs,{color:col,weight:4,opacity:.85}).addTo(__nxTourLayer);
+        order.forEach(function(idx,pos){
+          L.marker([pts[idx].lat,pts[idx].lon],{icon:L.divIcon({className:'nx-pin',html:'<div style="background:'+col+'">'+(pos+1)+'</div>',iconSize:[26,26],iconAnchor:[13,13]})})
+            .addTo(__nxTourLayer).bindPopup('<b>'+(pos+1)+'. '+nxEsc(nxSafe(function(){return fullName(g[idx].c);},''))+'</b><br>'+g[idx].a.time+' Uhr geplant');
+          allBounds.push([pts[idx].lat,pts[idx].lon]);
+        });
+      }
+    });
+    out.innerHTML=html;
+    if(window.L&&__nxTourMapObj&&allBounds.length) __nxTourMapObj.fitBounds(allBounds,{padding:[30,30]});
+  }finally{ __nxTourBusy=false; if(btn) btn.disabled=false; }
+}
+
+/* ============================================================
+   NEXUS-OBERFLÄCHE (Kugel, Overlay, Reiter)
+   ============================================================ */
+function nxEnsureOrb(){
+  let orb=document.getElementById('nxOrb');
+  if(!orb){
+    orb=document.createElement('button'); orb.id='nxOrb'; orb.title='NEXUS öffnen (Strg+K / ⌘K)';
+    orb.innerHTML='<span class="nx-ring"></span>✦';
+    orb.onclick=nxOpen;
+    document.body.appendChild(orb);
+  }
+  const office=nxSafe(function(){return isOfficeRole();},false);
+  orb.style.display=office?'flex':'none';
+  if(!office) nxClose();
+}
+function nxBuildOverlay(){
+  if(document.getElementById('nxOverlay')) return;
+  const d=document.createElement('div'); d.id='nxOverlay';
+  d.innerHTML=
+   '<div class="nx-panel">'+
+    '<div class="nx-head"><div class="nx-logo">✦</div>'+
+      '<div><h3>NEXUS</h3><div class="nx-sub">Dein Betriebs-Copilot · Strg+K</div></div>'+
+      '<div class="nx-pulsbox"><b id="nxPulsVal">–</b><span>BUSINESS-PULS</span></div>'+
+      '<button class="nx-close" onclick="nxClose()">✕</button></div>'+
+    '<div class="nx-tabs">'+
+      '<button class="nx-tab active" id="nxTab-copilot" onclick="nxTab(\'copilot\')">✦ Copilot</button>'+
+      '<button class="nx-tab" id="nxTab-brief" onclick="nxTab(\'brief\')">📋 Briefing</button>'+
+      '<button class="nx-tab" id="nxTab-radar" onclick="nxTab(\'radar\')">🛰️ Radar</button>'+
+      '<button class="nx-tab" id="nxTab-tour" onclick="nxTab(\'tour\')">🗺️ Touren</button></div>'+
+    '<div class="nx-body" id="nxBody-copilot">'+
+      '<div class="nx-inputrow"><input id="nxInput" placeholder="Was möchtest du tun? – z. B. „öffne kunde müller“ oder „was steht heute an“" autocomplete="off">'+
+      '<button class="nx-mic" id="nxMicBtn" onclick="nxMic()" title="Sprechen">🎤</button></div>'+
+      '<div class="nx-hint">Enter = bester Treffer · „hilfe" zeigt Beispiele · Mikrofon für Sprachsteuerung</div>'+
+      '<div class="nx-answer" id="nxAnswer" style="display:none"></div>'+
+      '<div class="nx-results" id="nxResults"></div></div>'+
+    '<div class="nx-body" id="nxBody-brief" style="display:none">'+
+      '<div class="nx-toolrow"><button class="nx-btn" id="nxSpeakBtn" onclick="nxSpeakBriefing()">🔊 Vorlesen</button>'+
+      '<button class="nx-btn ghost" id="nxStopBtn" style="display:none" onclick="nxStopSpeak()">⏹ Stopp</button>'+
+      '<button class="nx-btn ghost" onclick="nxRenderBrief()">↻ Neu erzeugen</button></div>'+
+      '<div class="nx-brief" id="nxBriefText"></div></div>'+
+    '<div class="nx-body" id="nxBody-radar" style="display:none"><div id="nxRadarOut"></div></div>'+
+    '<div class="nx-body" id="nxBody-tour" style="display:none">'+
+      '<div class="nx-toolrow"><input type="date" class="nx-date" id="nxTourDate">'+
+      '<select class="nx-select" id="nxTourStaff"><option value="alle">Alle Mitarbeiterinnen</option></select>'+
+      '<button class="nx-btn" id="nxTourBtn" onclick="nxTourCalc()">Route optimieren</button></div>'+
+      '<div id="nxTourOut" style="font-size:14px;color:var(--muted)">Datum wählen und „Route optimieren" drücken. Die Reihenfolge der Tagesstopps wird mathematisch optimiert (Handlungsreisenden-Verfahren) und mit der bisherigen Reihenfolge verglichen.</div>'+
+      '<div id="nxTourMap"></div></div>'+
+   '</div>';
+  d.addEventListener('click',function(e){ if(e.target===d) nxClose(); });
+  document.body.appendChild(d);
+  const inp=document.getElementById('nxInput');
+  let deb=null;
+  inp.addEventListener('input',function(){ clearTimeout(deb); deb=setTimeout(function(){ nxRun(inp.value); },220); });
+  inp.addEventListener('keydown',function(e){
+    if(e.key==='Enter'){ const first=document.querySelector('#nxResults .nx-row'); if(first) first.click(); else nxRun(inp.value); }
+    if(e.key==='Escape') nxClose();
+  });
+}
+function nxOpen(){
+  if(!nxSafe(function(){return isOfficeRole();},false)){ return; }
+  nxBuildOverlay();
+  document.getElementById('nxOverlay').classList.add('open');
+  // Puls aktualisieren
+  const f=nxRadarScan(); const p=nxPuls(f);
+  const pv=document.getElementById('nxPulsVal');
+  if(pv){ pv.textContent=p; pv.style.color=nxPulsColor(p); }
+  nxTab('copilot');
+  setTimeout(function(){ const i=document.getElementById('nxInput'); if(i){ i.value=''; i.focus(); } },60);
+  const r=document.getElementById('nxResults'); if(r) r.innerHTML='';
+  const a=document.getElementById('nxAnswer'); if(a) a.style.display='none';
+}
+function nxClose(){
+  const d=document.getElementById('nxOverlay'); if(d) d.classList.remove('open');
+  nxStopSpeak();
+  if(__nxRec) nxSafe(function(){__nxRec.stop();});
+}
+function nxTab(name){
+  ['copilot','brief','radar','tour'].forEach(function(t){
+    const b=document.getElementById('nxBody-'+t), tb=document.getElementById('nxTab-'+t);
+    if(b) b.style.display=t===name?'block':'none';
+    if(tb) tb.classList.toggle('active',t===name);
+  });
+  if(name==='brief') nxRenderBrief();
+  if(name==='radar') nxRenderRadar();
+  if(name==='tour'){
+    const d=document.getElementById('nxTourDate'); if(d&&!d.value) d.value=nxToday();
+    const sel=document.getElementById('nxTourStaff');
+    if(sel&&sel.options.length<=1) nxSafe(function(){
+      (staff||[]).forEach(function(s){ const o=document.createElement('option'); o.value=String(s.id); o.textContent=nxSafe(function(){return staffName(s.id);},'#'+s.id); sel.appendChild(o); });
+    });
+    if(__nxTourMapObj) setTimeout(function(){ __nxTourMapObj.invalidateSize(); },100);
+  }
+}
+function nxRenderBrief(){
+  const el=document.getElementById('nxBriefText');
+  if(el) el.textContent=nxBriefing();
+  nxBriefBtns();
+}
+function nxSpeakBriefing(){ nxSpeak(nxBriefing()); }
+var __nxChipActs=[];
+function nxChip(i){ const f=__nxChipActs[i]; if(f) nxSafe(f); }
+function nxRenderRadar(){
+  const out=document.getElementById('nxRadarOut'); if(!out) return;
+  __nxChipActs=[];
+  const f=nxRadarScan();
+  const p=nxPuls(f);
+  const pv=document.getElementById('nxPulsVal'); if(pv){ pv.textContent=p; pv.style.color=nxPulsColor(p); }
+  if(!f.length){ out.innerHTML='<div class="nx-card" style="border-color:var(--good)"><h4><span class="nx-sev" style="background:var(--good)"></span>Alles im grünen Bereich</h4><div style="font-size:13.5px;color:var(--muted)">Das Radar hat keine Auffälligkeiten gefunden. Business-Puls: '+p+'/100.</div></div>'; return; }
+  const sevCol={1:'#f59e0b',2:'#f97316',3:'#e11d48'};
+  out.innerHTML=f.map(function(x){
+    let chips='';
+    if(x.chips) chips=x.chips.map(function(ch){ __nxChipActs.push(ch.act); return '<span class="nx-chip" onclick="nxChip('+(__nxChipActs.length-1)+')">'+nxEsc(ch.label)+'</span>'; }).join('')+(x.more?'<span style="font-size:12px;color:var(--muted)"> +'+x.more+' weitere</span>':'');
+    __nxChipActs.push(function(){ nxViewGo(x.nav.view); });
+    return '<div class="nx-card"><h4><span class="nx-sev" style="background:'+(sevCol[x.sev]||'#f59e0b')+'"></span>'+x.icon+' '+x.title+'</h4>'+
+      '<div style="font-size:13.5px;color:var(--muted)">'+x.desc+'</div>'+
+      (chips?'<div style="margin-top:8px">'+chips+'</div>':'')+
+      '<div style="margin-top:10px"><span class="nx-chip" onclick="nxChip('+(__nxChipActs.length-1)+')">'+nxEsc(x.nav.label)+' →</span></div></div>';
+  }).join('');
+}
+
+/* ---- Einhängen in die App (nachträglich, ohne V2-Code zu ändern) ---- */
+window.nxOpen=nxOpen; window.nxClose=nxClose; window.nxTab=nxTab; window.nxAct=nxAct; window.nxRun=nxRun;
+window.nxMic=nxMic; window.nxTourCalc=nxTourCalc; window.nxChip=nxChip; window.nxViewGo=nxViewGo;
+window.nxSpeakBriefing=nxSpeakBriefing; window.nxStopSpeak=nxStopSpeak; window.nxRenderBrief=nxRenderBrief;
+(function(){
+  const origAdmin=window.renderAdmin;
+  if(typeof origAdmin==='function') window.renderAdmin=function(){ const r=origAdmin.apply(this,arguments); nxSafe(nxEnsureOrb); return r; };
+  const origStaff=window.renderStaff;
+  if(typeof origStaff==='function') window.renderStaff=function(){ const r=origStaff.apply(this,arguments); nxSafe(nxEnsureOrb); return r; };
+  const origLogout=window.logout;
+  if(typeof origLogout==='function') window.logout=function(){ nxClose(); const o=document.getElementById('nxOrb'); if(o) o.style.display='none'; return origLogout.apply(this,arguments); };
+})();
+document.addEventListener('keydown',function(e){
+  if((e.ctrlKey||e.metaKey)&&String(e.key).toLowerCase()==='k'){
+    const app=document.getElementById('appScreen');
+    if(app&&app.classList.contains('active')&&nxSafe(function(){return isOfficeRole();},false)){
+      e.preventDefault();
+      const d=document.getElementById('nxOverlay');
+      if(d&&d.classList.contains('open')) nxClose(); else nxOpen();
+    }
+  }
+});
+// Stimmen früh laden (manche Browser liefern sie erst nach diesem Event)
+if('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged=function(){};
+})();
 </script>
 </body>
 </html>
