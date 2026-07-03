@@ -2217,10 +2217,168 @@ function showWarnDrill(key){
     (d.items.length?d.items.map(it=>
       '<div class="list-row" style="padding:10px 0;border-bottom:1px solid var(--line)">'+
       '<div class="li-main"><b>'+it.name+'</b>'+(it.sub?'<div class="li-sub">'+it.sub+'</div>':'')+'</div>'+
-      '<button class="btn-ghost btn-sm" style="flex:none" onclick="closeModal();editCustomer('+it.id+')">Profil öffnen →</button></div>'
+      '<div style="display:flex;gap:6px;flex:none">'+
+      (key==='budget'?'<button class="btn-primary btn-sm" style="width:auto" title="Fertiges PDF-Anschreiben mit Guthaben- und Verfallshinweis erzeugen" onclick="nxBudgetBrief('+it.id+')">✉ Anschreiben</button>':'')+
+      '<button class="btn-ghost btn-sm" onclick="closeModal();editCustomer('+it.id+')">Profil öffnen →</button></div></div>'
     ).join(''):'<p style="color:var(--muted)">Keine Einträge – alles erledigt.</p>');
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
   openModal();
+}
+
+/* ============ ANOMALIE-WÄCHTER (Stundenzettel-Betrugsprävention) ============ */
+/* Liefert einen Klartext-Grund, wenn ein Stundenzettel auffällig ist – sonst null. */
+function tsAnomalie(t){
+  if(!t||!t.start||!t.end) return null;
+  const min=tsMinutes(t);
+  if(min<=0) return 'Endzeit liegt vor der Startzeit';
+  if(min>360) return 'ungewöhnlich lang: '+(min/60).toFixed(1).replace('.',',')+' h am Stück';
+  if(min<15) return 'ungewöhnlich kurz: nur '+min+' Minuten';
+  if(t.status!=='abgelehnt'){
+    const overlap=timesheets.find(o=>o.id!==t.id&&o.staffId===t.staffId&&o.date===t.date&&o.status!=='abgelehnt'&&(o.start<t.end&&t.start<o.end));
+    if(overlap) return 'überschneidet sich mit Eintrag '+overlap.start+'–'+overlap.end+(overlap.customerId!==t.customerId?' bei einem ANDEREN Kunden':'');
+    const dup=timesheets.find(o=>o.id!==t.id&&o.staffId===t.staffId&&o.customerId===t.customerId&&o.date===t.date&&o.start===t.start&&o.status!=='abgelehnt');
+    if(dup) return 'möglicher Doppel-Eintrag (gleicher Kunde, Tag und Startzeit)';
+  }
+  return null;
+}
+
+/* ============ CHURN-SCORE (Abwanderungs-Wahrscheinlichkeit je Kunde) ============ */
+/* Heuristik aus der Terminhistorie: 0 = alles gut, 100 = akut gefährdet. */
+function churnScore(cu){
+  if(!cu||cu.status!=='aktiv') return null;
+  const heute=todayISO();
+  const eigene=appointments.filter(a=>a.customerId===cu.id);
+  if(!eigene.length) return {score:55,grund:'noch nie ein Termin geplant'};
+  const zukunft=eigene.some(a=>a.date>=heute&&a.status!=='abgesagt');
+  const daten=eigene.filter(a=>a.status!=='abgesagt').map(a=>a.date).sort();
+  const letzter=daten.length?daten[daten.length-1]:null;
+  const tage=letzter?Math.floor((new Date(heute)-new Date(letzter))/86400000):999;
+  const proWoche=cu.freqUnit==='pro Woche'?(cu.freqNum||1):(cu.freqNum||1)/4;
+  const erwartet=Math.max(4,Math.round(7/Math.max(0.25,proWoche))); // erwarteter Abstand in Tagen
+  let score=0; const gruende=[];
+  if(!zukunft){ score+=35; gruende.push('kein zukünftiger Termin geplant'); }
+  if(tage>erwartet*2&&tage<900){ score+=Math.min(35,Math.round(tage/erwartet*8)); gruende.push('letzter Termin vor '+tage+' Tagen (üblich: alle ~'+erwartet+' Tage)'); }
+  const letzte10=eigene.slice(-10);
+  const absQ=letzte10.length?letzte10.filter(a=>a.status==='abgesagt').length/letzte10.length:0;
+  if(absQ>=0.3){ score+=Math.round(absQ*40); gruende.push(Math.round(absQ*100)+' % Absagen bei den letzten Terminen'); }
+  score=Math.max(0,Math.min(100,score));
+  return {score:score, grund:gruende.join(' · ')||'unauffällig'};
+}
+
+/* ============ VERTRETUNGS-FINDER (bei Krankmeldung) ============ */
+/* Kandidaten je Termin: aktive Kolleginnen, sortiert nach passenden
+   Fähigkeiten und Wohnort-Nähe (Geodaten aus dem Karten-Zwischenspeicher). */
+function vertretungsKandidaten(a, ohneId){
+  const cu=custById(a.customerId); if(!cu) return [];
+  let cache={}; try{ cache=geoCacheGet(); }catch(e){}
+  return staff.filter(s=>s.id!==ohneId&&s.status==='aktiv')
+    .map(s=>{
+      const skillHit=(cu.need||[]).filter(n=>(s.skills||[]).includes(n)).length;
+      let km=null;
+      const sAddr=s.intern&&s.intern.address?String(s.intern.address).trim()+', Deutschland':null;
+      const sPos=sAddr?cache[sAddr]:null, cPos=cache[custAddressString(cu)];
+      if(sPos&&cPos) km=Math.round(haversineKm(sPos,cPos)*1.35*10)/10;
+      return {s:s, skillHit:skillHit, km:km};
+    })
+    .sort((x,y)=>(y.skillHit-x.skillHit)||((x.km==null?999:x.km)-(y.km==null?999:y.km)))
+    .slice(0,3);
+}
+function showVertretung(staffId){
+  const krank=staff.find(s=>s.id===staffId); if(!krank){ toast('Mitarbeiter nicht gefunden',true); return; }
+  window.__vertretungFor=staffId;
+  const heute=todayISO(); const in14=new Date(Date.now()+14*86400000).toISOString().slice(0,10);
+  const betroffen=appointments.filter(a=>a.staffId===staffId&&a.status!=='abgesagt'&&a.date>=heute&&a.date<=in14)
+    .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Vertretung finden – '+fullName(krank)+' ('+krank.status+')';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="info-note" style="margin-bottom:12px">💡 Termine der nächsten 14 Tage. Vorschläge sind nach passenden Fähigkeiten und Wohnort-Nähe sortiert – „zuweisen" zieht den Termin sofort um (der Kunde sollte informiert werden).</div>'+
+    (betroffen.length?betroffen.map(a=>{
+      const cu=custById(a.customerId);
+      const kand=vertretungsKandidaten(a, staffId);
+      return '<div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px">'+
+        '<b>'+fmtDate(a.date)+' · '+a.time+' Uhr</b> – '+(cu?fullName(cu):'?')+
+        (cu&&cu.need?'<div style="font-size:12px;color:var(--muted)">'+cu.need.join(', ')+'</div>':'')+
+        '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">'+
+        (kand.length?kand.map(k=>'<button class="btn-ghost btn-sm" onclick="doVertretung('+a.id+','+k.s.id+')">→ '+fullName(k.s)+
+          ' <span style="color:var(--muted)">('+k.skillHit+' Skill'+(k.skillHit===1?'':'s')+(k.km!=null?' · ~'+String(k.km).replace('.',',')+' km':'')+')</span></button>').join('')
+        :'<span style="color:var(--muted);font-size:13px">Keine aktiven Kolleginnen verfügbar.</span>')+
+        '</div></div>';
+    }).join(''):'<p style="color:var(--muted)">Keine anstehenden Termine in den nächsten 14 Tagen.</p>');
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal();document.getElementById(\'modalBox\').classList.remove(\'wide\')">Schließen</button>';
+  openModal();
+}
+function doVertretung(apptId,newStaffId){
+  const a=appointments.find(x=>x.id===apptId); if(!a) return;
+  if(!confirm('Termin am '+fmtDate(a.date)+' um '+a.time+' Uhr an '+staffName(newStaffId)+' übergeben?')) return;
+  a.staffId=newStaffId;
+  if(CLOUD) cloudUpdate('termine',a.id,apptToRow(a));
+  logActivity('Vertretung: Termin '+fmtDate(a.date)+' '+a.time+' → '+staffName(newStaffId));
+  toast('Termin übergeben an '+staffName(newStaffId));
+  showVertretung(window.__vertretungFor);
+}
+
+/* ============ §45b-AUTOPILOT: Kundenanschreiben bei freiem Budget ============ */
+function nxBudgetBrief(custId){
+  const cu=custById(custId); if(!cu){ toast('Kunde nicht gefunden',true); return; }
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return; }
+  const b=parseEuroNum(cu.intern&&cu.intern.budget)||0;
+  const u=parseEuroNum(cu.intern&&cu.intern.budgetUsed)||0;
+  const frei=Math.max(0,b-u);
+  const st=standorte.find(s=>s.id===currentStandortId)||{};
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(); const margin=56; let y=margin;
+  doc.setFont('helvetica','bold');doc.setFontSize(10.5);
+  doc.text(st.firma||st.name||firmaName(),margin,y); y+=13;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(80);
+  doc.text((st.strasse||'Bahnhofstraße 85')+' · '+((st.plz||'31515')+' '+(st.ort||'Wunstorf'))+(st.telefon?' · Tel. '+st.telefon:''),margin,y); y+=30;
+  doc.setTextColor(0);doc.setFontSize(10.5);
+  doc.text(fullName(cu),margin,y); y+=13;
+  String(cu.address||'').split(',').forEach(l=>{ if(l.trim()){ doc.text(l.trim(),margin,y); y+=13; } });
+  y+=8;
+  doc.text(fmtDateLong?fmtDateLong(todayISO()):fmtDate(todayISO()),pageW-margin,y,{align:'right'}); y+=26;
+  doc.setFont('helvetica','bold');doc.setFontSize(12.5);
+  doc.text('Ihr Entlastungsbetrag nach § 45b SGB XI – ungenutztes Guthaben',margin,y); y+=24;
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);
+  const anrede=(cu.gender==='weiblich'||/a$/.test(cu.first||''))?'Sehr geehrte Frau '+cu.last:'Sehr geehrte/r Frau/Herr '+cu.last;
+  const absaetze=[
+    anrede+',',
+    'bei der Durchsicht Ihrer Unterlagen ist uns aufgefallen, dass von Ihrem monatlichen Entlastungsbetrag nach § 45b SGB XI aktuell noch ein Guthaben von '+frei.toFixed(2).replace('.',',')+' € ungenutzt ist.',
+    'Wichtig zu wissen: Nicht verbrauchte Beträge aus dem Vorjahr verfallen jeweils zum 30. Juni des Folgejahres. Es wäre schade, wenn Ihnen zustehende Leistungen ungenutzt verloren gehen.',
+    'Gern besprechen wir mit Ihnen, wie Sie das Guthaben sinnvoll einsetzen können – zum Beispiel für zusätzliche Unterstützung im Haushalt, Begleitung zu Terminen oder Betreuungszeit. Zusätzliche Kosten entstehen Ihnen dabei nicht: Die Abrechnung erfolgt direkt mit Ihrer Pflegekasse.',
+    'Rufen Sie uns einfach an'+(st.telefon?' unter '+st.telefon:'')+' – wir kümmern uns um alles Weitere.',
+    'Mit freundlichen Grüßen',
+    (st.geschaeftsfuehrer||'Ihr Team der '+(st.firma||st.name||'Alltagshilfe Hannover'))
+  ];
+  absaetze.forEach(p=>{
+    const lines=doc.splitTextToSize(p,pageW-margin*2);
+    doc.text(lines,margin,y); y+=lines.length*15+10;
+  });
+  doc.save(('Budget_Anschreiben_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+  logActivity('§45b-Anschreiben erzeugt: '+fullName(cu));
+  toast('Anschreiben als PDF erstellt – zum Versenden per Post oder E-Mail');
+}
+
+/* ============ NEXUS-AKTIONEN: Aufgaben & Telefonnotizen anlegen ============ */
+function nxCreateAufgabe(titel, mitarbeiterId){
+  // Achtung: Mitarbeiter-ID kann 0 sein – deshalb kein "||null"
+  const mid=(mitarbeiterId===undefined||mitarbeiterId===null||mitarbeiterId==='')?null:mitarbeiterId;
+  const auf={mitarbeiterId:mid, customerId:null, title:cleanInput(titel,140),
+    beschreibung:'Per NEXUS-Copilot angelegt ('+currentUserLabel+')', status:'offen', faelligAm:todayISO()};
+  aufgaben.push(auf);
+  if(CLOUD) cloudInsert('aufgaben',aufgabeToRow(auf)).then(r=>{ if(r) auf.id=r.id; });
+  logActivity('Aufgabe per NEXUS angelegt: '+auf.title);
+  toast('Aufgabe angelegt: „'+auf.title+'"'+(mid!==null?' → '+staffName(mid):''));
+}
+function nxCreateNotiz(custId, text){
+  const cu=custById(custId); if(!cu){ toast('Kunde nicht gefunden',true); return; }
+  const k={customerId:cu.id, title:'Telefonnotiz (per NEXUS)', type:'anruf', date:todayISO(),
+    time:new Date().toTimeString().slice(0,5), status:'offen', note:cleanInput(text,800), tasks:[], createdBy:currentUserLabel};
+  kommunikationen.unshift(k);
+  if(CLOUD) cloudInsert('kommunikation',kommToRow(k)).then(r=>{ if(r) k.id=r.id; });
+  logActivity('Telefonnotiz per NEXUS: '+fullName(cu));
+  toast('Notiz zu '+fullName(cu)+' gespeichert (Kommunikation)');
 }
 
 /* ============ MARKETING-MATERIAL (zentraler Upload-Ordner) ============ */
@@ -2512,9 +2670,11 @@ function renderAdmin(view){
     (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Leistungsnachweis</th><th>Rechnung</th><th></th></tr></thead><tbody>'+
       timesheets.map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);
         const sigOk=signatureLooksValid(t.signature);
-        const statusTag = t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
+        const anom=tsAnomalie(t); // Anomalie-Wächter: Ausreißer & Doppelbuchungen
+        const statusTag = (t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
                         : t.status==='abgelehnt'?'<span class="tag red">abgelehnt</span>'
-                        : '<span class="tag amber">zu prüfen</span>';
+                        : '<span class="tag amber">zu prüfen</span>')
+                        +(anom?'<div style="font-size:11px;color:var(--danger);max-width:170px;margin-top:3px" title="Automatisch erkannt – bitte vor Freigabe prüfen">⚠ '+anom+'</div>':'');
         // Neben der Original-Unterschrift die hinterlegte Unterschriftsprobe
         // des Kunden anzeigen (aus der Erstberatung) – zum direkten Vergleich
         const probe=(cu&&cu.beratung&&cu.beratung.signature)?cu.beratung.signature:null;
@@ -7541,12 +7701,44 @@ function nxRadarScan(){
       desc:over.map(function(id){return nxSafe(function(){return staffName(+id);},'#'+id)+' ('+(load[id]/60).toFixed(1).replace('.',',')+' h)';}).join(' · '),
       nav:{label:'Zu den Mitarbeitern',view:'staff'},count:over.length});
   });
+  // 7) Anomalie-Wächter: auffällige Stundenzettel (Ausreißer, Doppelbuchungen)
+  nxSafe(function(){
+    const auff=(timesheets||[]).filter(function(t){return t.status!=='abgelehnt'&&tsAnomalie(t);});
+    if(auff.length) findings.push({key:'anomalie',sev:3,icon:'🕵️',
+      title:auff.length+' auffällige(r) Stundenzettel',
+      desc:auff.slice(0,3).map(function(t){return nxSafe(function(){return staffName(t.staffId);},'?')+' '+nxSafe(function(){return fmtDate(t.date);},t.date)+': '+tsAnomalie(t);}).join(' · ')+(auff.length>3?' · +'+(auff.length-3)+' weitere':''),
+      nav:{label:'Zu den Stundenzetteln',view:'hours'},count:auff.length});
+  });
+  // 8) Churn-Risiko: Kunden mit hoher Abwanderungs-Wahrscheinlichkeit
+  nxSafe(function(){
+    const risiko=(customers||[]).map(function(c){const r=churnScore(c);return r?{c:c,r:r}:null;})
+      .filter(function(x){return x&&x.r.score>=40;})
+      .sort(function(a,b){return b.r.score-a.r.score;});
+    if(risiko.length) findings.push({key:'churnrisk',sev:risiko[0].r.score>=70?3:2,icon:'📉',
+      title:risiko.length+' Kunde(n) mit Abwanderungs-Risiko',
+      desc:'Wahrscheinlichkeit aus Terminhistorie, Absagequote und Planungslücke berechnet.',
+      chips:risiko.slice(0,8).map(function(x){return {label:nxSafe(function(){return fullName(x.c);},'Kunde')+' ('+x.r.score+' %)',act:function(){nxClose();editCustomer(x.c.id);}};}),
+      more:Math.max(0,risiko.length-8),nav:{label:'Zur Kundenliste',view:'customers'},count:risiko.length});
+  });
+  // 9) Vertretungs-Finder: kranke/abwesende Mitarbeiter mit anstehenden Terminen
+  nxSafe(function(){
+    const in14=new Date(new Date(heute).getTime()+14*86400000).toISOString().slice(0,10);
+    const ausfall=(staff||[]).filter(function(s){
+      if(s.status!=='krank'&&s.status!=='Urlaub') return false;
+      return (appointments||[]).some(function(a){return a.staffId===s.id&&a.status!=='abgesagt'&&a.date>=heute&&a.date<=in14;});
+    });
+    if(ausfall.length) findings.push({key:'vertretung',sev:3,icon:'🆘',
+      title:ausfall.length+' Ausfall/Ausfälle mit anstehenden Terminen',
+      desc:'Klick auf den Namen öffnet den Vertretungs-Finder (Vorschläge nach Fähigkeiten und Wohnort-Nähe).',
+      chips:ausfall.map(function(s){return {label:nxSafe(function(){return fullName(s);},'MA')+' ('+s.status+')',act:function(){nxClose();showVertretung(s.id);}};}),
+      nav:{label:'Zu den Mitarbeitern',view:'staff'},count:ausfall.length});
+  });
   findings.sort(function(a,b){return b.sev-a.sev;});
   return findings;
 }
 /* Business-Puls 0–100: gewichtete Abzüge je Kategorie, gedeckelt */
 function nxPuls(findings){
-  const caps={churn:25,invoice:20,unassigned:20,ts:15,task:15,overload:10};
+  const caps={churn:20,invoice:20,unassigned:20,ts:15,task:15,overload:10,anomalie:15,vertretung:15,churnrisk:15};
   let malus=0;
   findings.forEach(function(f){ malus+=Math.min(caps[f.key]||10, f.sev*3+Math.min(f.count||1,8)); });
   return Math.max(5,Math.round(100-malus));
@@ -7637,6 +7829,8 @@ function nxRow(icon,title,sub,fn){
   return '<div class="nx-row" onclick="nxAct('+(__nxActions.length-1)+')"><div class="nx-ic">'+icon+'</div><div><b>'+title+'</b><div class="nx-sub2">'+sub+'</div></div></div>';
 }
 function nxRun(qRaw){
+  // Mitarbeiter bekommen den mehrsprachigen Navigations-Copiloten
+  if(nxSafe(function(){return currentRole==='staff';},false)){ nxRunStaff(qRaw); return; }
   const q=nxNorm(qRaw); if(!q) return;
   __nxActions=[];
   const box=document.getElementById('nxResults'); const ans=document.getElementById('nxAnswer');
@@ -7646,7 +7840,61 @@ function nxRun(qRaw){
 
   // --- feste Absichten ---
   if(/^(hilfe|was kannst du|befehle|\?)$/.test(q)){
-    nxAnswer('<b>Ich verstehe zum Beispiel:</b><br>„öffne kunde müller" · „gehe zu rechnungen" · „neuer kunde" · „neuer termin" · „was steht heute an" · „termine morgen" · „offene rechnungen" · „wie viele kunden" · „briefing" · „radar" · „tour heute" – oder tippe einfach einen Namen.');
+    nxAnswer('<b>Ich verstehe zum Beispiel:</b><br>„öffne kunde müller" · „gehe zu rechnungen" · „neuer kunde" · „neuer termin" · „was steht heute an" · „offene rechnungen" · „briefing" · „radar" · „tour heute"<br>'+
+      '<b>Aktionen:</b><br>„aufgabe: Frau Müller zurückrufen" · „aufgabe: Rechnung prüfen für Bianca" · „notiz kunde müller: hat wegen Termin angerufen" · „vertretung für Ivonne" · „budget" (§45b-Anschreiben)<br>'+
+      '<span style="color:var(--muted);font-size:12px">Alles geht auch per Diktat über das Mikrofon.</span>');
+    return;
+  }
+  // --- AKTION: Aufgabe anlegen („aufgabe: TEXT [für NAME]") ---
+  const mAuf=qRaw.match(/^\s*(?:lege\s+|erstelle\s+)?aufgabe(?:\s+an)?\s*[:!]?\s+(.+)$/i);
+  if(mAuf){
+    let titel=mAuf[1].trim(); let mid=null; let midName='';
+    const mFuer=titel.match(/^(.+?)\s+f(?:ü|u)r\s+([A-Za-zÄÖÜäöüß .\-]{2,})$/i);
+    if(mFuer){
+      let best=null,bs=0;
+      (staff||[]).forEach(function(s){ const sc=nxScore(mFuer[2], nxSafe(function(){return staffName(s.id);},'')); if(sc>bs){bs=sc;best=s;} });
+      if(best&&bs>=40){ titel=mFuer[1].trim(); mid=best.id; midName=nxSafe(function(){return staffName(best.id);},''); }
+    }
+    box.innerHTML=nxRowData('☑','Aufgabe anlegen: „'+titel+'"'+(midName?' → '+midName:''),
+      'Klicken zum Bestätigen – erscheint sofort unter „Aufgaben"',
+      function(){ nxSafe(function(){ nxCreateAufgabe(titel, mid); }); nxClose(); });
+    return;
+  }
+  // --- AKTION: Telefonnotiz zu einem Kunden („notiz kunde müller: TEXT") ---
+  const mNot=qRaw.match(/^\s*(?:telefon)?notiz(?:\s+(?:zu|für|fuer))?(?:\s+kunden?)?\s+(.+?)\s*:\s*(.+)$/i);
+  if(mNot){
+    const name=mNot[1], text=mNot[2].trim();
+    const treffer=(customers||[]).map(function(c){ return {c:c, s:nxScore(name, nxSafe(function(){return fullName(c);},''))}; })
+      .filter(function(x){return x.s>=35;}).sort(function(a,b){return b.s-a.s;}).slice(0,3);
+    if(!treffer.length){ nxAnswer('Kunde „'+nxEsc(name)+'" nicht gefunden. Beispiel: „notiz kunde müller: hat wegen Termin angerufen"'); return; }
+    box.innerHTML=treffer.map(function(t){
+      return nxRowData('📞','Notiz zu '+nxSafe(function(){return fullName(t.c);},'Kunde')+' speichern',
+        '„'+nxEsc(text.slice(0,80))+(text.length>80?'…':'')+'" → landet unter Kommunikation',
+        function(){ nxSafe(function(){ nxCreateNotiz(t.c.id, text); }); nxClose(); });
+    }).join('');
+    return;
+  }
+  // --- Vertretungs-Finder („vertretung" oder „vertretung für NAME") ---
+  if(/^vertretung/.test(q)){
+    const rest=q.replace(/^vertretung(\s+fur)?\s*/,'').trim();
+    if(rest){
+      let best=null,bs=0;
+      (staff||[]).forEach(function(s){ const sc=nxScore(rest, nxSafe(function(){return staffName(s.id);},'')); if(sc>bs){bs=sc;best=s;} });
+      if(best&&bs>=40){ nxClose(); nxSafe(function(){ showVertretung(best.id); }); return; }
+    }
+    const ausfall=(staff||[]).filter(function(s){return s.status==='krank'||s.status==='Urlaub';});
+    if(!ausfall.length){ nxAnswer('Aktuell ist niemand krank oder im Urlaub gemeldet. Du kannst auch gezielt fragen: „vertretung für Ivonne".'); return; }
+    box.innerHTML=ausfall.map(function(s){
+      return nxRowData('🆘','Vertretung für '+nxSafe(function(){return fullName(s);},'')+' ('+s.status+')',
+        'Termine der nächsten 14 Tage neu verteilen',
+        function(){ nxClose(); nxSafe(function(){ showVertretung(s.id); }); });
+    }).join('');
+    return;
+  }
+  // --- §45b-Autopilot ---
+  if(/^budget|45b/.test(q)){
+    nxClose();
+    nxSafe(function(){ renderAdmin('dashboard'); setTimeout(function(){ nxSafe(function(){ showWarnDrill('budget'); }); },150); });
     return;
   }
   if(/briefing/.test(q)){ nxTab('brief'); return; }
@@ -7700,14 +7948,66 @@ function nxRun(qRaw){
 }
 function nxRowData(icon,title,sub,fn){ __nxActions.push(fn); return '<div class="nx-row" onclick="nxAct('+(__nxActions.length-1)+')"><div class="nx-ic">'+icon+'</div><div><b>'+nxEsc(title).replace(/&lt;(\/?b)&gt;/g,'<$1>')+'</b><div class="nx-sub2">'+sub+'</div></div></div>'; }
 
-/* ---- Spracheingabe (Web Speech API, de-DE) ---- */
+/* ============ MEHRSPRACHIGER MITARBEITER-COPILOT (DE/EN/TR/RU/AR/UA) ============ */
+const NX_LANGS={de:{code:'de-DE',label:'DE'},en:{code:'en-US',label:'EN'},tr:{code:'tr-TR',label:'TR'},ru:{code:'ru-RU',label:'RU'},ar:{code:'ar-SA',label:'AR'},ua:{code:'uk-UA',label:'UA'}};
+let nxLang='de'; try{ nxLang=localStorage.getItem('dailydo-nexus-lang')||'de'; if(!NX_LANGS[nxLang]) nxLang='de'; }catch(e){}
+const NX_STAFF_PLACEHOLDER={de:'Was möchtest du öffnen? z. B. „meine termine“ oder „stunden“',en:'What do you want to open? e.g. “my appointments” or “hours”',tr:'Ne açmak istiyorsun? örn. “randevularım” veya “saatler”',ru:'Что открыть? напр. «мои встречи» или «часы»',ar:'ماذا تريد أن تفتح؟ مثل «مواعيدي» أو «ساعات»',ua:'Що відкрити? напр. «мої зустрічі» або «години»'};
+const NX_STAFF_HINT={de:'Sprache wählen, dann tippen oder über das Mikrofon diktieren.',en:'Pick your language, then type or dictate via microphone.',tr:'Dilini seç, sonra yaz veya mikrofonla söyle.',ru:'Выберите язык, затем пишите или диктуйте в микрофон.',ar:'اختر لغتك ثم اكتب أو أملِ عبر الميكروفون.',ua:'Оберіть мову, потім пишіть або диктуйте в мікрофон.'};
+const NX_STAFF_NOHIT={de:'Nichts gefunden – versuche „termine“, „stunden“ oder „aufgaben“.',en:'Nothing found – try “appointments”, “hours” or “tasks”.',tr:'Bulunamadı – “randevular”, “saatler” veya “görevler” dene.',ru:'Не найдено – попробуйте «встречи», «часы» или «задачи».',ar:'لم يتم العثور على شيء – جرّب «مواعيد» أو «ساعات» أو «مهام».',ua:'Нічого не знайдено – спробуйте «зустрічі», «години» або «завдання».'};
+const NX_STAFF_VIEWS=[
+  {view:'dashboard',ic:'◧',label:'Dashboard',de:['dashboard','übersicht','start'],en:['dashboard','overview','home'],tr:['panel','özet','ana sayfa'],ru:['обзор','главная','дашборд'],ar:['الرئيسية','نظرة عامة'],ua:['огляд','головна']},
+  {view:'board',ic:'◎',label:'Auftragsbörse · Jobs',de:['auftragsbörse','aufträge','börse','neue aufträge','jobs'],en:['jobs','job board','offers','orders','work'],tr:['işler','iş ilanları','yeni işler'],ru:['заказы','биржа','работа','новые заказы'],ar:['الوظائف','الطلبات','عمل'],ua:['замовлення','біржа','робота']},
+  {view:'mine',ic:'✓',label:'Meine Kunden · My clients',de:['meine kunden','kunden'],en:['my clients','my customers','clients'],tr:['müşterilerim','müşteriler'],ru:['мои клиенты','клиенты'],ar:['عملائي','العملاء'],ua:['мої клієнти','клієнти']},
+  {view:'aufgaben',ic:'☑',label:'Aufgaben · Tasks',de:['aufgaben','meine aufgaben','todo'],en:['tasks','my tasks','to do'],tr:['görevler','görevlerim'],ru:['задачи','мои задачи'],ar:['مهام','مهامي'],ua:['завдання','мої завдання']},
+  {view:'calendar',ic:'▦',label:'Termine · Appointments',de:['termine','meine termine','kalender'],en:['appointments','my appointments','calendar','schedule'],tr:['randevular','randevularım','takvim'],ru:['встречи','мои встречи','календарь','расписание'],ar:['مواعيد','مواعيدي','التقويم'],ua:['зустрічі','мої зустрічі','календар','розклад']},
+  {view:'hours',ic:'⏱',label:'Stundenzettel · Hours',de:['stunden','stundenzettel','zeiten','zeit erfassen'],en:['hours','timesheet','time'],tr:['saatler','mesai','çalışma saatleri'],ru:['часы','табель','время'],ar:['ساعات','الدوام','الوقت'],ua:['години','табель','час']},
+  {view:'payroll',ic:'€',label:'Lohnabrechnung · Payroll',de:['lohn','gehalt','lohnabrechnung','abrechnung'],en:['pay','payroll','salary','payslip'],tr:['maaş','bordro'],ru:['зарплата','расчёт','расчет'],ar:['راتب','كشف الراتب'],ua:['зарплата','розрахунок']},
+  {view:'schulung',ic:'🎓',label:'Schulung · Training',de:['schulung','schulungen'],en:['training','courses','course'],tr:['eğitim','eğitimler','kurs'],ru:['обучение','тренинг','курс'],ar:['تدريب','دورات'],ua:['навчання','тренінг','курс']},
+  {view:'profile',ic:'☺',label:'Mein Profil · Profile',de:['profil','mein profil','status'],en:['profile','my profile'],tr:['profil','profilim'],ru:['профиль','мой профиль'],ar:['الملف الشخصي','ملفي'],ua:['профіль','мій профіль']},
+  {view:'contracts',ic:'📄',label:'Meine Verträge · Contracts',de:['verträge','meine verträge','vertrag'],en:['contracts','my contracts'],tr:['sözleşmeler','sözleşmelerim'],ru:['договоры','контракты'],ar:['العقود','عقودي'],ua:['договори','контракти']},
+  {view:'emergency',ic:'✆',label:'Notfallnummer · Emergency',de:['notfall','notfallnummer'],en:['emergency','emergency number'],tr:['acil','acil durum'],ru:['экстренный','срочная помощь'],ar:['طوارئ','رقم الطوارئ'],ua:['екстрений','термінова допомога']}
+];
+function nxSetLang(l){
+  nxLang=NX_LANGS[l]?l:'de';
+  try{ localStorage.setItem('dailydo-nexus-lang',nxLang); }catch(e){}
+  const inp=document.getElementById('nxInput'); if(inp&&nxSafe(function(){return currentRole==='staff';},false)) inp.placeholder=NX_STAFF_PLACEHOLDER[nxLang];
+  const h=document.getElementById('nxHintRow'); if(h&&nxSafe(function(){return currentRole==='staff';},false)) h.textContent=NX_STAFF_HINT[nxLang];
+}
+function nxRunStaff(qRaw){
+  __nxActions=[];
+  const box=document.getElementById('nxResults'); if(!box) return;
+  const ans=document.getElementById('nxAnswer'); if(ans) ans.style.display='none';
+  const q=String(qRaw||'').toLowerCase().trim(); if(!q) return;
+  const hits=[];
+  NX_STAFF_VIEWS.forEach(function(v){
+    let best=0;
+    Object.keys(NX_LANGS).forEach(function(l){
+      (v[l]||[]).forEach(function(kw){
+        if(q===kw) best=Math.max(best,100);
+        else if(kw.indexOf(q)===0) best=Math.max(best,70);
+        else if(q.indexOf(kw)>-1||kw.indexOf(q)>-1) best=Math.max(best,50);
+      });
+    });
+    if(best>0) hits.push({s:best,v:v});
+  });
+  hits.sort(function(a,b){return b.s-a.s;});
+  if(!hits.length){ nxAnswer(nxEsc(NX_STAFF_NOHIT[nxLang])); return; }
+  box.innerHTML=hits.slice(0,6).map(function(h,i){
+    const html=nxRowData(h.v.ic,h.v.label,'',function(){ nxClose(); nxSafe(function(){ renderStaff(h.v.view); }); });
+    return i===0?html.replace('class="nx-row"','class="nx-row sel"'):html;
+  }).join('');
+}
+
+/* ---- Spracheingabe (Web Speech API, Sprache je nach Auswahl) ---- */
 var __nxRec=null;
 function nxMic(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   const btn=document.getElementById('nxMicBtn');
   if(!SR){ toast('Spracherkennung wird von diesem Browser nicht unterstützt (Chrome/Edge nutzen)',true); return; }
   if(__nxRec){ __nxRec.stop(); return; }
-  __nxRec=new SR(); __nxRec.lang='de-DE'; __nxRec.interimResults=false; __nxRec.maxAlternatives=1;
+  __nxRec=new SR();
+  __nxRec.lang=nxSafe(function(){return currentRole==='staff';},false)?(NX_LANGS[nxLang]||NX_LANGS.de).code:'de-DE';
+  __nxRec.interimResults=false; __nxRec.maxAlternatives=1;
   if(btn) btn.classList.add('rec');
   __nxRec.onresult=function(e){
     const text=e.results[0][0].transcript;
@@ -7752,6 +8052,21 @@ function nxTwoOpt(order,pts){ // Start (Index 0) bleibt fix
     }
   }
   return order;
+}
+/* Optimierte Reihenfolge in die echten Termine zurückschreiben (mit Bestätigung) */
+function nxTourApply(key){
+  const plan=window.__nxTourPlan&&window.__nxTourPlan[key];
+  if(!plan||!plan.length){ toast('Bitte zuerst „Route optimieren" ausführen',true); return; }
+  const name=key==='x'?'Ohne Zuteilung':nxSafe(function(){return staffName(+key);},'Mitarbeiterin');
+  if(!confirm('Die vorgeschlagenen Uhrzeiten für '+plan.length+' Termin(e) von '+name+' übernehmen?\n\nDie bisherigen Zeiten werden überschrieben – bitte die Kunden über die neuen Zeiten informieren.')) return;
+  let n=0;
+  plan.forEach(function(p){
+    const a=(appointments||[]).find(function(x){return x.id===p.id;});
+    if(a&&a.time!==p.zeit){ a.time=p.zeit; n++; nxSafe(function(){ if(CLOUD) cloudUpdate('termine',a.id,apptToRow(a)); }); }
+  });
+  nxSafe(function(){ logActivity('NEXUS-Tour übernommen: '+name+', '+n+' Terminzeit(en) angepasst'); });
+  toast(n?('✓ '+n+' Terminzeit(en) aktualisiert – Reihenfolge ist jetzt die optimierte Route'):'Alle Zeiten waren bereits optimal');
+  nxTourCalc();
 }
 var __nxTourMapObj=null, __nxTourLayer=null, __nxTourBusy=false;
 async function nxTourCalc(){
@@ -7821,6 +8136,9 @@ async function nxTourCalc(){
         if(pos>0){ t+=Number(g[order[pos-1]].a.duration)||60; t+=Math.round(nxHaversine(pts[order[pos-1]],pts[idx])/NX_KMH*60/5)*5; }
         plan.push({s:g[idx],zeit:nxMin2HHMM(t)});
       });
+      // Vorschlag merken, damit er per Klick übernommen werden kann
+      window.__nxTourPlan=window.__nxTourPlan||{};
+      window.__nxTourPlan[key]=plan.map(function(p){return {id:p.s.a.id, zeit:p.zeit};});
       html+='<div class="nx-card"><h4><span class="nx-sev" style="background:'+col+'"></span>'+nxEsc(name)+' – '+g.length+' Stopp'+(g.length>1?'s':'')+'</h4>'+
         (g.length>1?'<div><span class="nx-stat">Bisher (nach Uhrzeit): <b>'+kmBase.toFixed(1).replace('.',',')+' km</b> / ~'+Math.round(minBase)+' Min. Fahrt</span>'+
         '<span class="nx-stat">Optimiert: <b>'+kmOpt.toFixed(1).replace('.',',')+' km</b> / ~'+Math.round(minOpt)+' Min.</span>'+
@@ -7828,7 +8146,9 @@ async function nxTourCalc(){
         '<div style="margin-top:8px;font-size:13.5px">'+plan.map(function(p,i){
           return (i+1)+'. <b>'+p.zeit+'</b> '+nxEsc(nxSafe(function(){return fullName(p.s.c);},''))+(i===0?' <span style="color:var(--muted)">(Start, Zeit fix)</span>':'');
         }).join('<br>')+'</div>'+
-        (save>0?'<div style="font-size:12px;color:var(--muted);margin-top:8px">Vorschlag – Zeiten sind Richtwerte (Ø '+NX_KMH+' km/h). Es wird nichts automatisch umgebucht.</div>':'')+
+        (save>0?'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">'+
+          '<button class="nx-btn" onclick="nxTourApply(\''+key+'\')">✓ Vorschlag übernehmen</button>'+
+          '<span style="font-size:12px;color:var(--muted)">Zeiten sind Richtwerte (Ø '+NX_KMH+' km/h). Übernahme erst nach Bestätigung – Kunden über neue Zeiten informieren.</span></div>':'')+
         '</div>';
       // auf Karte zeichnen
       if(window.L&&__nxTourLayer){
@@ -7858,8 +8178,9 @@ function nxEnsureOrb(){
     document.body.appendChild(orb);
   }
   const office=nxSafe(function(){return isOfficeRole();},false);
-  orb.style.display=office?'flex':'none';
-  if(!office) nxClose();
+  const mitarbeiter=nxSafe(function(){return currentRole==='staff';},false);
+  orb.style.display=(office||mitarbeiter)?'flex':'none';
+  if(!office&&!mitarbeiter) nxClose();
 }
 function nxBuildOverlay(){
   if(document.getElementById('nxOverlay')) return;
@@ -7877,14 +8198,22 @@ function nxBuildOverlay(){
       '<button class="nx-tab" id="nxTab-tour" onclick="nxTab(\'tour\')">🗺️ Touren</button></div>'+
     '<div class="nx-body" id="nxBody-copilot">'+
       '<div class="nx-inputrow"><input id="nxInput" placeholder="Was möchtest du tun? – z. B. „öffne kunde müller“ oder „was steht heute an“" autocomplete="off">'+
+      '<select id="nxLangSel" class="nx-select" style="display:none;flex:none" onchange="nxSetLang(this.value)" title="Sprache / Language">'+
+        Object.keys(NX_LANGS).map(function(l){return '<option value="'+l+'">'+NX_LANGS[l].label+'</option>';}).join('')+'</select>'+
       '<button class="nx-mic" id="nxMicBtn" onclick="nxMic()" title="Sprechen">🎤</button></div>'+
-      '<div class="nx-hint">Enter = bester Treffer · „hilfe" zeigt Beispiele · Mikrofon für Sprachsteuerung</div>'+
+      '<div class="nx-hint" id="nxHintRow">Enter = bester Treffer · „hilfe" zeigt Beispiele · Mikrofon für Sprachsteuerung</div>'+
       '<div class="nx-answer" id="nxAnswer" style="display:none"></div>'+
       '<div class="nx-results" id="nxResults"></div></div>'+
     '<div class="nx-body" id="nxBody-brief" style="display:none">'+
       '<div class="nx-toolrow"><button class="nx-btn" id="nxSpeakBtn" onclick="nxSpeakBriefing()">🔊 Vorlesen</button>'+
       '<button class="nx-btn ghost" id="nxStopBtn" style="display:none" onclick="nxStopSpeak()">⏹ Stopp</button>'+
       '<button class="nx-btn ghost" onclick="nxRenderBrief()">↻ Neu erzeugen</button></div>'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;background:var(--petrol-soft);border-radius:10px">'+
+        '<span style="font-size:13px;font-weight:600">🕖 Täglich um 7 Uhr per E-Mail:</span>'+
+        '<input id="nxAboMail" placeholder="deine@email.de" autocomplete="off" style="flex:1;min-width:170px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px">'+
+        '<button class="nx-btn ghost" onclick="nxBriefAboToggle()">Abo an / aus</button>'+
+        '<div id="nxAboBox" style="width:100%;font-size:12px;color:var(--muted)"></div>'+
+      '</div>'+
       '<div class="nx-brief" id="nxBriefText"></div></div>'+
     '<div class="nx-body" id="nxBody-radar" style="display:none"><div id="nxRadarOut"></div></div>'+
     '<div class="nx-body" id="nxBody-tour" style="display:none">'+
@@ -7905,13 +8234,25 @@ function nxBuildOverlay(){
   });
 }
 function nxOpen(){
-  if(!nxSafe(function(){return isOfficeRole();},false)){ return; }
+  const office=nxSafe(function(){return isOfficeRole();},false);
+  const mitarbeiter=nxSafe(function(){return currentRole==='staff';},false);
+  if(!office&&!mitarbeiter) return;
   nxBuildOverlay();
   document.getElementById('nxOverlay').classList.add('open');
-  // Puls aktualisieren
-  const f=nxRadarScan(); const p=nxPuls(f);
-  const pv=document.getElementById('nxPulsVal');
-  if(pv){ pv.textContent=p; pv.style.color=nxPulsColor(p); }
+  // Mitarbeiter-Modus: nur Copilot (mehrsprachig), keine Betriebs-Auswertungen
+  ['brief','radar','tour'].forEach(function(t){ const tb=document.getElementById('nxTab-'+t); if(tb) tb.style.display=mitarbeiter?'none':''; });
+  const puls=document.querySelector('.nx-pulsbox'); if(puls) puls.style.display=mitarbeiter?'none':'';
+  const langSel=document.getElementById('nxLangSel'); if(langSel){ langSel.style.display=mitarbeiter?'block':'none'; langSel.value=nxLang; }
+  if(office){
+    const f=nxRadarScan(); const p=nxPuls(f);
+    const pv=document.getElementById('nxPulsVal');
+    if(pv){ pv.textContent=p; pv.style.color=nxPulsColor(p); }
+  }
+  nxSetLang(nxLang); // Platzhalter/Hinweis passend zur Rolle & Sprache
+  if(!mitarbeiter){
+    const inp=document.getElementById('nxInput'); if(inp) inp.placeholder='Was möchtest du tun? – z. B. „öffne kunde müller“ oder „aufgabe: Frau Müller zurückrufen“';
+    const h=document.getElementById('nxHintRow'); if(h) h.textContent='Enter = bester Treffer · „hilfe" zeigt Beispiele · Mikrofon für Sprachsteuerung';
+  }
   nxTab('copilot');
   setTimeout(function(){ const i=document.getElementById('nxInput'); if(i){ i.value=''; i.focus(); } },60);
   const r=document.getElementById('nxResults'); if(r) r.innerHTML='';
@@ -7943,8 +8284,36 @@ function nxRenderBrief(){
   const el=document.getElementById('nxBriefText');
   if(el) el.textContent=nxBriefing();
   nxBriefBtns();
+  nxRenderBriefAbo();
 }
 function nxSpeakBriefing(){ nxSpeak(nxBriefing()); }
+/* --- E-Mail-Abo: täglich 7 Uhr (Tabelle briefing_abo + Edge Function morgen-briefing) --- */
+async function nxRenderBriefAbo(){
+  const box=document.getElementById('nxAboBox'); if(!box) return;
+  const inp=document.getElementById('nxAboMail');
+  if(inp&&!inp.value&&nxSafe(function(){return isValidEmail(currentUserLabel);},false)) inp.value=currentUserLabel;
+  if(typeof CLOUD==='undefined'||!CLOUD||!sb){ box.textContent='Verfügbar nach Anmeldung mit Datenbank-Verbindung.'; return; }
+  try{
+    const {data,error}=await sb.from('briefing_abo').select('email').order('email');
+    if(error) throw error;
+    box.textContent=(data&&data.length)?('Aktive Empfänger: '+data.map(function(x){return x.email;}).join(', ')):'Noch keine Empfänger – E-Mail eintragen und „Abo an / aus" klicken.';
+  }catch(e){ box.textContent='E-Mail-Abo noch nicht eingerichtet (BRIEFING_CRON.sql ausführen + Function „morgen-briefing" deployen).'; }
+}
+async function nxBriefAboToggle(){
+  if(typeof CLOUD==='undefined'||!CLOUD||!sb){ toast('Keine Datenbank-Verbindung',true); return; }
+  const em=((document.getElementById('nxAboMail')||{}).value||'').trim().toLowerCase();
+  if(!nxSafe(function(){return isValidEmail(em);},false)){ toast('Bitte gültige E-Mail eingeben',true); return; }
+  try{
+    const {data}=await sb.from('briefing_abo').select('id').eq('email',em).maybeSingle();
+    if(data){ await sb.from('briefing_abo').delete().eq('id',data.id); toast('Briefing-Abo für '+em+' beendet'); }
+    else{
+      const {error}=await sb.from('briefing_abo').insert({email:em});
+      if(error) throw error;
+      toast('✓ Ab morgen 7 Uhr: Briefing per E-Mail an '+em);
+    }
+  }catch(e){ toast('Abo fehlgeschlagen: '+(e.message||e)+' – BRIEFING_CRON.sql ausführen?',true); }
+  nxRenderBriefAbo();
+}
 var __nxChipActs=[];
 function nxChip(i){ const f=__nxChipActs[i]; if(f) nxSafe(f); }
 function nxRenderRadar(){
@@ -7970,6 +8339,7 @@ function nxRenderRadar(){
 window.nxOpen=nxOpen; window.nxClose=nxClose; window.nxTab=nxTab; window.nxAct=nxAct; window.nxRun=nxRun;
 window.nxMic=nxMic; window.nxTourCalc=nxTourCalc; window.nxChip=nxChip; window.nxViewGo=nxViewGo;
 window.nxSpeakBriefing=nxSpeakBriefing; window.nxStopSpeak=nxStopSpeak; window.nxRenderBrief=nxRenderBrief;
+window.nxSetLang=nxSetLang; window.nxTourApply=nxTourApply; window.nxBriefAboToggle=nxBriefAboToggle; window.nxRunStaff=nxRunStaff;
 (function(){
   const origAdmin=window.renderAdmin;
   if(typeof origAdmin==='function') window.renderAdmin=function(){ const r=origAdmin.apply(this,arguments); nxSafe(nxEnsureOrb); return r; };
@@ -7981,7 +8351,7 @@ window.nxSpeakBriefing=nxSpeakBriefing; window.nxStopSpeak=nxStopSpeak; window.n
 document.addEventListener('keydown',function(e){
   if((e.ctrlKey||e.metaKey)&&String(e.key).toLowerCase()==='k'){
     const app=document.getElementById('appScreen');
-    if(app&&app.classList.contains('active')&&nxSafe(function(){return isOfficeRole();},false)){
+    if(app&&app.classList.contains('active')&&nxSafe(function(){return isOfficeRole()||currentRole==='staff';},false)){
       e.preventDefault();
       const d=document.getElementById('nxOverlay');
       if(d&&d.classList.contains('open')) nxClose(); else nxOpen();
