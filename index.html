@@ -141,14 +141,60 @@
   .reveal-row{display:flex;justify-content:space-between;padding:4px 0;font-size:14px;gap:14px}
   .reveal-row .k{color:var(--muted);white-space:nowrap}.reveal-row .v{font-weight:600;text-align:right}
   .empty{text-align:center;padding:50px 20px;color:var(--muted)}.empty .big{font-size:34px;margin-bottom:10px}
-  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:13px 22px;border-radius:11px;font-size:14.5px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;transition:.28s;z-index:300;display:flex;align-items:center;gap:10px;max-width:90vw}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:13px 22px;border-radius:11px;font-size:14.5px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;transition:.28s;z-index:10050;display:flex;align-items:center;gap:10px;max-width:90vw}
   .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+  /* Mobil: Toast über der Schwebe-Leiste (Hilfe/NEXUS), volle Breite statt gequetschter Wortspalte */
+  @media (max-width:640px){
+    .toast{left:12px;right:12px;bottom:96px;transform:translateY(80px);max-width:none}
+    .toast.show{transform:translateY(0)}
+  }
+  /* App-eigener Bestätigungsdialog (ersetzt natives confirm) – liegt über allem, auch über Modalen */
+  .ac-bg{position:fixed;inset:0;background:rgba(20,35,36,.5);display:none;align-items:center;justify-content:center;z-index:10060;padding:20px}
+  .ac-bg.show{display:flex}
+  .ac-card{background:var(--card,#fff);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-width:430px;width:100%;padding:22px 22px 18px;animation:acIn .16s ease-out}
+  @keyframes acIn{from{transform:scale(.96);opacity:0}to{transform:none;opacity:1}}
+  .ac-card h4{margin:0 0 8px;font-size:17px}
+  .ac-card p{margin:0 0 18px;font-size:14.5px;color:var(--muted);white-space:pre-line;line-height:1.5}
+  .ac-foot{display:flex;justify-content:flex-end;gap:10px}
+  .ac-foot .btn-danger{padding:11px 18px;border:0;border-radius:9px;font-weight:700;font-size:14.5px;background:#c0392b;color:#fff;cursor:pointer}
+  .ac-foot .btn-danger:hover{background:#a93226}
+  /* Sichtbarer Tastatur-Fokus für alle Bedienelemente (Barrierefreiheit) */
+  button:focus-visible,a:focus-visible,.nav-item:focus-visible,summary:focus-visible{outline:2px solid var(--petrol);outline-offset:2px;border-radius:9px}
+  /* Inaktive Knöpfe müssen inaktiv AUSSEHEN – sonst wirken sie kaputt */
+  .btn-primary:disabled,.btn-ghost:disabled,.btn-apply:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+  /* Aufmerksamkeits-Schütteln für übersehene Pflicht-Bestätigungen */
+  @keyframes uxShake{0%,100%{transform:none}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+  .shake{animation:uxShake .4s ease}
   .toast .dot{width:9px;height:9px;border-radius:50%;background:var(--good);flex:none}.toast.warn .dot{background:var(--amber)}
   .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   .form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
   .content-form label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px}
   .content-form input,.content-form select,.content-form textarea{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:9px;margin-bottom:15px;background:#fff}
   .content-form input:focus,.content-form select:focus,.content-form textarea:focus{outline:none;border-color:var(--petrol);box-shadow:0 0 0 3px var(--petrol-soft)}
+  /* Modale nutzen dasselbe Formular-Design wie „Kunde anlegen" – vorher rohe Browser-Felder */
+  .modal-body label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px}
+  .modal-body input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),.modal-body select,.modal-body textarea{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:9px;margin-bottom:15px;background:#fff;box-sizing:border-box;font-size:14.5px;color:var(--ink)}
+  .modal-body input:focus,.modal-body select:focus,.modal-body textarea:focus{outline:none;border-color:var(--petrol);box-shadow:0 0 0 3px var(--petrol-soft)}
+  /* Farbwähler behalten ihre Fläche (Text-Padding würde sie zu Streifen quetschen) */
+  .modal-body input[type=color]{width:64px;height:44px;padding:4px;border:1.5px solid var(--line);border-radius:10px;background:#fff;cursor:pointer}
+  /* Checkbox-/Radio-Zeilen in Modalen bleiben einzeilig und klickbar */
+  .modal-body label:has(>input[type=checkbox]),.modal-body label:has(>input[type=radio]){display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink)}
+  /* Schwebe-Knöpfe (Hilfe, NEXUS, Badges) treten hinter offene Dialoge zurück –
+     sonst verdecken sie die Speichern-Knöpfe in der Fußzeile */
+  body:has(.modal-bg.show) #hilfeBtn,body:has(.modal-bg.show) #hilfeBox,body:has(.modal-bg.show) #nxOrb,
+  body:has(.modal-bg.show) #errorBadge,body:has(.modal-bg.show) #cloudBadge,
+  body:has(.ac-bg.show) #hilfeBtn,body:has(.ac-bg.show) #nxOrb{display:none!important}
+  /* Im öffentlichen Bewerbungs-Wizard haben interne Widgets (Hilfe-Chat, NEXUS) nichts verloren */
+  body:has(.wizard.active) #hilfeBtn,body:has(.wizard.active) #hilfeBox,
+  body:has(.wizard.active) #nxOrb,body:has(.wizard.active) #errorBadge{display:none!important}
+  /* Sprungleiste in langen Modalen (automatisch ab 5 Abschnitten), sitzt zwischen Kopf und Body */
+  #modalToc{position:sticky;top:0;z-index:6;display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;
+    padding:10px 24px;margin:0;background:var(--card,#fff);border-bottom:1px solid var(--line);
+    -webkit-overflow-scrolling:touch;scrollbar-width:none}
+  #modalToc::-webkit-scrollbar{display:none}
+  #modalToc button{flex:none;border:1px solid var(--line);background:var(--bg,#faf9fd);color:var(--muted);
+    font-size:12px;font-weight:600;padding:6px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
+  #modalToc button:hover{border-color:var(--petrol);color:var(--petrol)}
   .input-with-select{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .checks{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:18px}
   .check{padding:8px 13px;border:1.5px solid var(--line);border-radius:20px;font-size:13.5px;font-weight:500;color:var(--muted);user-select:none;cursor:pointer}
@@ -164,6 +210,11 @@
   .modal-head .x:hover{background:var(--bg)}
   .modal-body{padding:22px 24px}
   .modal-foot{padding:16px 24px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--card);flex-wrap:wrap}
+  /* Mobil: Hauptaktion volle Breite unten, Nebenaktionen in einer Reihe darüber */
+  @media (max-width:640px){
+    .modal-foot .btn-primary{flex:1 1 100%;order:2}
+    .modal-foot .btn-ghost,.modal-foot .btn-danger-ghost{flex:1 1 auto;order:1}
+  }
   .seg{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
   .seg button{padding:9px 15px;border:1.5px solid var(--line);border-radius:9px;font-weight:600;font-size:14px;color:var(--muted)}
   .seg button.on{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol-dark)}
@@ -259,7 +310,14 @@
     .layout{min-width:0}
     .content{max-width:100vw;min-width:0;overflow-x:hidden}
     .panel{max-width:100%;overflow:hidden}
-    .panel-body{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    .panel-body{overflow-x:auto;-webkit-overflow-scrolling:touch;
+      /* Scroll-Schatten: zeigen an, dass die Tabelle seitlich weitergeht.
+         Die weißen Verläufe decken die Schatten ab, sobald man am Rand ist. */
+      background:
+        linear-gradient(90deg,var(--card,#fff) 30%,rgba(255,255,255,0)) left/44px 100% no-repeat local,
+        linear-gradient(270deg,var(--card,#fff) 30%,rgba(255,255,255,0)) right/44px 100% no-repeat local,
+        radial-gradient(farthest-side at 0 50%,rgba(20,35,36,.30),transparent) left/20px 100% no-repeat scroll,
+        radial-gradient(farthest-side at 100% 50%,rgba(20,35,36,.30),transparent) right/20px 100% no-repeat scroll}
     table{min-width:520px}
     .page-head,.page-head h1,.page-head p{max-width:100%;overflow-wrap:break-word}
     /* Statistik-Kacheln gestapelt */
@@ -306,6 +364,8 @@
   .cal-seg button.on{background:#fff;color:var(--petrol);box-shadow:0 1px 3px rgba(0,0,0,.12)}
   .cal-arrows{display:inline-flex;gap:6px;align-items:center}
   .cal-arrows button{width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:#fff;font-size:16px;cursor:pointer;color:var(--ink)}
+  /* „Heute" braucht Textbreite – sonst wird er von der 34px-Regel abgeschnitten */
+  .cal-arrows button.cal-today-btn{width:auto;padding:0 14px;font-size:13px}
   .cal-arrows button:hover{border-color:var(--petrol);color:var(--petrol)}
   .cal-today-btn{padding:7px 13px;border-radius:8px;border:1px solid var(--line);background:#fff;font-weight:700;font-size:13px;cursor:pointer;color:var(--ink)}
   /* Monat */
@@ -377,7 +437,14 @@
   .gsearch-results .gs-item{display:block;width:100%;text-align:left;background:none;border:0;padding:9px 14px;cursor:pointer;font-size:13.5px;border-bottom:1px solid #f2f6f6}
   .gsearch-results .gs-item:hover,.gsearch-results .gs-item.sel{background:var(--petrol-soft)}
   .gsearch-results .gs-item .gs-sub{font-size:11.5px;color:var(--muted);margin-top:1px}
-  @media(max-width:900px){.gsearch{display:none!important}}
+  /* Mobil: Suche nicht streichen, sondern per Lupe als Overlay öffnen */
+  #gsearchMobileBtn{display:none;width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;align-items:center;justify-content:center}
+  @media(max-width:900px){
+    .gsearch{display:none!important}
+    .gsearch.mopen{display:block!important;position:fixed;top:10px;left:10px;right:10px;z-index:10010}
+    .gsearch.mopen input{width:100%;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+    #gsearchMobileBtn.allowed{display:inline-flex}
+  }
 
   /* Einklappbare Navigations-Gruppen */
   .nav-group.toggle{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;padding-right:14px}
@@ -450,7 +517,7 @@
           <input id="pass" type="password" autocomplete="current-password" placeholder="••••••••" />
           <button type="button" class="pass-toggle" id="passToggle" onclick="togglePass()" aria-label="Passwort anzeigen">👁</button>
         </div></div>
-      <button class="btn-primary" onclick="doLogin()">Anmelden</button>
+      <button class="btn-primary" id="loginBtn" onclick="doLogin()">Anmelden</button>
       <div class="forgot-link"><button onclick="showForgot()">Passwort vergessen?</button></div>
       <div class="apply-big">
         <div class="apply-big-text">Noch kein Teil des Teams?</div>
@@ -466,6 +533,7 @@
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:14px">
       <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+      <button id="gsearchMobileBtn" title="Suchen" onclick="gsearchMobileOpen()" aria-label="Suchen"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
       <div class="brand"><img class="mark-logo" src="img/bild1_898fe1a00c.png" alt="DailyDo" onerror="this.onerror=null;this.src=this.src.split('/').pop()"> DailyDo</div>
     </div>
     <!-- Globale Suche: durchsucht Kunden, Mitarbeiter und Aufträge (Taste "/") -->
@@ -500,9 +568,11 @@
 </div>
 
 <!-- ============ MODAL ============ -->
-<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+<!-- X und Klick auf den dunklen Hintergrund laufen über v4CloseGuard:
+     Bei ungespeicherten Eingaben kommt eine Nachfrage, bevor verworfen wird. -->
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)v4CloseGuard()">
   <div class="modal" id="modalBox">
-    <div class="modal-head"><h3 id="modalTitle">Titel</h3><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-head"><h3 id="modalTitle">Titel</h3><button class="x" onclick="v4CloseGuard()">×</button></div>
     <div class="modal-body" id="modalBody"></div>
     <div class="modal-foot" id="modalFoot"></div>
   </div>
@@ -514,6 +584,25 @@
 /* ============ DEMO-DATEN ============ */
 let currentRole='admin';
 let custSearch='', custFilter='alle', staffSearch='', staffFilter='alle';
+/* Seiten-Zustand großer Listen (Skalierung: funktioniert auch mit
+   10.000 Kunden / 5.000 Mitarbeitern flüssig – es werden immer nur
+   LIST_PAGE_SIZE Zeilen gerendert) */
+const LIST_PAGE_SIZE=100;
+let custPage=0, staffPage=0, hoursPage=0;
+function pagerHTML(page,total,varName,view){
+  const pages=Math.max(1,Math.ceil(total/LIST_PAGE_SIZE));
+  if(pages<=1) return '';
+  return '<div class="pager">'+
+    '<button class="btn-ghost btn-sm" '+(page<=0?'disabled':'')+' onclick="'+varName+'='+(page-1)+';renderAdmin(\''+view+'\')">‹ Zurück</button>'+
+    '<span>Seite '+(page+1)+' von '+pages+' · '+total+' Einträge</span>'+
+    '<button class="btn-ghost btn-sm" '+(page>=pages-1?'disabled':'')+' onclick="'+varName+'='+(page+1)+';renderAdmin(\''+view+'\')">Weiter ›</button>'+
+  '</div>';
+}
+function pageSlice(arr,page){
+  const pages=Math.max(1,Math.ceil(arr.length/LIST_PAGE_SIZE));
+  const p=Math.min(Math.max(0,page),pages-1);
+  return arr.slice(p*LIST_PAGE_SIZE,p*LIST_PAGE_SIZE+LIST_PAGE_SIZE);
+}
 let kommFilter='alle', aufgabeFilter='alle';
 const SKILLS=['Haushaltshilfe','Einkaufsservice','Begleitdienste','Organisatorische Hilfe','Digitale Fragen'];
 const WEEKDAYS=['Mo','Di','Mi','Do','Fr','Sa','So'];
@@ -1275,8 +1364,8 @@ function mailingHTML(){
   }
   html+='<div style="margin-top:12px;font-weight:700;color:var(--petrol-dark,#0f5b63)">→ '+count+' Empfänger'+(count?'':' – bitte mindestens einen auswählen')+'</div></div></div>';
   const tplOpts=emailTemplates.map(t=>'<option value="'+t.key+'" '+(mailingTemplateKey===t.key?'selected':'')+'>'+(t.name||t.key)+'</option>').join('');
-  html+='<div class="panel"><div class="panel-head"><h3>2 · Inhalt</h3></div><div class="panel-body" style="padding-top:12px">'+
-  '<label>Vorlage übernehmen</label><div style="display:flex;gap:8px"><select id="mail_tpl">'+tplOpts+'</select><button class="btn-ghost btn-sm" style="width:auto;white-space:nowrap" onclick="mailingApplyTemplate()">Übernehmen</button></div>'+
+  html+='<div class="panel"><div class="panel-head"><h3>2 · Inhalt</h3></div><div class="panel-body content-form" style="padding-top:12px">'+
+  '<label>Vorlage übernehmen</label><div style="display:flex;gap:8px;align-items:flex-start"><select id="mail_tpl" style="flex:1;min-width:0;margin-bottom:0">'+tplOpts+'</select><button class="btn-ghost btn-sm" style="width:auto;white-space:nowrap;flex:none" onclick="mailingApplyTemplate()">Übernehmen</button></div>'+
   '<label style="margin-top:12px">Betreff</label><input id="mail_subject" value="'+tplEscAttr(mailingSubject)+'" oninput="mailingSubject=this.value" placeholder="Betreff der E-Mail">'+
   '<label>Text</label><textarea id="mail_text" rows="10" style="font-family:inherit;line-height:1.5" oninput="mailingText=this.value" placeholder="Ihr Text …">'+tplEscHtml(mailingText)+'</textarea>'+
   '<div style="margin-top:8px;color:var(--muted);font-size:13px">Platzhalter: <code>{name}</code> (Name des Empfängers), <code>{firma}</code> – werden je Empfänger ersetzt.</div>'+
@@ -1289,21 +1378,22 @@ async function sendMailing(){
   captureMailingCompose();
   const subject=(mailingSubject||'').trim();
   const text=(mailingText||'').trim();
-  if(!subject){ toast('Bitte einen Betreff eingeben',true); return; }
-  if(!text){ toast('Bitte einen Text eingeben',true); return; }
+  if(!subject){ toastHint('Bitte einen Betreff eingeben'); return; }
+  if(!text){ toastHint('Bitte einen Text eingeben'); return; }
   const people=mailingRecipientObjects();
   if(!people.length){ toast('Keine gültigen Empfänger ausgewählt',true); return; }
-  if(!confirm('Rundmail an '+people.length+' Empfänger senden?')) return;
-  toast('Rundmail wird gesendet … (bei vielen Empfängern etwas Geduld)');
-  let sent=0, failed=0;
-  for(const p of people){
-    const vars={name:p.name, firma:firmaName()};
-    const res=await sendEmail({to:p.email, subject:fillTemplate(subject,vars), text:fillTemplate(text,vars), html:textToHtml(fillTemplate(text,vars))}, true);
-    if(res.ok) sent++; else failed++;
-    await new Promise(r=>setTimeout(r,350)); // freundlich zum Resend-Rate-Limit
-  }
-  toast(sent+' von '+people.length+' E-Mails gesendet'+(failed?' ('+failed+' fehlgeschlagen)':''));
-  logEmail('marketing', subject, 'Rundmail: '+people.length+' Empfänger', sent, failed?'fehler':'gesendet', failed?(failed+' fehlgeschlagen'):null);
+  appConfirm('Rundmail an '+people.length+' Empfänger senden?', async ()=>{
+    toast('Rundmail wird gesendet … (bei vielen Empfängern etwas Geduld)');
+    let sent=0, failed=0;
+    for(const p of people){
+      const vars={name:p.name, firma:firmaName()};
+      const res=await sendEmail({to:p.email, subject:fillTemplate(subject,vars), text:fillTemplate(text,vars), html:textToHtml(fillTemplate(text,vars))}, true);
+      if(res.ok) sent++; else failed++;
+      await new Promise(r=>setTimeout(r,350)); // freundlich zum Resend-Rate-Limit
+    }
+    toast(sent+' von '+people.length+' E-Mails gesendet'+(failed?' ('+failed+' fehlgeschlagen)':''));
+    logEmail('marketing', subject, 'Rundmail: '+people.length+' Empfänger', sent, failed?'fehler':'gesendet', failed?(failed+' fehlgeschlagen'):null);
+  }, {title:'Rundmail senden', okLabel:'Jetzt senden'});
 }
 
 /* =====================================================================
@@ -1416,6 +1506,17 @@ function schulungNav(delta){
   __schulung.idx=Math.max(0, Math.min(t.slides.length-1, __schulung.idx+delta));
   renderSchulungSlide();
 }
+/* Pfeiltasten blättern im Folien-Viewer (nur solange das Schulungs-Modal offen ist) */
+document.addEventListener('keydown',function(e){
+  if(e.key!=='ArrowRight'&&e.key!=='ArrowLeft') return;
+  if(!__schulung||!__schulung.id) return; // let-Variable, liegt nicht auf window
+  const mb=document.getElementById('modalBg');
+  if(!mb||!mb.classList.contains('show')) return;
+  if(!/Folie \d+ \/ \d+/.test(document.getElementById('modalBody').textContent)) return;
+  const ae=document.activeElement;
+  if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT')) return;
+  schulungNav(e.key==='ArrowRight'?1:-1);
+});
 function renderSchulungSlide(){
   const t=SCHULUNGEN.find(x=>x.id===__schulung.id); if(!t) return;
   const i=__schulung.idx, sl=t.slides[i], isCover=(i===0);
@@ -1592,6 +1693,9 @@ function dataSignature(){
 }
 async function refreshCloudDataSilently(){
   if(!CLOUD || __refreshInFlight) return;
+  // Ohne gewählten Standort liefern die standortgebundenen Abfragen nur Fehler
+  // (standort_id=null) – dann alle 25s die Datenbank zu fragen ist sinnlos.
+  if(currentStandortId==null) return;
   if(!document.getElementById('appScreen').classList.contains('active')) return;
   if(currentRole==='staff') return; // Mitarbeiter-Ansicht bleibt unverändert
   const modalOpen=document.getElementById('modalBg').classList.contains('show');
@@ -1628,10 +1732,23 @@ async function manualRefreshHours(){
 function showCloudBadge(state){
   let b=document.getElementById('cloudBadge');
   if(!b){ b=document.createElement('div'); b.id='cloudBadge'; b.style.cssText='position:fixed;bottom:12px;right:12px;z-index:9999;font-size:12px;font-weight:600;padding:6px 11px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer'; b.title='Klicken für Lade-Diagnose'; b.onclick=showDiag; document.body.appendChild(b); }
-  if(state==='cloud'){ b.style.background='#0f5b63';b.style.color='#fff';b.textContent='● Datenbank verbunden'; }
+  clearTimeout(window.__cloudBadgeTimer);
+  b.style.display='inline-block'; b.style.opacity='1'; b.style.transition='';
+  if(state==='cloud'){
+    b.style.background='#0f5b63';b.style.color='#fff';b.textContent='● Datenbank verbunden';
+    // Erfolgszustand kurz bestätigen, dann ausblenden – dauerhaft ist er nur Bildschirm-Rauschen.
+    // Warnzustände (verbinde/lokal) bleiben stehen; jeder Statuswechsel blendet ihn wieder ein.
+    window.__cloudBadgeTimer=setTimeout(()=>{ b.style.transition='opacity .6s'; b.style.opacity='0';
+      setTimeout(()=>{ b.style.display='none'; },650); },4000);
+  }
   else if(state==='verbinde'){ b.style.background='#e0a93b';b.style.color='#fff';b.textContent='● verbinde …'; }
   else if(state==='bereit'){ b.style.background='#0f5b63';b.style.color='#fff';b.textContent='● bereit – bitte anmelden'; }
   else { b.style.background='#999';b.style.color='#fff';b.textContent='● lokal (ohne Datenbank)'; }
+}
+/* Nach dem Login hat „bereit – bitte anmelden" nichts mehr zu suchen (Test-Modus/lokal) */
+function hideCloudBadgeIfIdle(){
+  const b=document.getElementById('cloudBadge');
+  if(b && /bitte anmelden/.test(b.textContent)) b.style.display='none';
 }
 
 
@@ -1770,7 +1887,7 @@ function renderUserListTable(users){
 async function inviteOfficeUser(){
   if(!requireAdminAction()) return;
   const email=val('zg_email');
-  if(!isValidEmail(email)){ toast('Bitte eine gültige E-Mail-Adresse eingeben',true); return; }
+  if(!isValidEmail(email)){ toastHint('Bitte eine gültige E-Mail-Adresse eingeben'); return; }
   const role=document.getElementById('zg_role').value;
   toast('Sende Einladung an '+email+' …');
   try{
@@ -1804,15 +1921,20 @@ async function doLogin(){
   if(USE_REAL_AUTH){
     // ---- ECHTE ANMELDUNG über Supabase Auth ----
     if(!sb){ toast('Keine Verbindung zur Datenbank',true); return; }
-    if(!email||!pass){ toast('Bitte E-Mail und Passwort eingeben',true); return; }
-    if(!isValidEmail(email)){ toast('Bitte gültige E-Mail-Adresse eingeben',true); return; }
+    if(!email||!pass){ toastHint('Bitte E-Mail und Passwort eingeben'); return; }
+    if(!isValidEmail(email)){ toastHint('Bitte gültige E-Mail-Adresse eingeben'); return; }
+    const btn=document.getElementById('loginBtn');
+    const idle=()=>{ if(btn){ btn.disabled=false; btn.style.opacity=''; btn.textContent='Anmelden'; } };
+    if(btn){ btn.disabled=true; btn.style.opacity='.7'; btn.textContent='Wird angemeldet …'; }
     try{
       const { data, error } = await sb.auth.signInWithPassword({ email: email, password: pass });
-      if(error){ toast('Anmeldung fehlgeschlagen: '+error.message, true); return; }
+      if(error){ idle(); toast('Anmeldung fehlgeschlagen: '+error.message, true); return; }
       // Rolle aus den Benutzer-Metadaten lesen (vom Entwickler zu setzen)
       const role = (data.user && data.user.app_metadata && data.user.app_metadata.role) || 'staff';
-      enterApp(role, data.user);
-    }catch(e){ toast('Anmeldung fehlgeschlagen',true); }
+      if(btn) btn.textContent='Lade Daten …';
+      await enterApp(role, data.user);
+      idle();
+    }catch(e){ idle(); toast('Anmeldung fehlgeschlagen',true); }
     return;
   }
 
@@ -1826,6 +1948,7 @@ async function enterApp(role, user){
   if(USE_REAL_AUTH){ await ensureDataLoaded(); }
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').classList.add('active');
+  hideCloudBadgeIfIdle();
   if(role==='admin'||role==='buero'||role==='callcenter'||role==='buchhaltung'){
     currentRole=role;
     const label=ROLE_LABELS[role]||'Büro';
@@ -1838,6 +1961,8 @@ async function enterApp(role, user){
     catch(e){ console.error('Dashboard-Render Problem:', e&&(e.message||e)); }
   }else{
     currentRole='staff';
+    // Suche (Feld + Mobil-Lupe) ist Büro-Rollen vorbehalten
+    const gmS=document.getElementById('gsearchMobileBtn'); if(gmS) gmS.classList.remove('allowed');
     // === Sichere Zuordnung: angemeldeter Benutzer -> eigenes Profil ===
     // Die E-Mail verbindet das Login-Konto (Supabase) mit dem
     // Mitarbeiter-Datensatz (Tabelle "mitarbeiter"). Jeder sieht NUR
@@ -1887,10 +2012,24 @@ async function logout(){
   closeModal();setRole('admin');
 }
 
-async function showForgot(){
-  const email=prompt('Passwort zurücksetzen\n\nGib deine E-Mail-Adresse ein. Du erhältst dann einen Link zum Zurücksetzen.');
-  if(email===null) return;
-  if(!isValidEmail(email)){ toast('Bitte eine gültige E-Mail-Adresse eingeben',true); return; }
+function showForgot(){
+  // Im App-Design statt des nativen prompt()-Dialogs
+  const vorbelegt=(document.getElementById('user')?.value||'').trim();
+  document.getElementById('modalTitle').textContent='Passwort zurücksetzen';
+  document.getElementById('modalBody').innerHTML=
+    '<p style="margin:0 0 14px;color:var(--muted);font-size:14px">Gib deine E-Mail-Adresse ein. Du erhältst einen Link, mit dem du ein neues Passwort festlegen kannst.</p>'+
+    '<div class="field"><label for="forgotEmail">E-Mail</label>'+
+    '<input id="forgotEmail" type="email" autocomplete="username" placeholder="deine@email.de" value="'+vorbelegt.replace(/"/g,'&quot;')+'" onkeydown="if(event.key===\'Enter\')doForgot()"></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="doForgot()">Link senden</button>';
+  openModal();
+  setTimeout(()=>{ const i=document.getElementById('forgotEmail'); if(i){ i.focus(); if(!i.value) i.select(); } },60);
+}
+async function doForgot(){
+  const email=(document.getElementById('forgotEmail')?.value||'').trim();
+  if(!isValidEmail(email)){ toastHint('Bitte eine gültige E-Mail-Adresse eingeben'); return; }
+  closeModal();
 
   if(USE_REAL_AUTH && sb){
     // ---- ECHTER Passwort-Reset über Supabase ----
@@ -1984,7 +2123,8 @@ function buildAdminNav(active){
       viewAllowed('mailing')?navItem('mailing','📣','E-Mail-Marketing',active==='mailing'):'',
       viewAllowed('marketing')?navItem('marketing','🖼','Marketing-Material',active==='marketing'):'',
       viewAllowed('aktivitaeten')?navItem('aktivitaeten','📜','Aktivitätsprotokoll',active==='aktivitaeten'):'',
-      viewAllowed('zugaenge')?navItem('zugaenge','👥','Zugänge & Rollen',active==='zugaenge'):''
+      viewAllowed('zugaenge')?navItem('zugaenge','👥','Zugänge & Rollen',active==='zugaenge'):'',
+      hasRole('admin')?navItem('backup','🛟','Backup',active==='backup'):''
     ]],
     ['Schulung',[
       viewAllowed('schulung')?navItem('schulung','🎓','Schulung',active==='schulung'):''
@@ -2037,7 +2177,8 @@ function buildStaffNav(active){
     navItem('profile','☺','Mein Profil',active==='profile')+
     navItem('contracts','📄','Meine Verträge',active==='contracts')+
     navItem('emergency','✆','Notfallnummer',active==='emergency')+
-    '<button class="nav-item" onclick="openDesignSettings()"><span class="ic">🎨</span>Design &amp; Farben</button>';
+    '<button class="nav-item" onclick="openDesignSettings()"><span class="ic">🎨</span>Design &amp; Farben</button>'+
+    '<button class="nav-item" onclick="startAppTour()"><span class="ic">🎬</span>App-Einführung</button>';
 }
 /* ============================================================
    FÜHRUNGS-DASHBOARD
@@ -2320,12 +2461,13 @@ function showVertretung(staffId){
 }
 function doVertretung(apptId,newStaffId){
   const a=appointments.find(x=>x.id===apptId); if(!a) return;
-  if(!confirm('Termin am '+fmtDate(a.date)+' um '+a.time+' Uhr an '+staffName(newStaffId)+' übergeben?')) return;
-  a.staffId=newStaffId;
-  if(CLOUD) cloudUpdate('termine',a.id,apptToRow(a));
-  logActivity('Vertretung: Termin '+fmtDate(a.date)+' '+a.time+' → '+staffName(newStaffId));
-  toast('Termin übergeben an '+staffName(newStaffId));
-  showVertretung(window.__vertretungFor);
+  appConfirm('Termin am '+fmtDate(a.date)+' um '+a.time+' Uhr an '+staffName(newStaffId)+' übergeben?', ()=>{
+    a.staffId=newStaffId;
+    if(CLOUD) cloudUpdate('termine',a.id,apptToRow(a));
+    logActivity('Vertretung: Termin '+fmtDate(a.date)+' '+a.time+' → '+staffName(newStaffId));
+    toast('Termin übergeben an '+staffName(newStaffId));
+    showVertretung(window.__vertretungFor);
+  }, {title:'Vertretung übergeben', okLabel:'Übergeben'});
 }
 
 /* ============ §45b-AUTOPILOT: Kundenanschreiben bei freiem Budget ============ */
@@ -2433,11 +2575,12 @@ async function downloadMarketing(id){
 function deleteMarketing(id){
   if(!requireAdminAction()) return;
   const mm=marketingMaterial.find(x=>x.id===id); if(!mm) return;
-  if(!confirm('Datei "'+(mm.name||'')+'" endgültig löschen?')) return;
-  marketingMaterial=marketingMaterial.filter(x=>x.id!==id);
-  cloudDelete('marketing_material',id);
-  logActivity('Marketing-Material gelöscht: '+(mm.name||id));
-  renderAdmin('marketing');
+  appConfirm('Datei „'+(mm.name||'')+'" endgültig löschen?', ()=>{
+    marketingMaterial=marketingMaterial.filter(x=>x.id!==id);
+    cloudDelete('marketing_material',id);
+    logActivity('Marketing-Material gelöscht: '+(mm.name||id));
+    renderAdmin('marketing');
+  }, {title:'Datei löschen', okLabel:'Endgültig löschen', danger:true});
 }
 
 /* ============ LOHNABRECHNUNG (Steuerberater-Workflow) ============ */
@@ -2465,7 +2608,7 @@ async function uploadLohn(input, monat){
   const file=input.files&&input.files[0]; input.value='';
   if(!file||!validateUploadFile(file,{maxSize:SECURITY_MAX_FILE})) return;
   const sid=+(document.getElementById('lohnStaffSel')||{}).value;
-  if(!sid){ toast('Bitte zuerst den Mitarbeiter wählen',true); return; }
+  if(!sid){ toastHint('Bitte zuerst den Mitarbeiter wählen'); return; }
   const dataUrl=await new Promise(res=>{ const r=new FileReader(); r.onload=e=>res(safeDataUrl(e.target.result)); r.onerror=()=>res(null); r.readAsDataURL(file); });
   if(!dataUrl){ toast('Datei konnte nicht gelesen werden',true); return; }
   try{
@@ -2492,7 +2635,10 @@ async function openLohn(id){
 function lohnFreigeben(id){
   if(!requireRoleAction('admin','buchhaltung')) return;
   const l=lohnabrechnungen.find(x=>x.id===id); if(!l) return;
-  if(!confirm('Abrechnung für '+staffName(l.staffId)+' ('+l.monat+') freigeben?\nDer Mitarbeiter sieht sie danach in seiner App.')) return;
+  appConfirm('Abrechnung für '+staffName(l.staffId)+' ('+l.monat+') freigeben?\nDer Mitarbeiter sieht sie danach in seiner App.', ()=>{ doLohnFreigeben(l); }, {title:'Abrechnung freigeben', okLabel:'Freigeben'});
+}
+function doLohnFreigeben(l){
+  const id=l.id;
   l.status='freigegeben'; l.freigegebenAm=todayISO();
   cloudUpdate('lohnabrechnungen',id,{status:'freigegeben',freigegeben_am:l.freigegebenAm});
   logActivity('Lohnabrechnung freigegeben: '+staffName(l.staffId)+' ('+l.monat+')');
@@ -2508,18 +2654,19 @@ function lohnFreigeben(id){
 function lohnLoeschen(id){
   if(!requireAdminAction()) return;
   const l=lohnabrechnungen.find(x=>x.id===id); if(!l) return;
-  if(!confirm('Abrechnung '+staffName(l.staffId)+' ('+l.monat+') endgültig löschen?')) return;
-  lohnabrechnungen=lohnabrechnungen.filter(x=>x.id!==id);
-  cloudDelete('lohnabrechnungen',id);
-  logActivity('Lohnabrechnung gelöscht: '+staffName(l.staffId)+' ('+l.monat+')');
-  renderAdmin('payroll');
+  appConfirm('Abrechnung '+staffName(l.staffId)+' ('+l.monat+') endgültig löschen?', ()=>{
+    lohnabrechnungen=lohnabrechnungen.filter(x=>x.id!==id);
+    cloudDelete('lohnabrechnungen',id);
+    logActivity('Lohnabrechnung gelöscht: '+staffName(l.staffId)+' ('+l.monat+')');
+    renderAdmin('payroll');
+  }, {title:'Abrechnung löschen', okLabel:'Endgültig löschen', danger:true});
 }
 
 /* ============ ADMIN VIEWS ============ */
 let __lastAdminView=null;
 function renderAdmin(view){
   ensureHilfeWidget();
-  if(!standorte.length && view!=='standorte' && currentRole==='admin'){ view='standorte'; toast('Bitte zuerst einen Standort anlegen',true); }
+  if(!standorte.length && view!=='standorte' && currentRole==='admin'){ view='standorte'; toastHint('Bitte zuerst einen Standort anlegen'); }
   if(!viewAllowed(view)){ toast('Kein Zugriff auf diesen Bereich', true); view=defaultViewForRole(); }
   __lastAdminView=view;
   buildAdminNav(view);
@@ -2557,8 +2704,8 @@ function renderAdmin(view){
     const canManageStaff=hasRole('admin');
     c.innerHTML=head('Mitarbeiter',canManageStaff?'Auf einen Mitarbeiter klicken, um alle Daten anzusehen und zu bearbeiten.':'Übersicht über alle Mitarbeiter:innen.')+
     '<div class="panel"><div class="panel-head"><h3>Team ('+filtered.length+(filtered.length!==staff.length?' von '+staff.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportMitarbeiter()">⬇ CSV</button>'+(canManageStaff?'<button class="btn-ghost btn-sm" onclick="openCsvImport(\'staff\')">⬆ CSV-Import</button>':'')+(canManageStaff?'<button class="btn-primary btn-sm" style="width:auto" onclick="addStaff()">+ Mitarbeiter hinzufügen</button>':'')+'</div></div>'+
-    '<div class="list-toolbar"><input class="search-input" id="staffSearchInput" placeholder="🔍 Mitarbeiter suchen (Name, Funktion, Gebiet)…" value="'+(staffSearch||'').replace(/"/g,'&quot;')+'" oninput="staffSearch=this.value;renderAdmin(\'staff\');setTimeout(()=>{const e=document.getElementById(\'staffSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
-      '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['login','Mit Login'],['nologin','Ohne Login']].map(([v,l])=>'<span class="chip '+(staffFilter===v?'on':'')+'" onclick="staffFilter=\''+v+'\';renderAdmin(\'staff\')">'+l+'</span>').join('')+'</div>'+
+    '<div class="list-toolbar"><input class="search-input" id="staffSearchInput" placeholder="🔍 Mitarbeiter suchen (Name, Funktion, Gebiet)…" value="'+(staffSearch||'').replace(/"/g,'&quot;')+'" oninput="staffSearch=this.value;staffPage=0;renderAdmin(\'staff\');setTimeout(()=>{const e=document.getElementById(\'staffSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
+      '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['login','Mit Login'],['nologin','Ohne Login']].map(([v,l])=>'<span class="chip '+(staffFilter===v?'on':'')+'" onclick="staffFilter=\''+v+'\';staffPage=0;renderAdmin(\'staff\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
     '<div class="panel-body" style="padding-top:8px"><table>'+
       '<thead><tr>'+
@@ -2570,15 +2717,15 @@ function renderAdmin(view){
         sortTh('staff','status','Status','staffSort')+
         (canManageStaff?'<th style="width:52px;text-align:right"></th>':'')+
       '</tr></thead><tbody>'+
-      (filtered.length?sortRows(filtered,staffSort,{
+      (filtered.length?pageSlice(sortRows(filtered,staffSort,{
         name:s=>fullName(s).toLowerCase(), role:s=>(s.role||'').toLowerCase(), area:s=>(s.area||'').toLowerCase(), status:s=>s.status||''
-      }).map(s=>'<tr'+(canManageStaff?' class="clickable" onclick="editStaff('+s.id+')"':'')+'><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:'+(s.color||'#6d28d9')+';margin-right:7px"></span><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td>'+
+      }),staffPage).map(s=>'<tr'+(canManageStaff?' class="clickable" onclick="editStaff('+s.id+')"':'')+'><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:'+(s.color||'#6d28d9')+';margin-right:7px"></span><b>'+fullName(s)+'</b></td><td>'+s.role+'</td><td>'+s.area+'</td><td>'+(s.hasLogin?'<span class="tag green">aktiv</span>':'<span class="tag grey">keine</span>')+'</td>'+
       '<td>'+(()=>{const n=SCHULUNGEN.filter(t=>s.schulungen&&s.schulungen[t.id]).length;return n===SCHULUNGEN.length?'<span class="tag green">🎓 '+n+'/'+SCHULUNGEN.length+'</span>':'<span class="tag amber" title="Kann erst nach Abschluss aller Schulungen Aufträge annehmen">🎓 '+n+'/'+SCHULUNGEN.length+'</span>';})()+'</td><td>'+statusTag(s.status)+'</td>'+(canManageStaff?'<td style="text-align:right">'+rowMenu([
         ['Öffnen / Bearbeiten','editStaff('+s.id+')'],
         ['SEP',''],
         ['Löschen','deleteStaff('+s.id+')','danger']
       ])+'</td>':'')+'</tr>').join(''):'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Keine Mitarbeiter gefunden.</td></tr>')+
-      '</tbody></table></div></div>';
+      '</tbody></table>'+pagerHTML(staffPage,filtered.length,'staffPage','staff')+'</div></div>';
   }
 
   if(view==='applications'){
@@ -2607,8 +2754,8 @@ function renderAdmin(view){
     const canCreateCust=hasRole('admin','buero','callcenter');
     c.innerHTML=head('Kunden',canCreateCust?'Auf einen Kunden klicken, um Daten anzusehen und zu bearbeiten. Über die Knöpfe rechts erstellst du die Dokumente.':'Übersicht über alle Kund:innen.')+
     '<div class="panel"><div class="panel-head"><h3>Kunden ('+filtered.length+(filtered.length!==customers.length?' von '+customers.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportKunden()">⬇ CSV</button>'+(canCreateCust?'<button class="btn-ghost btn-sm" onclick="openCsvImport(\'kunden\')">⬆ CSV-Import</button>':'')+(canCreateCust?'<button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button>':'')+'</div></div>'+
-    '<div class="list-toolbar"><input class="search-input" id="custSearchInput" placeholder="🔍 Kunde suchen (Name, Gebiet, Bedarf)…" value="'+(custSearch||'').replace(/"/g,'&quot;')+'" oninput="custSearch=this.value;renderAdmin(\'customers\');setTimeout(()=>{const e=document.getElementById(\'custSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
-      '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['pg3','Pflegegrad 3+'],['ohneabtretung','Ohne Abtretung']].map(([v,l])=>'<span class="chip '+(custFilter===v?'on':'')+'" onclick="custFilter=\''+v+'\';renderAdmin(\'customers\')">'+l+'</span>').join('')+'</div>'+
+    '<div class="list-toolbar"><input class="search-input" id="custSearchInput" placeholder="🔍 Kunde suchen (Name, Gebiet, Bedarf)…" value="'+(custSearch||'').replace(/"/g,'&quot;')+'" oninput="custSearch=this.value;custPage=0;renderAdmin(\'customers\');setTimeout(()=>{const e=document.getElementById(\'custSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
+      '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['pg3','Pflegegrad 3+'],['ohneabtretung','Ohne Abtretung']].map(([v,l])=>'<span class="chip '+(custFilter===v?'on':'')+'" onclick="custFilter=\''+v+'\';custPage=0;renderAdmin(\'customers\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
     '<div class="panel-body" style="padding-top:8px"><table>'+
       '<thead><tr>'+
@@ -2618,9 +2765,9 @@ function renderAdmin(view){
         sortTh('customers','status','Status','custSort')+
         '<th style="width:52px;text-align:right"></th>'+
       '</tr></thead><tbody>'+
-      (filtered.length?sortRows(filtered,custSort,{
+      (filtered.length?pageSlice(sortRows(filtered,custSort,{
         name:c=>fullName(c).toLowerCase(), area:c=>(c.area||'').toLowerCase(), status:c=>c.status||''
-      }).map(c=>'<tr>'+
+      }),custPage).map(c=>'<tr>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')"><b>'+fullName(c)+'</b></td>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')">'+c.area+'</td>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')">'+c.need.join(', ')+'</td>'+
@@ -2631,12 +2778,31 @@ function renderAdmin(view){
           ['Leistungsnachweis','startLeistungsnachweis('+c.id+')']
         ].concat(canCreateCust?[['SEP',''],['Löschen','deleteCustomer('+c.id+')','danger']]:[]))+'</td>'+
       '</tr>').join(''):'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Keine Kunden gefunden.</td></tr>')+
-      '</tbody></table></div></div>';
+      '</tbody></table>'+pagerHTML(custPage,filtered.length,'custPage','customers')+'</div></div>';
   }
 
   if(view==='newcustomer'){ c.innerHTML=head('Kunde anlegen','Neuen Kunden erfassen und als Auftrag freigeben.')+customerFormHTML(null); }
 
   if(view==='karte'){ renderKarteView(c); }
+
+  if(view==='backup'){
+    // Sicherung: automatisch alle 12 h in Google Drive (Edge Function "backup"
+    // + BACKUP_CRON.sql) und manuell als Datei zum Herunterladen.
+    let last=''; try{ last=localStorage.getItem('dailydo-backup-last')||''; }catch(e){}
+    c.innerHTML=head('Backup','Automatische Sicherung alle 12 Stunden in Google Drive – plus manuelles Backup zum Herunterladen.')+
+    '<div class="cards grid-2">'+
+      '<div class="panel"><div class="panel-head"><h3>🛟 Backup jetzt herunterladen</h3></div><div class="panel-body" style="padding-top:14px">'+
+        '<p style="font-size:14px;color:var(--muted);margin-bottom:14px">Erstellt sofort eine Sicherungsdatei (JSON) mit allen geladenen Daten dieses Standorts – Kunden, Mitarbeiter, Termine, Aufträge, Stundenzettel, Rechnungen, Aufgaben, Kommunikation. Die Datei kannst du selbst in Google Drive oder auf einen Stick legen.</p>'+
+        '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="v4BackupDownload()">⬇ Backup-Datei herunterladen</button>'+
+        (last?'<p style="font-size:12.5px;color:var(--muted);margin-top:10px">Zuletzt heruntergeladen: '+last+'</p>':'')+
+      '</div></div>'+
+      '<div class="panel"><div class="panel-head"><h3>☁️ Automatik: alle 12 h nach Google Drive</h3></div><div class="panel-body" style="padding-top:14px">'+
+        '<p style="font-size:14px;color:var(--muted);margin-bottom:14px">Die Edge Function <b>backup</b> sichert alle Datenbank-Tabellen automatisch um 6 und 18 Uhr nach Google Drive. Einrichtung einmalig nötig – siehe <b>ANLEITUNG_BACKUP.md</b> (Google-Zugangsdaten als Secrets, Function deployen, BACKUP_CRON.sql ausführen).</p>'+
+        '<button class="btn-ghost" onclick="v4BackupDriveNow(this)">☁️ Jetzt testweise nach Drive sichern</button>'+
+        '<div id="bkDriveStatus" style="font-size:13px;color:var(--muted);margin-top:10px"></div>'+
+      '</div></div>'+
+    '</div>';
+  }
 
   if(view==='zugaenge'){
     if(!requireAdminAction()){ /* nav blendet das eh aus, doppelte Absicherung */ }
@@ -2677,8 +2843,8 @@ function renderAdmin(view){
   if(view==='hours'){
     c.innerHTML=head('Stundenzettel','Alle von Mitarbeitern erfassten Einsatzzeiten. Vom Kunden unterschriebene Einsätze enthalten einen Leistungsnachweis.')+
     '<div class="panel"><div class="panel-head"><h3>'+timesheets.length+' Einträge</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportStundenzettel()">⬇ CSV Export</button><button class="btn-ghost btn-sm" onclick="manualRefreshHours()">↻ Aktualisieren</button></div></div><div class="panel-body" style="padding-top:16px">'+
-    (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Leistungsnachweis</th><th>Rechnung</th><th></th></tr></thead><tbody>'+
-      timesheets.map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);
+    (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Leistungsnachweis</th><th>Rechnung</th><th class="ts-act"></th></tr></thead><tbody>'+
+      pageSlice(timesheets,hoursPage).map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);
         const sigOk=signatureLooksValid(t.signature);
         const anom=tsAnomalie(t); // Anomalie-Wächter: Ausreißer & Doppelbuchungen
         const statusTag = (t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
@@ -2704,10 +2870,12 @@ function renderAdmin(view){
           if(t.status==='freigegeben') return '<span class="tag amber" style="font-size:11px">bereit (siehe Rechnungen)</span>';
           return '<span style="color:var(--muted);font-size:12px">—</span>';
         })()+'</td>'+
-        '<td>'+(t.status==='offen'
-            ? '<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn-danger-ghost btn-sm" onclick="rejectTimesheet('+t.id+')">✕ Ablehnen</button><button class="btn-primary btn-sm" style="width:auto;background:var(--good);font-weight:700" onclick="approveTimesheet('+t.id+')">✓ Freigeben</button></div>'
+        // Aktionsspalte klebt am rechten Rand (position:sticky), damit
+        // „Freigeben" auch bei horizontal gescrollter Tabelle sichtbar bleibt
+        '<td class="ts-act">'+(t.status==='offen'
+            ? '<div class="ts-actions"><button class="btn-primary btn-sm" style="width:100%;background:var(--good);font-weight:700" onclick="approveTimesheet('+t.id+')">✓ Freigeben</button><button class="btn-danger-ghost btn-sm" onclick="rejectTimesheet('+t.id+')">✕ Ablehnen</button></div>'
             : (t.status==='freigegeben'?'<span style="color:var(--good)">✓ freigegeben</span>':'<span style="color:#c0392b">✕ abgelehnt</span>'+(t.rejectGrund?'<div style="font-size:11px;color:var(--muted);max-width:160px">Grund: '+t.rejectGrund+'</div>':'')))+'</td></tr>';}).join('')+
-      '</tbody></table>':'<div class="empty"><div class="big">⏱</div><b>Noch keine Stundenzettel</b><p style="margin-top:6px">Sobald Mitarbeiter Einsätze abschließen, erscheinen sie hier.</p></div>')+
+      '</tbody></table>'+pagerHTML(hoursPage,timesheets.length,'hoursPage','hours'):'<div class="empty"><div class="big">⏱</div><b>Noch keine Stundenzettel</b><p style="margin-top:6px">Sobald Mitarbeiter Einsätze abschließen, erscheinen sie hier.</p></div>')+
     '</div></div>';
   }
   if(view==='payroll'){
@@ -3041,19 +3209,19 @@ function saveStaff(){
   if(!requireAdminAction()) return;
   if(editingStaffId!==null){
     const s=staff.find(x=>x.id===editingStaffId);gatherStaff(s);
-    if(s.email && !isValidEmail(s.email)){toast('Bitte gültige E-Mail-Adresse eingeben',true);return;}
-    if(!isValidPhone(s.phone)){toast('Bitte gültige Telefonnummer eingeben',true);return;}
+    if(s.email && !isValidEmail(s.email)){toastHint('Bitte gültige E-Mail-Adresse eingeben');return;}
+    if(!isValidPhone(s.phone)){toastHint('Bitte gültige Telefonnummer eingeben');return;}
     if(CLOUD) cloudUpdate('mitarbeiter',s.id,staffToRow(s));
     logActivity('Mitarbeiter bearbeitet: '+fullName(s));
     closeModal();toast('Mitarbeiterdaten gespeichert');
   }else{
     const s={id:nextStaffId++,maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',skills:[],color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,intern:{}};
     gatherStaff(s);
-    if(s.email && !isValidEmail(s.email)){toast('Bitte gültige E-Mail-Adresse eingeben',true);return;}
-    if(!isValidPhone(s.phone)){toast('Bitte gültige Telefonnummer eingeben',true);return;}
-    if(!s.first&&!s.last){toast('Bitte Namen eingeben',true);return;}
+    if(s.email && !isValidEmail(s.email)){toastHint('Bitte gültige E-Mail-Adresse eingeben');return;}
+    if(!isValidPhone(s.phone)){toastHint('Bitte gültige Telefonnummer eingeben');return;}
+    if(!s.first&&!s.last){toastHint('Bitte Namen eingeben');return;}
     const login=val('es_login');const pass=val('es_pass');
-    if(login){ if(!isValidEmail(login)){toast('Bitte gültige Login-E-Mail eingeben',true);return;} if(pass&&pass.length<8){toast('Startpasswort mindestens 8 Zeichen',true);return;} if(pass){s.hasLogin=true;s.login=login;} }
+    if(login){ if(!isValidEmail(login)){toastHint('Bitte gültige Login-E-Mail eingeben');return;} if(pass&&pass.length<8){toast('Startpasswort mindestens 8 Zeichen',true);return;} if(pass){s.hasLogin=true;s.login=login;} }
     staff.push(s);
     if(CLOUD){ cloudInsert('mitarbeiter',staffToRow(s)).then(r=>{ if(r)s.id=r.id; }); }
     logActivity('Mitarbeiter angelegt: '+fullName(s));
@@ -3081,8 +3249,8 @@ function createLogin(id){
   if(!requireAdminAction()) return;
   const s=staff.find(x=>x.id===id);
   const login=val('es_login')||s.email;const pass=val('es_pass');
-  if(!isValidEmail(login)){toast('Bitte gültige Login-E-Mail eingeben',true);return;}
-  if(!pass || pass.length<8){toast('Bitte ein Startpasswort mit mindestens 8 Zeichen vergeben',true);return;}
+  if(!isValidEmail(login)){toastHint('Bitte gültige Login-E-Mail eingeben');return;}
+  if(!pass || pass.length<8){toastHint('Bitte ein Startpasswort mit mindestens 8 Zeichen vergeben');return;}
   s.hasLogin=true;s.login=login;
   if(CLOUD) cloudUpdate('mitarbeiter',s.id,staffToRow(s));
   closeModal();document.getElementById('modalBox').classList.remove('wide');
@@ -3121,6 +3289,9 @@ function customerFormHTML(c){
     '<div class="form-row"><div><label>Wie ist der Kunde auf uns gekommen?</label><select id="nc_leadQuelle"><option value="">— unbekannt —</option>'+
       LEAD_QUELLEN.map(q=>'<option '+(c.leadQuelle===q?'selected':'')+'>'+q+'</option>').join('')+'</select></div>'+
     '<div><label>Kunde seit (Leistungsbeginn)</label><input id="nc_startDatum" type="date" value="'+(c.startDatum||'')+'"></div></div>'+
+    (isNew?'':'<div style="margin-bottom:4px"><label>Kunden-Status</label><select id="nc_status">'+
+      ['Interessent','aktiv','pausiert','beendet'].map(s=>'<option '+(c.status===s?'selected':'')+'>'+s+'</option>').join('')+
+      '</select><div style="font-size:12px;color:var(--muted);margin:-6px 0 10px">„pausiert" = vorübergehend keine Einsätze · „beendet" = Kunde hat gekündigt (unten Datum und Grund erfassen)</div></div>')+
     (isNew?'':'<div class="form-row"><div><label>Beendet am (falls beendet)</label><input id="nc_endeDatum" type="date" value="'+(c.endeDatum||'')+'"></div>'+
     '<div><label>Beendigungsgrund</label><select id="nc_endeGrund"><option value="">—</option>'+
       ENDE_GRUENDE.map(g=>'<option '+(c.endeGrund===g?'selected':'')+'>'+g+'</option>').join('')+'</select></div></div>')+
@@ -3219,6 +3390,9 @@ function custInsPick(btn){
   document.getElementById('nc_kvBox').style.display=(v==='privat')?'none':'block';
 }
 function gatherCustomer(c){
+  // Status ist nur im Bearbeiten-Dialog wählbar (nicht beim Neuanlegen)
+  const stSel=document.getElementById('nc_status');
+  if(stSel) c.status=stSel.value;
   c.first=val('nc_first');c.last=val('nc_last');
   c.street=val('nc_street');c.houseNo=val('nc_houseno');c.plz=val('nc_plz');c.city=val('nc_city');
   c.address=((c.street+' '+c.houseNo).trim()+', '+(c.plz+' '+c.city).trim()).replace(/^, |, $/,'')||'—';
@@ -3919,7 +4093,7 @@ function askCommit(id){
   const j=jobs.find(x=>x.id===id);if(!j)return;
   // Schulungspflicht: erst alle Schulungen bestätigen, dann Aufträge annehmen
   if(!schulungenKomplett(me())){
-    toast('Bitte zuerst alle Schulungen abschließen – danach kannst du Aufträge annehmen',true);
+    toastHint('Bitte zuerst alle Schulungen abschließen – danach kannst du Aufträge annehmen');
     renderStaff('schulung');
     return;
   }
@@ -4000,6 +4174,15 @@ function startWizard(){
   renderWizard();
 }
 function exitWizard(){
+  // Ab Schritt 2 stecken echte Eingaben drin – ein Fehlklick darf sie nicht wegwerfen
+  if(wizStep>0){
+    appConfirm('Möchtest du die Bewerbung wirklich abbrechen?\nDeine bisherigen Eingaben gehen dabei verloren.',
+      ()=>doExitWizard(), {title:'Bewerbung abbrechen', okLabel:'Ja, abbrechen', danger:true});
+    return;
+  }
+  doExitWizard();
+}
+function doExitWizard(){
   document.getElementById('wizard').classList.remove('active');
   document.getElementById('loginScreen').style.display='grid';
 }
@@ -4041,10 +4224,20 @@ function wizRequirements(){
   '<div class="wiz-card"><h2>Was du mitbringen solltest</h2>'+
   '<p class="lead">Damit es passt, solltest du folgende Voraussetzungen erfüllen:</p>'+
   '<ul class="task-list">'+reqs.map(r=>'<li><span class="ic">✓</span><div style="padding-top:2px">'+r+'</div></li>').join('')+'</ul>'+
-  '<div class="confirm-box" onclick="document.getElementById(\'crimeChk\').click()"><input type="checkbox" id="crimeChk" onclick="event.stopPropagation();document.getElementById(\'reqNext\').disabled=!this.checked"><label>Ich bestätige, dass keine Einträge im Führungszeugnis vorhanden sind.</label></div>'+
-  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="reqNext" disabled onclick="saveCrimeCheck()">Weiter →</button></div></div>';
+  '<div class="confirm-box" id="crimeBox" onclick="document.getElementById(\'crimeChk\').click()"><input type="checkbox" id="crimeChk" onclick="event.stopPropagation()"><label>Ich bestätige, dass keine Einträge im Führungszeugnis vorhanden sind.</label></div>'+
+  '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" id="reqNext" onclick="saveCrimeCheck()">Weiter →</button></div></div>';
 }
-function saveCrimeCheck(){ wizData.declaration=wizData.declaration||{}; wizData.declaration.noCrime=true; wizNext(); }
+/* Button bleibt aktiv und erklärt sich – ein stummer disabled-Button wirkt wie ein Defekt */
+function saveCrimeCheck(){
+  const cb=document.getElementById('crimeChk');
+  if(!cb||!cb.checked){
+    toastHint('Bitte bestätige zuerst die Erklärung zum Führungszeugnis');
+    const box=document.getElementById('crimeBox');
+    if(box){ box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake'); box.scrollIntoView({block:'center',behavior:'smooth'}); }
+    return;
+  }
+  wizData.declaration=wizData.declaration||{}; wizData.declaration.noCrime=true; wizNext();
+}
 function wizDataForm(){
   const pets=wizData.pets||[];
   return wizNumLabel(4)+
@@ -4081,14 +4274,14 @@ function saveWizData(){
   wizData.skills=[...document.querySelectorAll('#wz_skills .check.on')].map(e=>e.textContent);
   wizData.pets=[...document.querySelectorAll('#wz_pets .check.on')].map(e=>e.textContent);
   wizData.motivation=val('wz_motiv');
-  if(!wizData.first||!wizData.last){toast('Bitte Vor- und Nachnamen ausfüllen',true);return;}
-  if(!wizData.email||wizData.email.indexOf('@')<1){toast('Bitte gültige E-Mail eingeben',true);return;}
-  if(!wizData.phone){toast('Bitte Telefonnummer eingeben',true);return;}
-  if(!wizData.area){toast('Bitte Wohnort eingeben',true);return;}
-  if(!wizData.gender){toast('Bitte Geschlecht wählen',true);return;}
-  if(!wizData.citizenship){toast('Bitte Staatsbürgerschaft/Arbeitserlaubnis wählen',true);return;}
-  if(!wizData.skills.length){toast('Bitte mindestens eine Leistung wählen',true);return;}
-  if(!wizData.pets.length){toast('Bitte Angabe zu Haustieren machen',true);return;}
+  if(!wizData.first||!wizData.last){toastHint('Bitte Vor- und Nachnamen ausfüllen');return;}
+  if(!wizData.email||wizData.email.indexOf('@')<1){toastHint('Bitte gültige E-Mail eingeben');return;}
+  if(!wizData.phone){toastHint('Bitte Telefonnummer eingeben');return;}
+  if(!wizData.area){toastHint('Bitte Wohnort eingeben');return;}
+  if(!wizData.gender){toastHint('Bitte Geschlecht wählen');return;}
+  if(!wizData.citizenship){toastHint('Bitte Staatsbürgerschaft/Arbeitserlaubnis wählen');return;}
+  if(!wizData.skills.length){toastHint('Bitte mindestens eine Leistung wählen');return;}
+  if(!wizData.pets.length){toastHint('Bitte Angabe zu Haustieren machen');return;}
   wizNext();
 }
 
@@ -4203,15 +4396,15 @@ function savePfb(){
   wizData.questionnaire=q;
   wizData.first=val('pf_first');wizData.last=val('pf_last');
   // Pflichtprüfung
-  if(!q.street||!q.houseNo){toast('Bitte Straße mit Hausnummer angeben (z. B. Bahnhofstraße 85)',true);return;}
-  if(!q.plz||!q.city){toast('Bitte PLZ und Ort ausfüllen',true);return;}
-  if(!birthIso){toast('Bitte Geburtsdatum im Format TT.MM.JJJJ angeben',true);return;}
+  if(!q.street||!q.houseNo){toastHint('Bitte Straße mit Hausnummer angeben (z. B. Bahnhofstraße 85)');return;}
+  if(!q.plz||!q.city){toastHint('Bitte PLZ und Ort ausfüllen');return;}
+  if(!birthIso){toastHint('Bitte Geburtsdatum im Format TT.MM.JJJJ angeben');return;}
   if(!validTaxId(q.taxId)){toast('Steuer-ID muss aus genau 11 Ziffern bestehen',true);return;}
   if(!validKvNr(q.kvNr)){toast('KV-Nummer: 1 Buchstabe gefolgt von 9 Ziffern',true);return;}
-  if(!q.kasse){toast('Bitte Krankenkasse angeben',true);return;}
-  if(!validIban(q.iban)){toast('Bitte eine gültige deutsche IBAN eingeben',true);return;}
-  if(!q.employment){toast('Bitte Beschäftigungsart wählen',true);return;}
-  if(!q.otherJob){toast('Bitte Angabe zu weiterer Beschäftigung machen',true);return;}
+  if(!q.kasse){toastHint('Bitte Krankenkasse angeben');return;}
+  if(!validIban(q.iban)){toastHint('Bitte eine gültige deutsche IBAN eingeben');return;}
+  if(!q.employment){toastHint('Bitte Beschäftigungsart wählen');return;}
+  if(!q.otherJob){toastHint('Bitte Angabe zu weiterer Beschäftigung machen');return;}
   if(q.otherJob==='Nein'){toast('Eine Bewerbung ist nur mit Studenten- oder Hauptbeschäftigungsstatus möglich.',true);return;}
   wizData.isStudent=(q.otherJob==='Ja, Student');
   if(wizData.isStudent){
@@ -4251,7 +4444,7 @@ function wizContracts(){
 function toggleDoc(i){document.getElementById('docbody-'+i).classList.toggle('open');setTimeout(initSignPads,60);}
 function checkContracts(){
   const allSigned=Object.values(wizData.docs).every(v=>v);
-  if(!allSigned){toast('Bitte alle Verträge öffnen und unterschreiben',true);return;}
+  if(!allSigned){toastHint('Bitte alle Verträge öffnen und unterschreiben');return;}
   wizNext();
 }
 
@@ -4297,10 +4490,10 @@ function toggleDecl(key){
 }
 function checkDeclaration(){
   const d=wizData.declaration;
-  if(!d.certificateStatus){toast('Bitte beim Führungszeugnis eine Auswahl treffen',true);return;}
-  if(!d.firstAidStatus){toast('Bitte beim Erste-Hilfe-Kurs eine Auswahl treffen',true);return;}
-  if(d.certificateStatus==='vorhanden'&&!wizData.fzgImg){toast('Bitte das Führungszeugnis hochladen',true);return;}
-  if(d.firstAidStatus==='vorhanden'&&!wizData.erstehilfeImg){toast('Bitte die Erste-Hilfe-Bescheinigung hochladen',true);return;}
+  if(!d.certificateStatus){toastHint('Bitte beim Führungszeugnis eine Auswahl treffen');return;}
+  if(!d.firstAidStatus){toastHint('Bitte beim Erste-Hilfe-Kurs eine Auswahl treffen');return;}
+  if(d.certificateStatus==='vorhanden'&&!wizData.fzgImg){toastHint('Bitte das Führungszeugnis hochladen');return;}
+  if(d.firstAidStatus==='vorhanden'&&!wizData.erstehilfeImg){toastHint('Bitte die Erste-Hilfe-Bescheinigung hochladen');return;}
   wizNext();
 }
 
@@ -4345,7 +4538,7 @@ function clearSign(i){
 }
 function confirmSign(i,doc){
   const pad=document.getElementById('signpad-'+i);const canvas=pad.querySelector('canvas');
-  if(!canvas.dataset.drawn){toast('Bitte zuerst unterschreiben',true);return;}
+  if(!canvas.dataset.drawn){toastHint('Bitte zuerst unterschreiben');return;}
   wizData.docs[doc]=true;
   // Unterschriftsbild als Daten-URL sichern (für Speicherung beim Mitarbeiter)
   wizData.signatures=wizData.signatures||{};
@@ -4424,7 +4617,7 @@ async function handleIdFile(which, input){
   toast(labels[which]+' hochgeladen');
 }
 function checkIds(){
-  if(!wizData.idFront||!wizData.idBack||!wizData.selfie){toast('Bitte Vorderseite, Rückseite und Selfie hochladen',true);return;}
+  if(!wizData.idFront||!wizData.idBack||!wizData.selfie){toastHint('Bitte Vorderseite, Rückseite und Selfie hochladen');return;}
   if(wizData.isStudent && !wizData.enrollmentImg){toast('Als Student bitte die Immatrikulationsbescheinigung hochladen',true);return;}
   wizNext();
 }
@@ -4449,7 +4642,7 @@ function agbScrollCheck(el){
 function agbBoxClick(){
   const chk=document.getElementById('agbChk');
   if(chk&&!chk.disabled){ chk.checked=!chk.checked; checkAgb(); }
-  else toast('Bitte zuerst die Bedingungen bis zum Ende scrollen',true);
+  else toastHint('Bitte zuerst die Bedingungen bis zum Ende scrollen');
 }
 function legalText(which){
   return which==='agb'
@@ -4650,7 +4843,7 @@ function addAppointment(customerId){
 function saveAppointment(customerId){
   if(!requireStaffAction()) return;
   const date=val('ap_date'),time=val('ap_time');
-  if(!date||!time){toast('Bitte Datum und Uhrzeit angeben',true);return;}
+  if(!date||!time){toastHint('Bitte Datum und Uhrzeit angeben');return;}
   const cu=custById(customerId);
   const type=(cu.status==='Interessent' && !cu.vertrag)?'kennenlernen':'einsatz';
   const appt={id:nextApptId++,staffId:myId,customerId,date,time,duration:parseInt(val('ap_dur'))||60,note:val('ap_note'),type:type};
@@ -4678,7 +4871,8 @@ function showAppt(id){
     (isKennenlernen&&!cancelled?'<div class="summary" style="margin-bottom:12px"><div class="sh">Kennenlerngespräch (kostenlos)</div>Bedarfsanalyse durchführen und Vertrag unterschreiben lassen. Kunde wird danach automatisch aktiv.</div>':'')+
     (!isKennenlernen&&cu&&cu.bedarfsanalyse?'<div class="summary" style="margin-bottom:12px"><div class="sh">Bekannter Bedarf</div>'+(cu.bedarfsanalyse.skills||[]).join(', ')+(cu.bedarfsanalyse.notes?'<br>'+cu.bedarfsanalyse.notes:'')+'</div>':'')+
     '<div class="reveal-row"><span class="k">Kunde</span><span class="v">'+(cu?fullName(cu):'—')+'</span></div>'+
-    '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+(cu?cu.address:'—')+'</span></div>'+
+    '<div class="reveal-row"><span class="k">Adresse</span><span class="v">'+(cu&&cu.address?addrLinkHtml(cu.address):'—')+'</span></div>'+
+    (cu&&cu.phone?'<div class="reveal-row"><span class="k">Telefon</span><span class="v">'+telLinkHtml(cu.phone)+'</span></div>':'')+
     '<div class="reveal-row"><span class="k">Datum</span><span class="v">'+fmtDateLong(a.date)+'</span></div>'+
     '<div class="reveal-row"><span class="k">Uhrzeit</span><span class="v">'+a.time+' ('+a.duration+' Min.)</span></div>'+
     '<div class="reveal-row"><span class="k">Mitarbeiter</span><span class="v">'+staffName(a.staffId)+'</span></div>'+
@@ -4771,7 +4965,7 @@ function confirmTermin(){
   const apptId=+val('te_appt'); const cid=+val('te_cust');
   const cu=custById(cid); if(!cu)return;
   const date=val('te_date'), start=val('te_start'), end=val('te_end'), task=val('te_task')||'Betreuung';
-  if(!start||!end||end<=start){ toast('Bitte gültige Start- und Endzeit angeben',true); return; }
+  if(!start||!end||end<=start){ toastHint('Bitte gültige Start- und Endzeit angeben'); return; }
   const mins=(()=>{const[a,b]=start.split(':').map(Number);const[c,d]=end.split(':').map(Number);return (c*60+d)-(a*60+b);})();
   const std=mins/60; const kosten=std*STUNDENSATZ;
   document.getElementById('modalBox').classList.add('wide');
@@ -4881,7 +5075,7 @@ function kennenlernenWeiterZuVertrag(){
   const ctx=window.__kennenlernen; if(!ctx)return;
   ctx.skills=[...document.querySelectorAll('#kl_skills .check.on')].map(e=>e.textContent);
   ctx.notes=val('kl_notes');
-  if(!ctx.skills.length){ toast('Bitte mindestens eine Leistung auswählen',true); return; }
+  if(!ctx.skills.length){ toastHint('Bitte mindestens eine Leistung auswählen'); return; }
   kennenlernenVertrag();
 }
 function kennenlernenVertrag(){
@@ -4905,7 +5099,7 @@ function kennenlernenVertrag(){
   setTimeout(initSignPads,40);
   document.getElementById('klSignConfirm').onclick=function(){
     const canvas=document.querySelector('#klSignPad canvas');
-    if(!signatureLooksValid(canvas.toDataURL())){ toast('Bitte erst unterschreiben',true); return; }
+    if(!signatureLooksValid(canvas.toDataURL())){ toastHint('Bitte erst unterschreiben'); return; }
     finishKennenlernen(canvas.toDataURL(), text);
   };
 }
@@ -4980,7 +5174,7 @@ function confirmCancelAppt(id){
   const sel=document.querySelector('input[name="cancelReason"]:checked');
   const reason=sel?sel.value:'Sonstiges';
   const detail=(document.getElementById('cancelDetail')||{}).value||'';
-  if(reason==='Sonstiges' && !detail.trim()){ toast('Bitte einen Grund angeben',true); return; }
+  if(reason==='Sonstiges' && !detail.trim()){ toastHint('Bitte einen Grund angeben'); return; }
   // Termin NICHT löschen, sondern als abgesagt markieren (für den Admin sichtbar)
   a.status='abgesagt';
   a.cancelReason=reason;
@@ -5014,8 +5208,8 @@ function saveTimesheet(){
   if(!requireStaffAction()) return;
   const cid=document.getElementById('ts_cust').value;
   const start=val('ts_start'),end=val('ts_end');
-  if(cid==='' ){toast('Bitte zuerst einen Kunden annehmen',true);return;}
-  if(!start||!end||end<=start){toast('Bitte gültige Start-/Endzeit angeben',true);return;}
+  if(cid==='' ){toastHint('Bitte zuerst einen Kunden annehmen');return;}
+  if(!start||!end||end<=start){toastHint('Bitte gültige Start-/Endzeit angeben');return;}
   timesheets.push({id:nextTsId++,staffId:myId,customerId:+cid,date:val('ts_date'),start,end,task:val('ts_task')||'Einsatz',status:'offen',proof:false});
   closeModal();toast('Zeit erfasst – wartet auf Freigabe durch das Büro');
   renderStaff('hours');
@@ -5031,20 +5225,48 @@ function approveTimesheet(id){
   logActivity('Stundenzettel freigegeben: '+staffName(t.staffId)+', '+fmtDate(t.date));
   toast('Stundenzettel freigegeben – Leistungsnachweis erstellt');renderAdmin('hours');
 }
+/* Ablehnen mit Grund-Auswahl: feste Gründe + „Sonstiger Grund" mit Freitext */
+const REJECT_GRUENDE=['Unterschrift stimmt nicht überein','Unterschrift fehlt'];
 function rejectTimesheet(id){
   if(!requireAdminAction()) return;
   const t=timesheets.find(x=>x.id===id); if(!t)return;
-  // Begründung ist Pflicht – der Mitarbeiter sieht sie in seiner App
-  const grund=prompt('Stundenzettel ablehnen – warum?\nDie Begründung wird dem Mitarbeiter in seiner App angezeigt.');
-  if(grund===null) return; // abgebrochen
-  if(!grund.trim()){ toast('Bitte eine Begründung angeben',true); return; }
-  t.status='abgelehnt'; t.rejectGrund=cleanInput(grund,300);
+  document.getElementById('modalTitle').textContent='Stundenzettel ablehnen';
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin-bottom:14px"><b>'+staffName(t.staffId)+'</b> · '+fmtDate(t.date)+' · '+t.start+'–'+t.end+'<br>Die Begründung wird dem Mitarbeiter in seiner App angezeigt.</p>'+
+    '<div class="seg" id="rejGrund" style="flex-direction:column;align-items:stretch">'+
+      REJECT_GRUENDE.map((g,i)=>'<button data-v="'+g+'" class="'+(i===0?'on':'')+'" onclick="rejPick(this)" style="text-align:left">'+g+'</button>').join('')+
+      '<button data-v="__sonstig" onclick="rejPick(this)" style="text-align:left">Sonstiger Grund …</button>'+
+    '</div>'+
+    '<div id="rejTextBox" style="display:none;margin-top:12px"><label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px">Eigene Begründung *</label>'+
+    '<textarea id="rejText" rows="2" style="width:100%;padding:10px 14px;border:1.5px solid var(--line);border-radius:14px" placeholder="z. B. Einsatzzeit unplausibel – bitte korrigieren"></textarea></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;background:var(--danger)" onclick="doRejectTimesheet('+id+')">✕ Ablehnen</button>';
+  openModal();
+}
+function rejPick(btn){
+  document.querySelectorAll('#rejGrund button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('rejTextBox').style.display=btn.dataset.v==='__sonstig'?'block':'none';
+  if(btn.dataset.v==='__sonstig') setTimeout(()=>{const e=document.getElementById('rejText');if(e)e.focus();},60);
+}
+function doRejectTimesheet(id){
+  const t=timesheets.find(x=>x.id===id); if(!t)return;
+  const sel=document.querySelector('#rejGrund button.on');
+  if(!sel){ toastHint('Bitte einen Grund wählen'); return; }
+  let grund=sel.dataset.v;
+  if(grund==='__sonstig'){
+    grund=cleanInput(document.getElementById('rejText').value,300);
+    if(!grund){ toastHint('Bitte eine eigene Begründung eingeben'); return; }
+  }
+  t.status='abgelehnt'; t.rejectGrund=grund;
   if(CLOUD){
     cloudUpdate('stundenzettel', id, { status:'abgelehnt' });
     // Begründung separat speichern, damit eine fehlende V3_MIGRATION.sql die Ablehnung nicht blockiert
     sb.from('stundenzettel').update({reject_grund:t.rejectGrund}).eq('id',id).then(({error})=>{ if(error) console.warn('Ablehnungsgrund speichern: '+error.message+' – V3_MIGRATION.sql ausführen'); });
   }
   logActivity('Stundenzettel abgelehnt ('+t.rejectGrund+'): '+staffName(t.staffId)+', '+fmtDate(t.date));
+  closeModal();
   toast('Stundenzettel abgelehnt – Begründung gespeichert',true); renderAdmin('hours');
 }
 /* Plausibilitäts-Check der Unterschrift (kein forensischer Vergleich!):
@@ -5095,7 +5317,7 @@ function saveNote(type){
   if(!requireAdminAction()) return;
   const refId=+document.getElementById('nt_ref').value;
   const text=val('nt_text');
-  if(!text){toast('Bitte Notiztext eingeben',true);return;}
+  if(!text){toastHint('Bitte Notiztext eingeben');return;}
   const vis=document.querySelector('#nt_vis button.on').dataset.v;
   notes.push({id:nextNoteId++,type,refId,text,visibility:vis,date:'2026-06-10'});
   closeModal();toast('Notiz gespeichert');renderAdmin('notes');
@@ -5106,7 +5328,46 @@ function fmtDate(iso){if(!iso)return '';const[y,m,d]=iso.split('-');return d+'.'
 function fmtDateLong(iso){if(!iso)return '';const[y,m,d]=iso.split('-');const days=['So','Mo','Di','Mi','Do','Fr','Sa'];const months=['Jan','Feb','März','Apr','Mai','Juni','Juli','Aug','Sep','Okt','Nov','Dez'];const dt=new Date(+y,+m-1,+d);return days[dt.getDay()]+', '+(+d)+'. '+months[+m-1]+' '+y;}
 
 /* ============ MODAL / HELPERS ============ */
-function openModal(){document.getElementById('modalBg').classList.add('show');}
+function openModal(){
+  document.getElementById('modalBg').classList.add('show');
+  buildModalToc();
+  // Desktop: erstes Eingabefeld fokussieren (auf dem Handy würde die Tastatur aufspringen)
+  if(window.matchMedia&&window.matchMedia('(min-width:901px)').matches){
+    setTimeout(()=>{
+      const box=document.getElementById('modalBox');
+      if(!box||box.contains(document.activeElement)) return; // Ansicht hat schon selbst fokussiert
+      const f=box.querySelector('#modalBody input:not([type=hidden]):not([readonly]):not([disabled]),#modalBody select:not([disabled]),#modalBody textarea:not([disabled])');
+      if(f) try{ f.focus({preventScroll:true}); }catch(e){}
+    },80);
+  }
+}
+/* Lange Modale (z. B. Kunde bearbeiten, 11 Abschnitte) bekommen automatisch eine
+   klebende Sprungleiste – erspart Blind-Scrollen. Rein aus dem DOM abgeleitet. */
+function buildModalToc(){
+  const body=document.getElementById('modalBody'); if(!body) return;
+  const old=document.getElementById('modalToc'); if(old) old.remove();
+  const labels=[...body.querySelectorAll('.section-label')];
+  if(labels.length<5) return;
+  const toc=document.createElement('div'); toc.id='modalToc';
+  labels.forEach(l=>{
+    const full=l.textContent;
+    const b=document.createElement('button');
+    // Emoji/Zusätze kürzen: „📁 Dokumente (Kunden-Ordner)" -> „Dokumente"
+    let t=full.replace(/[\u{1F300}-\u{1FAFF}☀-➿]/gu,'').split('(')[0].trim();
+    if(t.length>22) t=t.slice(0,21)+'…';
+    b.type='button'; b.textContent=t;
+    // Ziel erst beim Klick suchen – Ansichten ersetzen den Body-Inhalt teils asynchron,
+    // eine beim Aufbau gemerkte Element-Referenz zeigte dann ins Leere.
+    b.onclick=()=>{
+      const lbl=[...document.querySelectorAll('#modalBody .section-label')].find(x=>x.textContent===full);
+      // bewusst ohne behavior:'smooth' – bricht im Modal-Scroller stumm ab
+      if(lbl) lbl.scrollIntoView({block:'start'});
+    };
+    toc.appendChild(b);
+  });
+  // Vor dem Body einhängen (nicht hinein): übersteht innerHTML-Neuaufbauten des Bodys
+  body.parentElement.insertBefore(toc, body);
+}
 /* ============================================================
    PDF-ERZEUGUNG für unterschriebene Verträge
    ------------------------------------------------------------
@@ -5321,7 +5582,7 @@ function openSignatureModal(title, subtitle, callback){
   setTimeout(initSignPads,40);
   document.getElementById('genSignConfirm').onclick=function(){
     const canvas=document.querySelector('#genSignPad canvas');
-    if(!canvas||!canvas.dataset.drawn){ toast('Bitte zuerst unterschreiben',true); return; }
+    if(!canvas||!canvas.dataset.drawn){ toastHint('Bitte zuerst unterschreiben'); return; }
     const data=canvas.toDataURL('image/png');
     closeModal();
     callback(data);
@@ -5750,8 +6011,8 @@ function viewStandortAnerkennung(){
 function saveStandort(id){
   captureStandortDraftFields();
   const d=__standortDraft;
-  if(!d.name){toast('Bitte einen Namen eingeben',true);return;}
-  if(!d.ikNummer){toast('Bitte die IK-Nummer eingeben',true);return;}
+  if(!d.name){toastHint('Bitte einen Namen eingeben');return;}
+  if(!d.ikNummer){toastHint('Bitte die IK-Nummer eingeben');return;}
   const data={name:d.name,firma:d.firma,strasse:d.strasse,plz:d.plz,ort:d.ort,telefon:d.telefon,email:d.email,notizen:d.notizen,
     ikNummer:d.ikNummer,handelsregister:d.handelsregister,ustId:d.ustId,geschaeftsfuehrer:d.geschaeftsfuehrer,
     unterschrift:d.unterschrift,anerkennungName:d.anerkennungName,anerkennungData:d.anerkennungData,anerkennungDate:d.anerkennungDate};
@@ -5801,9 +6062,9 @@ function openKtModal(id){
 }
 function saveKt(id){
   if(!requireAdminAction()) return;
-  const name=val('kt_name'); if(!name){toast('Bitte einen Namen eingeben',true);return;}
+  const name=val('kt_name'); if(!name){toastHint('Bitte einen Namen eingeben');return;}
   const email=val('kt_email');
-  if(email && !isValidEmail(email)){toast('Bitte eine gültige E-Mail eingeben',true);return;}
+  if(email && !isValidEmail(email)){toastHint('Bitte eine gültige E-Mail eingeben');return;}
   if(id!==null){
     const k=kostentraeger.find(x=>x.id===id);
     k.name=name;k.strasse=val('kt_strasse');k.plz=val('kt_plz');k.ort=val('kt_ort');k.email=email;
@@ -5939,9 +6200,9 @@ function openLkModal(id){
 }
 function saveLk(id){
   if(!requireAdminAction()) return;
-  const name=val('lk_name'); if(!name){toast('Bitte eine Bezeichnung eingeben',true);return;}
+  const name=val('lk_name'); if(!name){toastHint('Bitte eine Bezeichnung eingeben');return;}
   const preis=parseFloat(document.getElementById('lk_preis').value);
-  if(!preis||preis<=0){toast('Bitte einen gültigen Preis eingeben',true);return;}
+  if(!preis||preis<=0){toastHint('Bitte einen gültigen Preis eingeben');return;}
   const einheit=document.getElementById('lk_einheit').value;
   if(id!==null){
     const l=leistungenKatalog.find(x=>x.id===id);
@@ -6017,9 +6278,9 @@ function kommAufgabenListHTML(kommId){
 }
 function addKommAufgabe(kommId){
   const k=kommunikationen.find(x=>x.id===kommId); if(!k) return;
-  const title=val('komm_newtask'); if(!title){toast('Bitte einen Aufgabentext eingeben',true);return;}
+  const title=val('komm_newtask'); if(!title){toastHint('Bitte einen Aufgabentext eingeben');return;}
   const mitarbeiterId=document.getElementById('komm_newtask_staff').value?+document.getElementById('komm_newtask_staff').value:null;
-  if(!mitarbeiterId){toast('Bitte einen Mitarbeiter auswählen',true);return;}
+  if(!mitarbeiterId){toastHint('Bitte einen Mitarbeiter auswählen');return;}
   const a={id:nextAufgabeId++,title,mitarbeiterId,customerId:k.customerId,beschreibung:null,status:'offen',faelligAm:null,kommunikationId:kommId};
   aufgaben.push(a);
   if(CLOUD){ cloudInsert('aufgaben',aufgabeToRow(a)).then(r=>{ if(r) a.id=r.id; }); }
@@ -6042,13 +6303,13 @@ function removeKommAufgabe(id,kommId){
 }
 function saveKomm(id, fixedCustId){
   if(!requireRoleAction('admin','buero','callcenter')) return;
-  const title=val('komm_title'); if(!title){toast('Bitte einen Titel eingeben',true);return;}
+  const title=val('komm_title'); if(!title){toastHint('Bitte einen Titel eingeben');return;}
   const customerId=fixedCustId!==null?fixedCustId:(document.getElementById('komm_customer')?+document.getElementById('komm_customer').value:null);
-  if(!customerId){toast('Bitte eine Klientin zuweisen',true);return;}
+  if(!customerId){toastHint('Bitte eine Klientin zuweisen');return;}
   const type=(document.querySelector('#komm_type button.on')||{}).dataset?.v||'anruf';
   const date=val('komm_date'), time=val('komm_time'), status=(document.querySelector('#komm_status button.on')||{}).dataset?.v||'offen', note=val('komm_note');
-  if(!date||!time){toast('Bitte Datum und Uhrzeit angeben',true);return;}
-  if(!note){toast('Bitte eine Notiz eingeben',true);return;}
+  if(!date||!time){toastHint('Bitte Datum und Uhrzeit angeben');return;}
+  if(!note){toastHint('Bitte eine Notiz eingeben');return;}
   if(id!==null){
     const k=kommunikationen.find(x=>x.id===id);
     Object.assign(k,{title,type,date,time,status,note,customerId});
@@ -6111,9 +6372,9 @@ function openAufgabeModal(id){
 }
 function saveAufgabe(id){
   if(!requireAdminAction()) return;
-  const title=val('auf_title'); if(!title){toast('Bitte einen Titel eingeben',true);return;}
+  const title=val('auf_title'); if(!title){toastHint('Bitte einen Titel eingeben');return;}
   const mitarbeiterId=document.getElementById('auf_staff').value?+document.getElementById('auf_staff').value:null;
-  if(!mitarbeiterId){toast('Bitte einen Mitarbeiter auswählen',true);return;}
+  if(!mitarbeiterId){toastHint('Bitte einen Mitarbeiter auswählen');return;}
   const customerId=document.getElementById('auf_customer').value?+document.getElementById('auf_customer').value:null;
   const faelligAm=val('auf_faellig'), status=(document.querySelector('#auf_status button.on')||{}).dataset?.v||'offen', beschreibung=val('auf_beschreibung');
   if(id!==null){
@@ -6178,16 +6439,23 @@ function openInvoiceModal(tsId){
   const t=timesheets.find(x=>x.id===tsId); if(!t){toast('Stundenzettel nicht gefunden',true);return;}
   if(rechnungen.find(r=>r.stundenzettelId===tsId)){toast('Für diesen Stundenzettel existiert bereits eine Rechnung',true);return;}
   const cu=custById(t.customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
+  /* Fehlende Voraussetzungen nicht nur melden, sondern direkt zum Ort der Lösung führen */
   if(!cu.abtretung || !cu.abtretung.signature){
-    toast('Bitte zuerst die Abtretungserklärung dieses Kunden einholen (Kunden-Detailseite)',true);
+    appConfirm('Für '+fullName(cu)+' liegt noch keine unterschriebene Abtretungserklärung vor. Ohne sie kann keine Kostenträger-Rechnung erstellt werden.\n\nDie Abtretung entsteht beim Einsatz-Abschluss oder manuell im Kundenprofil.',
+      ()=>editCustomer(cu.id), {title:'Abtretung fehlt', okLabel:'Zum Kundenprofil'});
     return;
   }
   if(cu.insuranceType==='gesetzlich' && !cu.kostentraegerId){
-    toast('Kunde ist gesetzlich versichert, hat aber keinen Kostenträger hinterlegt. Bitte erst beim Kunden eintragen.',true);
+    appConfirm(fullName(cu)+' ist gesetzlich versichert, hat aber keinen Kostenträger hinterlegt.',
+      ()=>editCustomer(cu.id), {title:'Kostenträger fehlt', okLabel:'Beim Kunden eintragen'});
     return;
   }
   const mine=cu.leistungen||[];
-  if(!mine.length){ toast('Für diesen Kunden sind keine Leistungen hinterlegt (Kunde bearbeiten → Abgerechnete Leistungen)',true); return; }
+  if(!mine.length){
+    appConfirm('Für '+fullName(cu)+' sind keine abzurechnenden Leistungen hinterlegt.',
+      ()=>editCustomer(cu.id), {title:'Leistungen fehlen', okLabel:'Beim Kunden eintragen'});
+    return;
+  }
   const mins=tsMinutes(t);
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent='Rechnung erstellen – '+fullName(cu);
@@ -6226,13 +6494,13 @@ function invoiceRecalc(mins){
   document.getElementById('inv_betrag').innerHTML='<b>'+(l.preis*menge).toFixed(2).replace('.',',')+' €</b>';
 }
 function createInvoiceForTimesheet(tsId){
-  const ctx=window.__invoiceCtx; if(!ctx||ctx.tsId!==tsId){toast('Bitte erneut öffnen',true);return;}
+  const ctx=window.__invoiceCtx; if(!ctx||ctx.tsId!==tsId){toastHint('Bitte erneut öffnen');return;}
   const t=timesheets.find(x=>x.id===tsId); if(!t)return;
   const cu=custById(t.customerId); if(!cu)return;
   const idx=+document.getElementById('inv_leistung').value;
   const l=ctx.leistungen[idx];
   const menge=parseFloat(document.getElementById('inv_menge').value)||0;
-  if(menge<=0){toast('Bitte eine gültige Menge angeben',true);return;}
+  if(menge<=0){toastHint('Bitte eine gültige Menge angeben');return;}
   const betrag=l.preis*menge;
 
   const isGesetzlich=cu.insuranceType==='gesetzlich';
@@ -7022,7 +7290,7 @@ function confirmDangerDelete(title, message, onConfirm){
 }
 function runConfirmedDelete(){
   const v=(document.getElementById('confirmDeleteInput').value||'').trim().toUpperCase();
-  if(v!=='LÖSCHEN'){ toast('Bitte das Wort LÖSCHEN eingeben',true); return; }
+  if(v!=='LÖSCHEN'){ toastHint('Bitte das Wort LÖSCHEN eingeben'); return; }
   const fn=__confirmDeleteFn; __confirmDeleteFn=null;
   closeModal();
   if(fn) fn();
@@ -7051,6 +7319,47 @@ function statusBanner(s){return '<div class="panel" style="margin-bottom:18px"><
 function val(id){const e=document.getElementById(id);return e?cleanInput(e.value):'';}
 let toastTimer;
 let lastErrors=[];
+/* App-eigener Bestätigungsdialog im Design der App (statt natives confirm()).
+   appConfirm(text, onOk, {title, okLabel, danger}) – Abbrechen/Escape verwirft.
+   Nachricht wird als Text gesetzt (kein HTML), Namen aus Nutzerdaten sind damit sicher. */
+function appConfirm(msg, onOk, opts){
+  opts=opts||{};
+  let bg=document.getElementById('acBg');
+  if(!bg){
+    bg=document.createElement('div'); bg.id='acBg'; bg.className='ac-bg';
+    bg.innerHTML='<div class="ac-card" role="alertdialog" aria-modal="true" aria-labelledby="acTitle">'+
+      '<h4 id="acTitle"></h4><p id="acMsg"></p>'+
+      '<div class="ac-foot"><button class="btn-ghost" id="acCancel">Abbrechen</button><button id="acOk"></button></div></div>';
+    document.body.appendChild(bg);
+  }
+  document.getElementById('acTitle').textContent=opts.title||'Bist du sicher?';
+  document.getElementById('acMsg').textContent=msg||'';
+  const ok=document.getElementById('acOk'), cancel=document.getElementById('acCancel');
+  ok.textContent=opts.okLabel||'Ja, fortfahren';
+  ok.className=opts.danger?'btn-danger':'btn-primary';
+  if(!opts.danger) ok.style.cssText='width:auto;padding:11px 18px'; else ok.style.cssText='';
+  const close=()=>{ bg.classList.remove('show'); document.removeEventListener('keydown',onKey,true); window.__acPrev&&window.__acPrev.focus&&window.__acPrev.focus(); window.__acPrev=null; };
+  const onKey=(e)=>{ if(e.key==='Escape'){ e.stopPropagation(); e.preventDefault(); close(); } };
+  ok.onclick=()=>{ close(); if(onOk) onOk(); };
+  cancel.onclick=close;
+  bg.onclick=(e)=>{ if(e.target===bg) close(); };
+  document.addEventListener('keydown',onKey,true);
+  window.__acPrev=document.activeElement;
+  bg.classList.add('show');
+  // Bei gefährlichen Aktionen startet der Fokus sicher auf „Abbrechen"
+  setTimeout(()=>{ (opts.danger?cancel:ok).focus(); },40);
+}
+/* Eingabe-Hinweis (Validierung): amber, blendet sich selbst aus und landet
+   bewusst NICHT im Fehlerprotokoll – „Bitte Feld ausfüllen" ist kein Systemfehler. */
+function toastHint(msg){
+  const t=document.getElementById('toast');
+  document.getElementById('toastMsg').textContent=msg;
+  const u=document.getElementById('toastUndoBtn'); if(u) u.style.display='none';
+  t.classList.add('warn'); t.classList.add('show');
+  document.getElementById('toastClose').style.display='none';
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),3500);
+}
 function toast(msg,warn){
   const t=document.getElementById('toast');
   document.getElementById('toastMsg').textContent=msg;
@@ -7070,12 +7379,13 @@ function showErrorBadge(){
   let b=document.getElementById('errorBadge');
   if(!b){
     b=document.createElement('div'); b.id='errorBadge';
-    b.style.cssText='position:fixed;bottom:12px;left:12px;z-index:9999;font-size:12px;font-weight:700;padding:7px 13px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.2);cursor:pointer;background:#c0392b;color:#fff';
+    /* bottom:84px, damit das Badge nicht auf der NEXUS-Kugel (links unten) klebt */
+    b.style.cssText='position:fixed;bottom:84px;left:12px;z-index:9999;font-size:12px;font-weight:700;padding:7px 13px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.2);cursor:pointer;background:#c0392b;color:#fff';
     b.title='Klicken, um die letzten Fehler zu sehen';
     b.onclick=showLastErrors;
     document.body.appendChild(b);
   }
-  b.textContent='⚠ '+lastErrors.length+' Fehler – klicken zum Ansehen';
+  b.textContent='⚠ '+lastErrors.length+' Fehler';
   b.style.display='block';
 }
 function showLastErrors(){
@@ -7150,7 +7460,7 @@ async function checkInviteLink(){
   // Supabase-Client muss bereit sein
   let tries=0;
   while(!sb && tries<30){ await new Promise(r=>setTimeout(r,150)); tries++; }
-  if(!sb){ alert('Verbindung zur Datenbank noch nicht bereit – bitte Seite neu laden.'); return; }
+  if(!sb){ toast('Verbindung zur Datenbank noch nicht bereit – bitte Seite neu laden.',true); return; }
   // Sitzung AUSDRÜCKLICH aus den Token des Links aktivieren
   try{
     if(access_token && refresh_token){
@@ -7182,7 +7492,7 @@ function showSetPasswordDialog(type){
 async function saveNewPassword(){
   const p1=document.getElementById('setpw1').value;
   const p2=document.getElementById('setpw2').value;
-  if(!p1||p1.length<8){ toast('Bitte mindestens 8 Zeichen',true); return; }
+  if(!p1||p1.length<8){ toastHint('Bitte mindestens 8 Zeichen'); return; }
   if(p1!==p2){ toast('Die Passwörter stimmen nicht überein',true); return; }
   if(!sb){ toast('Keine Verbindung zur Datenbank',true); return; }
   // Sicherstellen, dass wirklich eine Sitzung aus dem Einladungslink aktiv ist
@@ -7289,6 +7599,14 @@ function gsClose(){
   const inp=document.getElementById('gsearchInput');
   if(box){ box.classList.remove('show'); box.innerHTML=''; }
   if(inp){ inp.value=''; inp.blur(); }
+  const w=document.getElementById('gsearchWrap'); if(w) w.classList.remove('mopen');
+}
+/* Mobil: Suche als Overlay über der Kopfzeile öffnen */
+function gsearchMobileOpen(){
+  const w=document.getElementById('gsearchWrap'); if(!w) return;
+  w.classList.add('mopen');
+  const inp=document.getElementById('gsearchInput');
+  if(inp) setTimeout(()=>inp.focus(),60);
 }
 function gsearchKey(ev){
   if(ev.key==='Escape'){ gsClose(); }
@@ -7351,13 +7669,18 @@ window.addEventListener('beforeunload',function(e){
   const orig=window.renderAdmin;
   window.renderAdmin=function(view){
     if(__lastAdminView==='newcustomer' && view!=='newcustomer' && __formDirty){
-      if(!confirm('Du hast ungespeicherte Eingaben im Kundenformular.\nAnsicht wirklich wechseln? Die Eingaben gehen verloren.')) return;
+      appConfirm('Du hast ungespeicherte Eingaben im Kundenformular.\nAnsicht wirklich wechseln? Die Eingaben gehen verloren.',
+        ()=>{ __formDirty=false; window.renderAdmin(view); },
+        {title:'Ungespeicherte Eingaben', okLabel:'Verwerfen & wechseln', danger:true});
+      return;
     }
     __formDirty=false;
     const r=orig(view);
-    // Globale Suche nur für Büro-Rollen einblenden
+    // Globale Suche nur für Büro-Rollen einblenden (Desktop-Feld + Mobil-Lupe)
     const gs=document.getElementById('gsearchWrap');
     if(gs) gs.style.display=isOfficeRole()?'block':'none';
+    const gm=document.getElementById('gsearchMobileBtn');
+    if(gm) gm.classList.toggle('allowed', isOfficeRole());
     return r;
   };
   // Speichern gilt nicht als "Verlassen ohne Speichern"
@@ -7443,8 +7766,27 @@ function custAddressString(c){
   return '';
 }
 const MAP_FARBEN=['#0f5b63','#c0392b','#6d28d9','#1d6f42','#b7791f','#1e5aa8','#a83279','#4a5568','#d35400','#2b6cb0'];
+function staffAddressString(s){
+  const a=(s.intern&&s.intern.address||'').trim();
+  return a?a+', Deutschland':'';
+}
+var __mapShow={kunden:true, ma:true}; // Umschalter Kunden/Mitarbeiter
+function mapToggle(was){
+  __mapShow[was]=!__mapShow[was];
+  const chip=document.getElementById('mapChip_'+was);
+  if(chip) chip.classList.toggle('on',__mapShow[was]);
+  if(!__tourMap) return;
+  const layer=was==='kunden'?__mapCustLayer:__mapStaffLayer;
+  if(!layer) return;
+  if(__mapShow[was]) layer.addTo(__tourMap); else __tourMap.removeLayer(layer);
+}
+var __mapCustLayer=null, __mapStaffLayer=null;
 function renderKarteView(container){
-  container.innerHTML=head('Karte','Aktive Kunden auf der Karte – Farbe je Gebiet. Adressen werden einmalig ermittelt und im Browser gespeichert.')+
+  container.innerHTML=head('Karte & Tourenplanung','Aktive Kunden (Punkte, Farbe je Gebiet) und Mitarbeiter (eckige Marker mit Kürzel). Adressen werden einmalig ermittelt und im Browser gespeichert.')+
+    '<div style="display:flex;gap:8px;margin-bottom:10px">'+
+      '<span class="chip '+(__mapShow.kunden?'on':'')+'" id="mapChip_kunden" onclick="mapToggle(\'kunden\')">Kunden</span>'+
+      '<span class="chip '+(__mapShow.ma?'on':'')+'" id="mapChip_ma" onclick="mapToggle(\'ma\')">Mitarbeiter</span>'+
+    '</div>'+
     '<div class="map-legend" id="mapLegend"></div>'+
     '<div id="mapProgress" style="font-size:13px;color:var(--muted);margin-bottom:10px"></div>'+
     '<div id="tourMap"></div>';
@@ -7459,14 +7801,17 @@ async function initTourMap(){
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     maxZoom:19, attribution:'© OpenStreetMap'
   }).addTo(__tourMap);
+  __mapCustLayer=L.layerGroup(); if(__mapShow.kunden) __mapCustLayer.addTo(__tourMap);
+  __mapStaffLayer=L.layerGroup(); if(__mapShow.ma) __mapStaffLayer.addTo(__tourMap);
 
   const active=customers.filter(function(c){ return c.status==='aktiv'&&custAddressString(c); });
+  const team=staff.filter(function(s){ return s.status!=='inaktiv'&&staffAddressString(s); });
   const areas=Array.from(new Set(active.map(function(c){ return c.area||'Ohne Gebiet'; })));
   const colorOf=function(area){ return MAP_FARBEN[Math.max(0,areas.indexOf(area))%MAP_FARBEN.length]; };
   const legend=document.getElementById('mapLegend');
   if(legend) legend.innerHTML=areas.map(function(a){
     return '<span class="ml-item"><span class="ml-dot" style="background:'+colorOf(a)+'"></span>'+a+'</span>';
-  }).join('');
+  }).join('')+'<span class="ml-item"><span class="ml-dot" style="background:#1f1633;border-radius:3px"></span>Mitarbeiter (Wohnort)</span>';
 
   const cache=geoCacheGet();
   const bounds=[]; let done=0, missing=0;
@@ -7475,41 +7820,56 @@ async function initTourMap(){
   function addMarker(c,pos){
     const col=colorOf(c.area||'Ohne Gebiet');
     L.circleMarker([pos.lat,pos.lon],{radius:9,color:col,fillColor:col,fillOpacity:.85,weight:2})
-      .addTo(__tourMap)
+      .addTo(__mapCustLayer)
       .bindPopup('<b>'+fullName(c)+'</b><br>'+custAddressString(c).replace(', Deutschland','')+
         (c.need&&c.need.length?'<br><span style="color:#667">'+c.need.join(', ')+'</span>':'')+
         '<br><button class="btn-ghost btn-sm" style="margin-top:6px" onclick="editCustomer('+c.id+')">Profil öffnen</button>');
     bounds.push([pos.lat,pos.lon]);
   }
+  function addStaffMarker(s,pos){
+    // Eckiger Marker mit Initialen in der Mitarbeiterfarbe – klar von den
+    // runden Kundenpunkten unterscheidbar
+    const col=s.color||'#1f1633';
+    const icon=L.divIcon({className:'', html:'<div style="width:26px;height:26px;border-radius:7px;background:'+col+';color:#fff;display:grid;place-items:center;font:700 11px sans-serif;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4)">'+initials(s)+'</div>', iconSize:[26,26], iconAnchor:[13,13]});
+    L.marker([pos.lat,pos.lon],{icon:icon})
+      .addTo(__mapStaffLayer)
+      .bindPopup('<b>'+fullName(s)+'</b> <span style="color:#667">(Mitarbeiter)</span><br>'+
+        staffAddressString(s).replace(', Deutschland','')+
+        (s.area?'<br><span style="color:#667">Gebiet: '+s.area+'</span>':'')+
+        (s.skills&&s.skills.length?'<br><span style="color:#667">'+s.skills.join(', ')+'</span>':''));
+    bounds.push([pos.lat,pos.lon]);
+  }
+
+  // Gemeinsame Liste: Kunden + Mitarbeiter über denselben Adress-Cache
+  const items=active.map(function(c){ return {typ:'kunde', obj:c, addr:custAddressString(c)}; })
+    .concat(team.map(function(s){ return {typ:'ma', obj:s, addr:staffAddressString(s)}; }));
 
   // 1. Durchgang: alles aus dem Zwischenspeicher sofort anzeigen
   const todo=[];
-  for(const c of active){
-    const addr=custAddressString(c);
-    if(cache[addr]===null){ missing++; continue; }        // früher nicht gefunden
-    if(cache[addr]){ addMarker(c,cache[addr]); done++; }
-    else todo.push(c);
+  for(const it of items){
+    if(cache[it.addr]===null){ missing++; continue; }     // früher nicht gefunden
+    if(cache[it.addr]){ (it.typ==='kunde'?addMarker:addStaffMarker)(it.obj,cache[it.addr]); done++; }
+    else todo.push(it);
   }
   if(bounds.length) __tourMap.fitBounds(bounds,{padding:[30,30]});
 
   // 2. Durchgang: fehlende Adressen nacheinander ermitteln (Nominatim,
   //    max. ~1 Anfrage/Sekunde laut Nutzungsbedingungen)
-  for(const c of todo){
+  for(const it of todo){
     if(__geoAbort||__lastAdminView!=='karte') return; // Ansicht verlassen -> stoppen
-    const addr=custAddressString(c);
-    if(prog) prog.textContent='Ermittle Adressen … ('+(done+1)+' von '+active.length+') – nur beim ersten Mal nötig';
+    if(prog) prog.textContent='Ermittle Adressen … ('+(done+1)+' von '+items.length+') – nur beim ersten Mal nötig';
     try{
-      const res=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&q='+encodeURIComponent(addr));
+      const res=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&q='+encodeURIComponent(it.addr));
       const js=await res.json();
-      if(js&&js[0]){ cache[addr]={lat:+js[0].lat,lon:+js[0].lon}; addMarker(c,cache[addr]); }
-      else { cache[addr]=null; missing++; }
+      if(js&&js[0]){ cache[it.addr]={lat:+js[0].lat,lon:+js[0].lon}; (it.typ==='kunde'?addMarker:addStaffMarker)(it.obj,cache[it.addr]); }
+      else { cache[it.addr]=null; missing++; }
       geoCacheSet(cache);
     }catch(e){ /* Netzfehler: beim nächsten Öffnen erneut versuchen */ }
     done++;
     await new Promise(function(r){ setTimeout(r,1100); });
     if(bounds.length) __tourMap.fitBounds(bounds,{padding:[30,30]});
   }
-  if(prog) prog.textContent=bounds.length+' Kunden auf der Karte'+(missing?' · '+missing+' Adresse(n) nicht gefunden (bitte Schreibweise prüfen)':'');
+  if(prog) prog.textContent=active.length+' Kunden und '+team.length+' Mitarbeiter verarbeitet'+(missing?' · '+missing+' Adresse(n) nicht gefunden (bitte Schreibweise prüfen)':'');
 }
 </script>
 
@@ -8078,17 +8438,18 @@ function nxTwoOpt(order,pts){ // Start (Index 0) bleibt fix
 /* Optimierte Reihenfolge in die echten Termine zurückschreiben (mit Bestätigung) */
 function nxTourApply(key){
   const plan=window.__nxTourPlan&&window.__nxTourPlan[key];
-  if(!plan||!plan.length){ toast('Bitte zuerst „Route optimieren" ausführen',true); return; }
+  if(!plan||!plan.length){ toastHint('Bitte zuerst „Route optimieren" ausführen'); return; }
   const name=key==='x'?'Ohne Zuteilung':nxSafe(function(){return staffName(+key);},'Mitarbeiterin');
-  if(!confirm('Die vorgeschlagenen Uhrzeiten für '+plan.length+' Termin(e) von '+name+' übernehmen?\n\nDie bisherigen Zeiten werden überschrieben – bitte die Kunden über die neuen Zeiten informieren.')) return;
-  let n=0;
-  plan.forEach(function(p){
-    const a=(appointments||[]).find(function(x){return x.id===p.id;});
-    if(a&&a.time!==p.zeit){ a.time=p.zeit; n++; nxSafe(function(){ if(CLOUD) cloudUpdate('termine',a.id,apptToRow(a)); }); }
-  });
-  nxSafe(function(){ logActivity('NEXUS-Tour übernommen: '+name+', '+n+' Terminzeit(en) angepasst'); });
-  toast(n?('✓ '+n+' Terminzeit(en) aktualisiert – Reihenfolge ist jetzt die optimierte Route'):'Alle Zeiten waren bereits optimal');
-  nxTourCalc();
+  appConfirm('Die vorgeschlagenen Uhrzeiten für '+plan.length+' Termin(e) von '+name+' übernehmen?\n\nDie bisherigen Zeiten werden überschrieben – bitte die Kunden über die neuen Zeiten informieren.', function(){
+    let n=0;
+    plan.forEach(function(p){
+      const a=(appointments||[]).find(function(x){return x.id===p.id;});
+      if(a&&a.time!==p.zeit){ a.time=p.zeit; n++; nxSafe(function(){ if(CLOUD) cloudUpdate('termine',a.id,apptToRow(a)); }); }
+    });
+    nxSafe(function(){ logActivity('NEXUS-Tour übernommen: '+name+', '+n+' Terminzeit(en) angepasst'); });
+    toast(n?('✓ '+n+' Terminzeit(en) aktualisiert – Reihenfolge ist jetzt die optimierte Route'):'Alle Zeiten waren bereits optimal');
+    nxTourCalc();
+  }, {title:'Tourenplan übernehmen', okLabel:'Zeiten übernehmen'});
 }
 var __nxTourMapObj=null, __nxTourLayer=null, __nxTourBusy=false;
 async function nxTourCalc(){
@@ -8324,7 +8685,7 @@ async function nxRenderBriefAbo(){
 async function nxBriefAboToggle(){
   if(typeof CLOUD==='undefined'||!CLOUD||!sb){ toast('Keine Datenbank-Verbindung',true); return; }
   const em=((document.getElementById('nxAboMail')||{}).value||'').trim().toLowerCase();
-  if(!nxSafe(function(){return isValidEmail(em);},false)){ toast('Bitte gültige E-Mail eingeben',true); return; }
+  if(!nxSafe(function(){return isValidEmail(em);},false)){ toastHint('Bitte gültige E-Mail eingeben'); return; }
   try{
     const {data}=await sb.from('briefing_abo').select('id').eq('email',em).maybeSingle();
     if(data){ await sb.from('briefing_abo').delete().eq('id',data.id); toast('Briefing-Abo für '+em+' beendet'); }
@@ -8410,7 +8771,7 @@ if('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged=function(
   .btn-ghost{background:var(--petrol-soft);border-color:transparent;color:var(--petrol-dark)}
   .btn-ghost:hover{border-color:transparent;filter:brightness(.96)}
   /* Eingabefelder: weich, tonal, große Radien */
-  .field input,.content-form input,.content-form select,.content-form textarea{border-radius:16px;background:#fdfcff}
+  .field input,.content-form input,.content-form select,.content-form textarea,.modal-body input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),.modal-body select,.modal-body textarea{border-radius:16px;background:#fdfcff}
   .field input{border-radius:18px}
   .search-input,.gsearch input{border-radius:999px}
   .role-toggle{border-radius:999px;padding:6px}
@@ -8493,6 +8854,81 @@ if('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged=function(
   .v4-shot-rows input,.v4-shot-rows select{padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:13px}
   .v4-status{margin-top:12px;font-size:13.5px;color:var(--muted)}
   .v4-status.err{color:var(--danger)}
+
+  /* ---------- Stundenzettel: Aktionsspalte immer sichtbar ----------
+     Die Tabelle ist breit und scrollt auf schmalen Fenstern horizontal.
+     Die letzte Spalte (Freigeben/Ablehnen) klebt deshalb am rechten Rand. */
+  td.ts-act,th.ts-act{position:sticky;right:0;background:var(--card);z-index:2;min-width:132px}
+  td.ts-act{box-shadow:-10px 0 12px -10px rgba(0,0,0,.22)}
+  .ts-actions{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+  .ts-actions button{width:100%}
+
+  /* ---------- App-Einführung (geführte Tour, Mitarbeiter) ---------- */
+  #v4TourCard{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1500;width:min(520px,94vw);background:var(--card);border:1px solid var(--line);border-radius:26px;box-shadow:0 18px 50px rgba(0,0,0,.30);padding:18px 22px}
+  #v4TourCard h4{font-size:16px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  #v4TourCard p{font-size:14px;color:var(--muted);line-height:1.55}
+  .v4-tour-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;flex-wrap:wrap}
+  .v4-tour-dots{display:flex;gap:5px}
+  .v4-tour-dots span{width:8px;height:8px;border-radius:50%;background:var(--line)}
+  .v4-tour-dots span.on{background:var(--petrol)}
+  .v4-tour-btns{display:flex;gap:8px}
+
+  /* ================= AWARD-UX-SCHICHT (Iteration 1) =================
+     Moderne, tonale Eingabefelder + Micro-Interactions. Rein additiv –
+     keine Logik-Änderungen. */
+
+  /* --- Eingabefelder: M3 "Filled" – tonal, weich, klare Zustände --- */
+  .content-form input,.content-form select,.content-form textarea,
+  .modal-body input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]),.modal-body select,.modal-body textarea,
+  .field input,.form input,.form select,.form textarea{
+    border:1.5px solid transparent;background:var(--bg);
+    transition:border-color .18s,box-shadow .18s,background .18s}
+  .content-form input:hover,.content-form select:hover,.content-form textarea:hover,
+  .modal-body input:hover,.modal-body select:hover,.modal-body textarea:hover,
+  .field input:hover{border-color:var(--line)}
+  .content-form input:focus,.content-form select:focus,.content-form textarea:focus,
+  .modal-body input:focus,.modal-body select:focus,.modal-body textarea:focus,
+  .field input:focus{outline:none;background:#fff;border-color:var(--petrol);box-shadow:0 0 0 4px var(--petrol-soft)}
+  ::placeholder{color:#a89fc0;opacity:1}
+  /* Eigener Auswahl-Pfeil statt Browser-Standard */
+  .content-form select,.modal-body select{-webkit-appearance:none;appearance:none;
+    background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="8" viewBox="0 0 12 8"><path d="M1 1l5 5 5-5" fill="none" stroke="%236b6480" stroke-width="2" stroke-linecap="round"/></svg>');
+    background-repeat:no-repeat;background-position:right 14px center;padding-right:38px}
+  /* Live-Fehlerzustand: erst NACH Nutzereingabe rot (nicht beim Öffnen) */
+  .content-form input:user-invalid,.modal-body input:user-invalid,.field input:user-invalid{border-color:var(--danger);background:#fff6f7;box-shadow:none}
+  /* Datum/Zeit-Felder gleiche Höhe wie Text */
+  input[type=date],input[type=time]{min-height:44px}
+
+  /* --- Ripple auf allen Knöpfen (Material-Feeling) --- */
+  button{position:relative;overflow:hidden}
+  .v4-ripple{position:absolute;border-radius:50%;background:currentColor;opacity:.16;transform:scale(0);animation:v4rip .55s ease-out forwards;pointer-events:none}
+  @keyframes v4rip{to{transform:scale(1);opacity:0}}
+
+  /* --- Sanfter Seitenwechsel: Inhalte gleiten gestaffelt herein --- */
+  @keyframes v4in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .content.view-enter>*{animation:v4in .38s cubic-bezier(.2,.7,.2,1) both}
+  .content.view-enter>*:nth-child(2){animation-delay:.05s}
+  .content.view-enter>*:nth-child(3){animation-delay:.10s}
+  .content.view-enter>*:nth-child(4){animation-delay:.15s}
+  .content.view-enter>*:nth-child(n+5){animation-delay:.19s}
+
+  /* --- Spotlight: Karten leuchten dezent unter dem Mauszeiger --- */
+  .stat,.panel,.job{--mx:50%;--my:50%;position:relative}
+  @supports (background: color-mix(in srgb, red 10%, white)) {
+    .stat::after,.panel::after,.job::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .3s;
+      background:radial-gradient(260px circle at var(--mx) var(--my), color-mix(in srgb, var(--petrol) 8%, transparent), transparent 70%)}
+    .stat:hover::after,.panel:hover::after,.job:hover::after{opacity:1}
+  }
+
+  /* --- Seitenblättern großer Listen --- */
+  .pager{display:flex;align-items:center;justify-content:center;gap:14px;padding:14px 0 4px}
+  .pager span{font-size:13px;color:var(--muted);font-weight:600}
+  .pager button[disabled]{opacity:.4;cursor:default}
+
+  @media (prefers-reduced-motion: reduce){
+    .content.view-enter>*{animation:none}
+    .v4-ripple{animation:none;display:none}
+  }
 </style>
 <script>
 (function(){
@@ -8611,7 +9047,7 @@ function v4ApplyTopbarAvatar(m){
 }
 function v4UploadAvatar(input){
   const f=input&&input.files&&input.files[0]; if(!f) return;
-  if((f.type||'').indexOf('image/')!==0){ toast('Bitte eine Bilddatei wählen',true); return; }
+  if((f.type||'').indexOf('image/')!==0){ toastHint('Bitte eine Bilddatei wählen'); return; }
   if(f.size>8*1024*1024){ toast('Bild zu groß (max. 8 MB)',true); return; }
   const url=URL.createObjectURL(f);
   const img=new Image();
@@ -9054,7 +9490,277 @@ function v4CreateShotAppts(){
   if(office) renderAdmin('calendar'); else renderStaff('calendar');
 }
 
+/* ============ 5b) BACKUP ============
+   Manuell: JSON-Datei mit allen geladenen Daten herunterladen.
+   Automatik: Edge Function "backup" (alle 12 h via pg_cron, siehe
+   BACKUP_CRON.sql) – hier nur der manuelle Test-Aufruf. */
+function v4BackupDownload(){
+  try{
+    const dump={
+      erstellt:new Date().toISOString(),
+      hinweis:'Daily-Do-Sicherung (lokal geladene Daten des aktiven Standorts)',
+      standortId:(typeof currentStandortId!=='undefined')?currentStandortId:null,
+      standorte:v4Safe(function(){return standorte;},[]),
+      kunden:v4Safe(function(){return customers;},[]),
+      mitarbeiter:v4Safe(function(){return staff;},[]),
+      auftraege:v4Safe(function(){return jobs;},[]),
+      termine:v4Safe(function(){return appointments;},[]),
+      stundenzettel:v4Safe(function(){return timesheets;},[]),
+      rechnungen:v4Safe(function(){return rechnungen;},[]),
+      kostentraeger:v4Safe(function(){return kostentraeger;},[]),
+      aufgaben:v4Safe(function(){return aufgaben;},[]),
+      kommunikation:v4Safe(function(){return kommunikationen;},[]),
+      bewerbungen:v4Safe(function(){return applications;},[])
+    };
+    const stamp=new Date();
+    const name='dailydo-backup-'+stamp.getFullYear()+'-'+String(stamp.getMonth()+1).padStart(2,'0')+'-'+String(stamp.getDate()).padStart(2,'0')+'_'+String(stamp.getHours()).padStart(2,'0')+String(stamp.getMinutes()).padStart(2,'0')+'.json';
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(dump)],{type:'application/json'}));
+    a.download=name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },4000);
+    try{ localStorage.setItem('dailydo-backup-last',new Date().toLocaleString('de-DE')); }catch(e){}
+    toast('Backup-Datei erstellt: '+name);
+    logActivity('Backup heruntergeladen');
+  }catch(e){ toast('Backup fehlgeschlagen: '+(e&&e.message||e),true); }
+}
+async function v4BackupDriveNow(btn){
+  if(!v4HasCloud()){ toast('Keine Cloud-Verbindung',true); return; }
+  const st=document.getElementById('bkDriveStatus');
+  if(btn){ btn.disabled=true; }
+  if(st) st.textContent='Backup läuft – Tabellen werden exportiert und zu Google Drive hochgeladen …';
+  try{
+    const {data:sd}=await sb.auth.getSession();
+    const token=sd&&sd.session&&sd.session.access_token;
+    if(!token) throw new Error('Keine gültige Sitzung');
+    const res=await fetch(SUPABASE_URL+'/functions/v1/backup',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body:JSON.stringify({quelle:'manuell'})
+    });
+    const data=await res.json().catch(function(){ return {}; });
+    if(!res.ok||data.error) throw new Error(data.error||('HTTP '+res.status+' – ist die Edge Function „backup" deployt und sind die Google-Secrets gesetzt? Siehe ANLEITUNG_BACKUP.md'));
+    if(st) st.innerHTML='✅ Backup in Google Drive gespeichert: <b>'+v4Esc(data.datei||'')+'</b>'+(data.tabellen?' ('+data.tabellen+' Tabellen, '+(data.groesseKb||'?')+' KB)':'');
+    toast('Backup in Google Drive gespeichert');
+    logActivity('Drive-Backup manuell ausgelöst');
+  }catch(e){
+    if(st){ st.innerHTML='<span style="color:var(--danger)">Fehler: '+v4Esc(e&&e.message||e)+'</span>'; }
+  }finally{
+    if(btn){ btn.disabled=false; }
+  }
+}
+
+/* ============ 6) WARNUNG BEI UNGESPEICHERTEN EINGABEN ============
+   X-Knopf und Klick auf den dunklen Hintergrund fragen nach, wenn im
+   Dialog seit dem Öffnen etwas eingegeben/geändert wurde. Programmatische
+   closeModal()-Aufrufe (z. B. nach dem Speichern) bleiben unberührt. */
+let __v4ModalSnap=null;
+function v4ModalSnapshot(){
+  try{
+    const els=document.querySelectorAll('#modalBody input, #modalBody textarea, #modalBody select');
+    return Array.prototype.map.call(els,function(e){
+      return (e.type==='checkbox'||e.type==='radio')?(e.checked?'1':'0'):String(e.value);
+    }).join('');
+  }catch(e){ return ''; }
+}
+(function(){
+  const origOpen=window.openModal, origClose=window.closeModal;
+  if(typeof origOpen==='function') window.openModal=function(){
+    const r=origOpen.apply(this,arguments);
+    // kurz warten, bis der Dialog fertig aufgebaut ist, dann Stand merken
+    setTimeout(function(){ __v4ModalSnap=v4ModalSnapshot(); },60);
+    return r;
+  };
+  if(typeof origClose==='function') window.closeModal=function(){
+    __v4ModalSnap=null;
+    return origClose.apply(this,arguments);
+  };
+})();
+function v4CloseGuard(){
+  if(__v4ModalSnap!==null && v4ModalSnapshot()!==__v4ModalSnap){
+    appConfirm('Du hast Eingaben gemacht, die noch nicht gespeichert sind.\nWirklich schließen? Die Eingaben werden verworfen.',
+      ()=>closeModal(), {title:'Ungespeicherte Eingaben', okLabel:'Verwerfen & schließen', danger:true});
+    return;
+  }
+  closeModal();
+}
+/* Escape schließt das offene Modal (über den Wächter für ungespeicherte Eingaben) */
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Escape') return;
+  const ac=document.getElementById('acBg');
+  if(ac && ac.classList.contains('show')) return; // Bestätigungsdialog hat Vorrang
+  const mb=document.getElementById('modalBg');
+  if(mb && mb.classList.contains('show')) v4CloseGuard();
+});
+
+/* ============ 7) APP-EINFÜHRUNG (Mitarbeiter, mit Sprachausgabe) ============
+   Geführte Tour im Stil einer gesprochenen Produkt-Demo: zeigt nacheinander
+   die Bereiche der Mitarbeiter-App und liest den Text vor (Web Speech API). */
+const V4_TOUR=[
+  {view:'dashboard', icon:'👋', title:'Willkommen bei Daily Do!',
+   text:'Das ist dein Dashboard. Hier siehst du auf einen Blick deine bestätigten Stunden, deinen voraussichtlichen Verdienst und wie viele Tage dir bei der 70-Tage-Regel noch bleiben.'},
+  {view:'board', icon:'◎', title:'Die Auftragsbörse',
+   text:'Hier erscheinen neue Kunden in deiner Nähe. Du siehst eine Zusammenfassung mit Gebiet und Aufgaben, aber noch ohne Namen und Adresse. Wer zuerst verbindlich annimmt, bekommt den Auftrag.'},
+  {view:'mine', icon:'✓', title:'Meine Kunden',
+   text:'Sobald du einen Auftrag angenommen hast, findest du hier alle Kontaktdaten. Von hier aus vereinbarst du auch direkt Termine mit deinen Kunden.'},
+  {view:'aufgaben', icon:'☑', title:'Meine Aufgaben',
+   text:'Das Büro kann dir Aufgaben zuweisen, zum Beispiel eine Erstberatung bei einem neuen Kunden. Markiere den Fortschritt, sobald du daran arbeitest oder fertig bist.'},
+  {view:'calendar', icon:'▦', title:'Meine Termine',
+   text:'Dein Kalender mit allen Einsätzen in Monats-, Wochen- und Tagesansicht. Du kannst Termine sogar aus einem Screenshot eines anderen Kalenders importieren.'},
+  {view:'hours', icon:'⏱', title:'Stundenzettel',
+   text:'Nach jedem Einsatz bestätigst du die Zeiten und der Kunde unterschreibt direkt auf deinem Gerät. Daraus entsteht automatisch dein Stundenzettel, den das Büro prüft und freigibt.'},
+  {view:'payroll', icon:'€', title:'Lohnabrechnung',
+   text:'Sobald deine Abrechnung vom Büro freigegeben wurde, kannst du sie hier jederzeit ansehen und herunterladen.'},
+  {view:'schulung', icon:'🎓', title:'Schulungen',
+   text:'Kurze Schulungen direkt in der App. Bitte schließe alle drei ab, denn erst dann kannst du Aufträge annehmen.'},
+  {view:'profile', icon:'☺', title:'Mein Profil',
+   text:'Hier pflegst du deinen Status, deine Arbeitstage und dein Profilbild. Und unter Design und Farben machst du die App so bunt, wie du magst. Viel Spaß mit Daily Do!'}
+];
+let __v4TourStep=-1;
+function v4TourSpeak(text){
+  try{
+    if(!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang='de-DE'; u.rate=1.02;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+function startAppTour(){
+  if(currentRole!=='staff'){ toast('Die Einführung zeigt den Mitarbeiter-Bereich (bitte als Mitarbeiter anmelden)',true); return; }
+  try{ localStorage.setItem('dailydo-tour-gesehen','1'); }catch(e){}
+  closeModal();
+  __v4TourStep=0; v4TourShow();
+}
+function v4TourShow(){
+  const st=V4_TOUR[__v4TourStep]; if(!st){ endAppTour(); return; }
+  v4Safe(function(){ renderStaff(st.view); });
+  let card=document.getElementById('v4TourCard');
+  if(!card){ card=document.createElement('div'); card.id='v4TourCard'; document.body.appendChild(card); }
+  card.innerHTML=
+    '<h4><span style="font-size:20px">'+st.icon+'</span>'+v4Esc(st.title)+
+      '<span style="margin-left:auto;font-size:12px;color:var(--muted);font-weight:600">Schritt '+(__v4TourStep+1)+' von '+V4_TOUR.length+'</span></h4>'+
+    '<p>'+v4Esc(st.text)+'</p>'+
+    '<div class="v4-tour-foot">'+
+      '<div class="v4-tour-dots">'+V4_TOUR.map(function(_,i){ return '<span class="'+(i===__v4TourStep?'on':'')+'"></span>'; }).join('')+'</div>'+
+      '<div class="v4-tour-btns">'+
+        '<button class="btn-ghost btn-sm" onclick="endAppTour()">Beenden</button>'+
+        (__v4TourStep>0?'<button class="btn-ghost btn-sm" onclick="v4TourNav(-1)">‹ Zurück</button>':'')+
+        '<button class="btn-primary btn-sm" style="width:auto" onclick="v4TourNav(1)">'+(__v4TourStep<V4_TOUR.length-1?'Weiter ›':'Fertig ✓')+'</button>'+
+      '</div>'+
+    '</div>';
+  v4TourSpeak(st.title+'. '+st.text);
+}
+function v4TourNav(delta){
+  if(__v4TourStep<0) return; // Tour ist beendet – nicht neu starten
+  __v4TourStep+=delta;
+  if(__v4TourStep>=V4_TOUR.length){ endAppTour(); return; }
+  if(__v4TourStep<0) __v4TourStep=0;
+  v4TourShow();
+}
+function endAppTour(){
+  __v4TourStep=-1;
+  try{ window.speechSynthesis&&window.speechSynthesis.cancel(); }catch(e){}
+  const card=document.getElementById('v4TourCard'); if(card) card.remove();
+  v4Safe(function(){ renderStaff('dashboard'); });
+}
+/* Beim ersten Mitarbeiter-Login einmalig anbieten */
+(function(){
+  const origStaff=window.renderStaff;
+  if(typeof origStaff!=='function') return;
+  let offered=false;
+  window.renderStaff=function(){
+    const r=origStaff.apply(this,arguments);
+    if(!offered){
+      offered=true;
+      let gesehen=null; try{ gesehen=localStorage.getItem('dailydo-tour-gesehen'); }catch(e){}
+      if(!gesehen){
+        setTimeout(function(){ v4Safe(function(){
+          document.getElementById('modalTitle').textContent='Neu hier? 🎬';
+          document.getElementById('modalBody').innerHTML='<p style="font-size:14.5px;line-height:1.6">Möchtest du eine kurze <b>Einführung in die App</b>? Wir zeigen dir Schritt für Schritt alle Bereiche – mit gesprochener Erklärung, wie in einer Produkt-Demo. Dauert etwa zwei Minuten.</p>';
+          document.getElementById('modalFoot').innerHTML=
+            '<button class="btn-ghost" onclick="closeModal();try{localStorage.setItem(\'dailydo-tour-gesehen\',\'1\')}catch(e){}">Später</button>'+
+            '<button class="btn-primary" style="width:auto;padding:11px 22px" onclick="startAppTour()">▶ Einführung starten</button>';
+          openModal();
+        }); },600);
+      }
+    }
+    return r;
+  };
+})();
+
+/* ============ 8) AWARD-UX: MICRO-INTERACTIONS ============ */
+/* Ripple-Effekt auf allen Knöpfen (ein Listener für die ganze App) */
+document.addEventListener('pointerdown',function(e){
+  const b=e.target&&e.target.closest&&e.target.closest('button');
+  if(!b||b.disabled) return;
+  try{
+    const r=b.getBoundingClientRect();
+    const d=Math.max(r.width,r.height)*2;
+    const s=document.createElement('span');
+    s.className='v4-ripple';
+    s.style.width=s.style.height=d+'px';
+    s.style.left=(e.clientX-r.left-d/2)+'px';
+    s.style.top=(e.clientY-r.top-d/2)+'px';
+    b.appendChild(s);
+    setTimeout(function(){ s.remove(); },600);
+  }catch(err){}
+},{passive:true});
+
+/* Spotlight: Position des Mauszeigers an Karten weitergeben */
+(function(){
+  let raf=null;
+  document.addEventListener('pointermove',function(e){
+    if(raf) return;
+    raf=requestAnimationFrame(function(){
+      raf=null;
+      const card=e.target&&e.target.closest&&e.target.closest('.stat,.panel,.job');
+      if(!card) return;
+      const r=card.getBoundingClientRect();
+      card.style.setProperty('--mx',(e.clientX-r.left)+'px');
+      card.style.setProperty('--my',(e.clientY-r.top)+'px');
+    });
+  },{passive:true});
+})();
+
+/* Sanfter Seitenwechsel: bei jedem Ansichts-Render neu animieren */
+(function(){
+  function mark(){
+    const c=document.getElementById('content'); if(!c) return;
+    c.classList.remove('view-enter');
+    void c.offsetWidth; // Reflow erzwingen, damit die Animation neu startet
+    c.classList.add('view-enter');
+  }
+  const oa=window.renderAdmin;
+  if(typeof oa==='function') window.renderAdmin=function(){ const r=oa.apply(this,arguments); v4Safe(mark); return r; };
+  const os=window.renderStaff;
+  if(typeof os==='function') window.renderStaff=function(){ const r=os.apply(this,arguments); v4Safe(mark); return r; };
+})();
+
+/* Dialoge: erstes Eingabefeld automatisch fokussieren (nur Desktop –
+   auf dem Handy würde sonst ungefragt die Tastatur aufklappen) */
+(function(){
+  const oo=window.openModal;
+  if(typeof oo!=='function') return;
+  window.openModal=function(){
+    const r=oo.apply(this,arguments);
+    if(window.innerWidth>900){
+      setTimeout(function(){
+        try{
+          if(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#modalBody')) return;
+          const el=document.querySelector('#modalBody input:not([type=hidden]):not([type=file]):not([disabled]), #modalBody textarea, #modalBody select');
+          if(el) el.focus();
+        }catch(e){}
+      },120);
+    }
+    return r;
+  };
+})();
+
 /* ---- Global verfügbar machen (für onclick-Attribute) ---- */
+window.v4CloseGuard=v4CloseGuard;
+window.v4BackupDownload=v4BackupDownload; window.v4BackupDriveNow=v4BackupDriveNow;
+window.startAppTour=startAppTour; window.v4TourNav=v4TourNav; window.endAppTour=endAppTour;
 window.openDesignSettings=openDesignSettings; window.v4PickPreset=v4PickPreset;
 window.v4ColorInput=v4ColorInput; window.v4ResetTheme=v4ResetTheme;
 window.v4AvatarHtml=v4AvatarHtml; window.v4UploadAvatar=v4UploadAvatar;
