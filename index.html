@@ -892,7 +892,8 @@ function standortToRow(s){return {name:s.name,firma:s.firma||null,strasse:s.stra
 function rowToStandort(r){return {id:r.id,name:r.name,firma:r.firma,strasse:r.strasse,plz:r.plz,ort:r.ort,telefon:r.telefon,email:r.email,notizen:r.notizen,
   ikNummer:r.ik_nummer,handelsregister:r.handelsregister,ustId:r.ust_id,geschaeftsfuehrer:r.geschaeftsfuehrer,
   unterschrift:r.unterschrift,
-  anerkennungName:r.anerkennung_name,anerkennungData:r.anerkennung_data,anerkennungDate:r.anerkennung_date
+  anerkennungName:r.anerkennung_name,anerkennungData:r.anerkennung_data,anerkennungDate:r.anerkennung_date,
+  rechnungParams:r.rechnung_params||null
 };}
 function lkToRow(l){return {name:l.name,preis:l.preis,einheit:l.einheit, standort_id:currentStandortId};}
 function rowToLk(r){return {id:r.id,name:r.name,preis:r.preis,einheit:r.einheit};}
@@ -980,7 +981,8 @@ function rowToRechnung(r){return {
   empfaengerName:r.empfaenger_name, empfaengerAdresse:r.empfaenger_adresse, empfaengerEmail:r.empfaenger_email,
   leistungName:r.leistung_name, leistungEinheit:r.leistung_einheit, menge:r.menge,
   datum:r.datum, stunden:r.stunden, preisProStunde:r.preis_pro_stunde, betrag:r.betrag, status:r.status||'offen',
-  lexwareId:r.lexware_id||null
+  lexwareId:r.lexware_id||null,
+  gesperrt:!!r.gesperrt, bezahltAm:r.bezahlt_am||null, korrekturZu:r.korrektur_zu||null
 };}
 function jobToRow(j){return {customer_id:j.customerId,title:j.title,skills:j.skills||[],status:j.status,assigned_to:j.assignedTo,rejected_by:j.rejectedBy||[],commit_deadline:j.commitDeadline?new Date(j.commitDeadline).toISOString():null, standort_id:currentStandortId};}
 function rowToJob(r){return {id:r.id,customerId:r.customer_id,title:r.title,skills:r.skills||[],status:r.status,assignedTo:r.assigned_to,rejectedBy:r.rejected_by||[],commitDeadline:r.commit_deadline?new Date(r.commit_deadline).getTime():null};}
@@ -1762,6 +1764,9 @@ function staffName(id){const s=staff.find(x=>x.id===id);return s?s.first+' '+s.l
 function fullName(o){return cleanInput((o&&o.first||'')+' '+(o&&o.last||''),120);}
 function initials(o){const f=cleanInput(o&&o.first||'',40),l=cleanInput(o&&o.last||'',40);return (f[0]||'')+(l[0]||'');}
 function custById(id){return customers.find(c=>c.id===id);}
+/* Automatische Kundennummer: deterministisch aus der Datenbank-ID abgeleitet –
+   eindeutig, ohne eigene Zähler-Tabelle, auf allen Geräten identisch. */
+function kdNr(c){ const id=+(c&&c.id!=null?c.id:c)||0; return 'KD-'+String(1000+id); }
 function availableForMe(){return jobs.filter(j=>j.status==='available'&&!j.rejectedBy.includes(myId));}
 function freqText(c){return c.freqUnit==='nach Bedarf'?'nach Bedarf':(c.freqNum+'× '+c.freqUnit);}
 
@@ -2226,7 +2231,6 @@ function adminDashboardHTML(open,newApps){
   const neuMonat=customers.filter(c=>String(c.startDatum||'').slice(0,7)===thisMonth).length;
   const verlorenJahr=beendete.filter(c=>!c.endeDatum||String(c.endeDatum).slice(0,4)===thisYear);
   const umsatzProKunde=aktive.length?umsatzMonat/aktive.length:0;
-  const ohneAbtretung=aktive.filter(c=>!(c.abtretung&&c.abtretung.signature));
   const ohneLeistungen=aktive.filter(c=>!(c.leistungen&&c.leistungen.length));
   const ohneKt=aktive.filter(c=>c.insuranceType==='gesetzlich'&&!c.kostentraegerId);
   // §45b-Budget: ungenutztes Potenzial bei Kunden mit gepflegter Budget-Angabe
@@ -2238,9 +2242,6 @@ function adminDashboardHTML(open,newApps){
 
   /* ---- Drilldown-Daten: Klick auf Warnung zeigt NUR die Betroffenen + was zu tun ist ---- */
   window.__warnDrill={
-    abtretung:{title:'Aktive Kunden ohne Abtretungserklärung',
-      hint:'Ohne unterschriebene Abtretungserklärung kann nicht an die Kasse abgerechnet werden. Kundenprofil öffnen → „Abtretung starten" und vom Kunden unterschreiben lassen.',
-      items:ohneAbtretung.map(c=>({id:c.id,name:fullName(c),sub:(c.area||'')+(c.phone&&c.phone!=='—'?' · '+c.phone:'')}))},
     kt:{title:'Gesetzlich Versicherte ohne Kostenträger',
       hint:'Rechnungen können sonst nicht an die Pflegekasse gehen. Kundenprofil öffnen → Abschnitt „Krankenversicherung" → Kostenträger auswählen.',
       items:ohneKt.map(c=>({id:c.id,name:fullName(c),sub:(c.intern&&c.intern.kasse)?('Kasse laut Profil: '+c.intern.kasse):'Kasse unbekannt'}))},
@@ -2277,7 +2278,6 @@ function adminDashboardHTML(open,newApps){
   const warn=[];
   if(ueberf.length) warn.push({tag:'red',t:ueberf.length+' überfällige Rechnung(en) über '+fmtEuro(ueberfSum),s:'älter als 14 Tage – mahnen oder Status pflegen',go:"renderAdmin('rechnungen')"});
   if(readyTs.length) warn.push({tag:'amber',t:fmtEuro(unbilledEur)+' noch nicht abgerechnet',s:readyTs.length+' freigegebene Stundenzettel warten auf Rechnung',go:"renderAdmin('rechnungen')"});
-  if(ohneAbtretung.length) warn.push({tag:'amber',t:ohneAbtretung.length+' aktive Kunden ohne Abtretungserklärung',s:'Klicken zeigt genau diese Kunden + was zu tun ist',go:"showWarnDrill('abtretung')"});
   if(ohneKt.length) warn.push({tag:'amber',t:ohneKt.length+' gesetzlich Versicherte ohne Kostenträger',s:'Klicken zeigt genau diese Kunden + was zu tun ist',go:"showWarnDrill('kt')"});
   if(ohneLeistungen.length) warn.push({tag:'amber',t:ohneLeistungen.length+' aktive Kunden ohne hinterlegte Leistungen',s:'Klicken zeigt genau diese Kunden + was zu tun ist',go:"showWarnDrill('leistungen')"});
   if(open>0) warn.push({tag:'blue',t:open+' unbesetzte Aufträge',s:'jeder unbesetzte Auftrag ist entgangener Umsatz',go:"renderAdmin('jobs')"});
@@ -2747,7 +2747,6 @@ function renderAdmin(view){
     const filtered=customers.filter(c=>{
       if(custFilter==='aktiv'&&c.status!=='aktiv')return false;
       if(custFilter==='pg3'&&!(parseInt(c.pgrad)>=3))return false;
-      if(custFilter==='ohneabtretung'&&c.abtretung)return false;
       if(!q)return true;
       return (fullName(c)+' '+(c.area||'')+' '+(c.city||'')+' '+(c.need||[]).join(' ')).toLowerCase().includes(q);
     });
@@ -2755,7 +2754,7 @@ function renderAdmin(view){
     c.innerHTML=head('Kunden',canCreateCust?'Auf einen Kunden klicken, um Daten anzusehen und zu bearbeiten. Über die Knöpfe rechts erstellst du die Dokumente.':'Übersicht über alle Kund:innen.')+
     '<div class="panel"><div class="panel-head"><h3>Kunden ('+filtered.length+(filtered.length!==customers.length?' von '+customers.length:'')+')</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportKunden()">⬇ CSV</button>'+(canCreateCust?'<button class="btn-ghost btn-sm" onclick="openCsvImport(\'kunden\')">⬆ CSV-Import</button>':'')+(canCreateCust?'<button class="btn-primary btn-sm" style="width:auto" onclick="renderAdmin(\'newcustomer\')">+ Kunde anlegen</button>':'')+'</div></div>'+
     '<div class="list-toolbar"><input class="search-input" id="custSearchInput" placeholder="🔍 Kunde suchen (Name, Gebiet, Bedarf)…" value="'+(custSearch||'').replace(/"/g,'&quot;')+'" oninput="custSearch=this.value;custPage=0;renderAdmin(\'customers\');setTimeout(()=>{const e=document.getElementById(\'custSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
-      '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['pg3','Pflegegrad 3+'],['ohneabtretung','Ohne Abtretung']].map(([v,l])=>'<span class="chip '+(custFilter===v?'on':'')+'" onclick="custFilter=\''+v+'\';custPage=0;renderAdmin(\'customers\')">'+l+'</span>').join('')+'</div>'+
+      '<div class="filter-chips">'+[['alle','Alle'],['aktiv','Aktiv'],['pg3','Pflegegrad 3+']].map(([v,l])=>'<span class="chip '+(custFilter===v?'on':'')+'" onclick="custFilter=\''+v+'\';custPage=0;renderAdmin(\'customers\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
     '<div class="panel-body" style="padding-top:8px"><table>'+
       '<thead><tr>'+
@@ -2768,13 +2767,12 @@ function renderAdmin(view){
       (filtered.length?pageSlice(sortRows(filtered,custSort,{
         name:c=>fullName(c).toLowerCase(), area:c=>(c.area||'').toLowerCase(), status:c=>c.status||''
       }),custPage).map(c=>'<tr>'+
-        '<td class="clickable" onclick="editCustomer('+c.id+')"><b>'+fullName(c)+'</b></td>'+
+        '<td class="clickable" onclick="editCustomer('+c.id+')"><b>'+fullName(c)+'</b><div style="font-size:11.5px;color:var(--muted)">'+kdNr(c)+'</div></td>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')">'+c.area+'</td>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')">'+c.need.join(', ')+'</td>'+
         '<td>'+(c.status==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag grey">'+c.status+'</span>')+'</td>'+
         '<td style="text-align:right">'+rowMenu([
           ['Öffnen / Bearbeiten','editCustomer('+c.id+')'],
-          ['Abtretung erstellen','startAbtretung('+c.id+')'],
           ['Leistungsnachweis','startLeistungsnachweis('+c.id+')']
         ].concat(canCreateCust?[['SEP',''],['Löschen','deleteCustomer('+c.id+')','danger']]:[]))+'</td>'+
       '</tr>').join(''):'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Keine Kunden gefunden.</td></tr>')+
@@ -2863,7 +2861,7 @@ function renderAdmin(view){
         return '<tr><td>'+fmtDate(t.date)+'</td><td><b>'+staffName(t.staffId)+'</b></td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+dur+'</td>'+
         '<td>'+sigCell+'</td>'+
         '<td>'+statusTag+'</td>'+
-        '<td>'+(t.signature?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ LN</button>'+(t.hasAbtretung?' <button class="btn-ghost btn-sm" onclick="downloadAbtretung('+t.customerId+')">⬇ Abtretung</button>':''):'<span style="color:var(--muted);font-size:12px">—</span>')+'</td>'+
+        '<td>'+(t.signature?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ LN</button>':'<span style="color:var(--muted);font-size:12px">—</span>')+'</td>'+
         '<td>'+(()=>{ const re=rechnungen.find(r=>r.stundenzettelId===t.id);
           if(t.billable===false) return '<span class="tag grey" style="font-size:11px">kostenlos / nicht abrechenbar</span>';
           if(re) return '<span class="tag green" style="font-size:11px">'+re.nummer+'</span>';
@@ -2998,30 +2996,43 @@ function renderAdmin(view){
   if(view==='rechnungen'){
     const ready=timesheets.filter(t=>t.status==='freigegeben' && t.billable!==false && !rechnungen.find(r=>r.stundenzettelId===t.id));
     c.innerHTML=head('Rechnungen','Stundenzettel, die abgerechnet werden können, und bereits erstellte Rechnungen.')+
-    '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Bereit zur Abrechnung ('+ready.length+')</h3></div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-6px 0 14px">'+
+      '<button class="btn-ghost btn-sm" onclick="openRwSettings()">⚙️ Rechnungs-Einstellungen</button>'+
+      '<button class="btn-ghost btn-sm" onclick="rwBankAbgleich()">🏦 Zahlungseingänge prüfen</button>'+
+      '<button class="btn-ghost btn-sm" onclick="rwBelegScanStart()">📷 Überweisungsbelege scannen</button>'+
+    '</div>'+
+    '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Bereit zur Abrechnung ('+ready.length+')</h3>'+
+      (ready.length?'<div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="rwToggleAll(this)">Alle auswählen</button>'+
+      '<button class="btn-primary btn-sm" style="width:auto" onclick="rwBulkInvoice()">🧾 Ausgewählte abrechnen</button></div>':'')+'</div>'+
     '<div class="panel-body" style="padding-top:10px">'+
-    (ready.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Dauer</th><th></th></tr></thead><tbody>'+
+    (ready.length?'<table><thead><tr><th style="width:34px"></th><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Dauer</th><th></th></tr></thead><tbody>'+
       ready.map(t=>{const cu=custById(t.customerId);
-        return '<tr><td>'+fmtDate(t.date)+'</td><td>'+staffName(t.staffId)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+tsDuration(t)+'</td>'+
+        return '<tr><td><input type="checkbox" class="rw-sel" value="'+t.id+'" style="width:17px;height:17px"></td>'+
+        '<td>'+fmtDate(t.date)+'</td><td>'+staffName(t.staffId)+'</td><td>'+(cu?fullName(cu)+' <span style="color:var(--muted);font-size:11.5px">'+kdNr(cu)+'</span>':'—')+'</td><td>'+tsDuration(t)+'</td>'+
         '<td style="text-align:right"><button class="btn-primary btn-sm" style="width:auto" onclick="openInvoiceModal('+t.id+')">🧾 Rechnung erstellen</button></td></tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">✓</div><b>Aktuell nichts offen</b><p style="margin-top:6px">Sobald ein Stundenzettel freigegeben ist, erscheint er hier zur Abrechnung.</p></div>')+
     '</div></div>'+
     '<div class="panel"><div class="panel-head"><h3>Erstellte Rechnungen</h3><button class="btn-ghost btn-sm" onclick="exportRechnungen()">⬇ CSV Export</button></div><div class="panel-body" style="padding-top:16px">'+
-    (rechnungen.length?'<table><thead><tr><th>Nr.</th><th>Datum</th><th>Kunde</th><th>Empfänger</th><th>Betrag</th><th>Status</th><th>Dokumente</th></tr></thead><tbody>'+
+    (rechnungen.length?'<table><thead><tr><th>Nr.</th><th>Datum</th><th>Kunde</th><th>Empfänger</th><th>Betrag</th><th>Status</th><th>Dokumente</th><th></th></tr></thead><tbody>'+
       rechnungen.slice().reverse().map(r=>{const cu=custById(r.customerId);
         const tage=Math.floor((Date.now()-new Date(r.datum).getTime())/86400000);
-        const ueberfaellig = r.status!=='bezahlt' && tage>14;
-        const statusBadge = ueberfaellig
-          ? '<span class="tag red">überfällig ('+tage+' Tage)</span>'
+        const ueberfaellig = r.status!=='bezahlt' && r.status!=='storniert' && tage>(rwParams().zahlungszielTage||14);
+        const statusBadge = r.status==='storniert' ? '<span class="tag grey">storniert</span>'
+          : ueberfaellig ? '<span class="tag red">überfällig ('+tage+' Tage)</span>'
           : (r.status==='bezahlt'?'<span class="tag green">bezahlt</span>':r.status==='versendet'?'<span class="tag blue">versendet</span>':'<span class="tag amber">offen</span>');
-        return '<tr><td><b>'+r.nummer+'</b>'+(r.lexwareId?' <a href="https://app.lexware.de/permalink/invoices/view/'+r.lexwareId+'" target="_blank" rel="noopener" title="In Lexware Office öffnen" style="text-decoration:none"><span class="tag green">LEX</span></a>':'')+'</td><td>'+fmtDate(r.datum)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+r.empfaengerName+'</td><td>'+Number(r.betrag||0).toFixed(2).replace('.',',')+' €</td>'+
-        '<td>'+statusBadge+'<br><select onchange="setRechnungStatus('+r.id+',this.value)" style="margin-top:4px;font-size:12px;padding:3px 5px;border-radius:6px;border:1px solid var(--line)">'+['offen','versendet','bezahlt'].map(s=>'<option value="'+s+'" '+(r.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select></td>'+
+        return '<tr'+(r.status==='storniert'?' style="opacity:.55"':'')+'><td><b>'+r.nummer+'</b>'+(r.gesperrt?' <span title="Festgeschrieben – Änderungen nur per Korrektur/Storno">🔒</span>':' <span class="tag" style="font-size:10px;background:var(--petrol-soft);color:var(--petrol-dark)">Entwurf</span>')+(r.korrekturZu?'<div style="font-size:10.5px;color:var(--muted)">Korrektur zu '+r.korrekturZu+'</div>':'')+(r.lexwareId?' <a href="https://app.lexware.de/permalink/invoices/view/'+r.lexwareId+'" target="_blank" rel="noopener" title="In Lexware Office öffnen" style="text-decoration:none"><span class="tag green">LEX</span></a>':'')+'</td><td>'+fmtDate(r.datum)+'</td><td>'+(cu?fullName(cu)+' <span style="color:var(--muted);font-size:11.5px">'+kdNr(cu)+'</span>':'—')+'</td><td>'+r.empfaengerName+'</td><td>'+Number(r.betrag||0).toFixed(2).replace('.',',')+' €</td>'+
+        '<td>'+statusBadge+(r.bezahltAm?'<div style="font-size:11px;color:var(--muted)">am '+fmtDate(r.bezahltAm)+'</div>':'')+'</td>'+
         '<td style="display:flex;gap:5px;flex-wrap:wrap"><button class="btn-ghost btn-sm" onclick="downloadRechnung('+r.id+')">RE</button>'+
           (r.stundenzettelId?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+r.stundenzettelId+')">LV</button>':'')+
-          '<button class="btn-ghost btn-sm" onclick="downloadAbtretung('+r.customerId+')">AB</button>'+
           (r.empfaengerEmail?'<button class="btn-ghost btn-sm" onclick="mailRechnung('+r.id+')">✉</button>':'')+
           (lexwareReady()&&!r.lexwareId?'<button class="btn-ghost btn-sm" onclick="lexwareCreateInvoice('+r.id+')" title="In Lexware Office als Entwurf anlegen">LEX↑</button>':'')+
-        '</td></tr>';}).join('')+
+        '</td>'+
+        '<td style="text-align:right">'+rowMenu([
+          ['Bearbeiten','rwEditRechnung('+r.id+')'],
+          ['Als bezahlt markieren','rwMarkBezahlt('+r.id+',null,true)']]
+          .concat(r.gesperrt?[['Korrekturrechnung','rwKorrektur('+r.id+')'],['Stornorechnung','rwStorno('+r.id+')','danger']]
+                           :[['Festschreiben (GoBD)','rwLock('+r.id+')']]))+'</td>'+
+        '</tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">🧾</div><b>Noch keine Rechnungen</b><p style="margin-top:6px">Erstelle oben eine Rechnung aus einem bereiten Stundenzettel.</p></div>')+
     '</div></div>';
   }
@@ -3478,12 +3489,9 @@ function editCustomer(id){
   const c=custById(id);
   const readOnly=!hasRole('admin','buero','callcenter');
   document.getElementById('modalBox').classList.add('wide');
-  document.getElementById('modalTitle').textContent=readOnly?'Kunde (nur Ansicht)':'Kunde bearbeiten';
+  document.getElementById('modalTitle').textContent=(readOnly?'Kunde (nur Ansicht)':'Kunde bearbeiten')+' · '+kdNr(c);
   let docsHtml='<div class="section-label">📁 Dokumente (Kunden-Ordner)</div>';
-  // Abtretung
-  if(c.abtretung){
-    docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📄 Abtretungserklärung</b><div class="li-sub">Unterschrieben am '+fmtDate(c.abtretung.date)+'</div></div><div style="display:flex;gap:7px;align-items:center"><img src="'+c.abtretung.signature+'" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-primary btn-sm" style="width:auto" onclick="downloadAbtretung('+c.id+')">⬇ PDF</button></div></div>';
-  }
+  // Abtretung: kein eigenes Dokument mehr – der Abtretungstext steht auf dem Leistungsnachweis (04.07.2026)
   // Beratungsvereinbarung mit Unterschriftsprobe – NUR für Admin sichtbar
   if(hasRole('admin') && c.beratung && c.beratung.signature){
     docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📋 Beratungsvereinbarung + Unterschriftsprobe</b><div class="li-sub">Beratung am '+fmtDate(c.beratung.date)+(c.beratung.mitarbeiterId?' · geführt von '+staffName(c.beratung.mitarbeiterId):'')+' · Referenz für den Leistungsnachweis-Abgleich</div></div><div style="display:flex;gap:7px;align-items:center"><img src="'+c.beratung.signature+'" title="Unterschriftsprobe" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-primary btn-sm" style="width:auto" onclick="downloadBeratungsvertrag('+c.id+')">⬇ PDF</button></div></div>';
@@ -3524,8 +3532,7 @@ function editCustomer(id){
 
   document.getElementById('modalBody').innerHTML=customerFormHTML(c).replace('<div class="panel"><div class="panel-body content-form" style="padding-top:18px">','<div class="content-form">').replace(/<\/div><\/div>$/,'</div>')+docsHtml+'<div style="margin-top:18px">'+custKommListHTML(c.id)+'</div>';
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
-    (readOnly?'':'<button class="btn-ghost" style="width:auto" onclick="startAbtretung('+c.id+')">+ Abtretung</button>'+
-    '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="updateCustomer('+c.id+')">Speichern</button>');
+    (readOnly?'':'<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="updateCustomer('+c.id+')">Speichern</button>');
   openModal();
 }
 function downloadCustLN(custId, idx){
@@ -5015,19 +5022,17 @@ function signTermin(){
       // 3) Leistungsnachweis am Kunden hinterlegen (Kunden-Ordner)
       cu.leistungsnachweise=cu.leistungsnachweise||[];
       cu.leistungsnachweise.push({date:date, task:t.task, mins:t.mins, signature:sig, staffId:myId});
-      // 3b) Abtretungserklärung mit derselben Unterschrift erzeugen und am Kunden hinterlegen
-      //     (erscheint NUR im Admin-Stundenzettel und im Kunden-Ordner, nicht beim Mitarbeiter)
+      // Hinweis: Eine separate Abtretungserklärung wird NICHT mehr erzeugt –
+      // der Abtretungstext steht direkt auf dem Leistungsnachweis (Entscheidung 04.07.2026).
+      // Die Unterschrift bleibt am Kunden hinterlegt (Bestandsdaten unangetastet).
       cu.abtretung={date:date, signature:sig};
       if(CLOUD){ cloudInsert('abtretungen',{customer_id:cu.id, signed_date:date, signature:sig}); }
       // 4) Leistungsnachweis-PDF zum Download anbieten
       if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
-      // 4b) Abtretungserklärung-PDF mit derselben Unterschrift/​demselben Datum erzeugen und ebenfalls anbieten
-      const abDoc=buildAbtretungPdf(cu, sig, date);
-      if(abDoc) abDoc.save(('Abtretung_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
       // 5) Termin als erledigt entfernen (lokal + Datenbank)
       if(t.apptId){ appointments=appointments.filter(a=>a.id!==t.apptId); if(CLOUD) cloudDelete('termine',t.apptId); }
       window.__termin=null;
-      toast('Einsatz abgeschlossen – Leistungsnachweis & Abtretung erstellt');
+      toast('Einsatz abgeschlossen – Leistungsnachweis erstellt');
       renderStaff('hours');
     }
   );
@@ -6439,12 +6444,8 @@ function openInvoiceModal(tsId){
   const t=timesheets.find(x=>x.id===tsId); if(!t){toast('Stundenzettel nicht gefunden',true);return;}
   if(rechnungen.find(r=>r.stundenzettelId===tsId)){toast('Für diesen Stundenzettel existiert bereits eine Rechnung',true);return;}
   const cu=custById(t.customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
-  /* Fehlende Voraussetzungen nicht nur melden, sondern direkt zum Ort der Lösung führen */
-  if(!cu.abtretung || !cu.abtretung.signature){
-    appConfirm('Für '+fullName(cu)+' liegt noch keine unterschriebene Abtretungserklärung vor. Ohne sie kann keine Kostenträger-Rechnung erstellt werden.\n\nDie Abtretung entsteht beim Einsatz-Abschluss oder manuell im Kundenprofil.',
-      ()=>editCustomer(cu.id), {title:'Abtretung fehlt', okLabel:'Zum Kundenprofil'});
-    return;
-  }
+  /* Fehlende Voraussetzungen nicht nur melden, sondern direkt zum Ort der Lösung führen.
+     Abtretung ist KEINE Voraussetzung mehr – der Abtretungstext steht auf dem Leistungsnachweis. */
   if(cu.insuranceType==='gesetzlich' && !cu.kostentraegerId){
     appConfirm(fullName(cu)+' ist gesetzlich versichert, hat aber keinen Kostenträger hinterlegt.',
       ()=>editCustomer(cu.id), {title:'Kostenträger fehlt', okLabel:'Beim Kunden eintragen'});
@@ -6510,9 +6511,9 @@ function createInvoiceForTimesheet(tsId){
   const empfaengerAdresse=kt?((kt.strasse||'')+', '+(kt.plz||'')+' '+(kt.ort||'')):(cu.address||'');
   const empfaengerEmail=kt?(kt.email||''):'';
 
-  const nummer='RE-'+new Date().getFullYear()+'-'+String(nextRechnungId++).padStart(4,'0');
+  const nummer=rwNextNummer();
   const re={
-    id:nextRechnungId, nummer:nummer, stundenzettelId:t.id, customerId:cu.id, kostentraegerId:kt?kt.id:null,
+    id:nextRechnungId++, nummer:nummer, stundenzettelId:t.id, customerId:cu.id, kostentraegerId:kt?kt.id:null,
     empfaengerName:empfaengerName, empfaengerAdresse:empfaengerAdresse, empfaengerEmail:empfaengerEmail,
     leistungName:l.name, leistungEinheit:l.einheit, menge:menge,
     datum:todayISO(), stunden:tsMinutes(t)/60, preisProStunde:l.preis, betrag:betrag, status:'offen'
@@ -6524,13 +6525,339 @@ function createInvoiceForTimesheet(tsId){
   else { if(wantMail && re.empfaengerEmail){ mailRechnung(re.id); } if(wantLexware){ lexwareCreateInvoice(re.id); } }
   downloadRechnung(re.id);
   downloadTsLN(t.id);
-  downloadAbtretung(cu.id);
   closeModal();
   toast(wantMail && re.empfaengerEmail
     ? ('Rechnung '+nummer+' erstellt – wird per E-Mail versendet')
-    : ('Rechnung '+nummer+' erstellt – Rechnung, Leistungsnachweis & Abtretung werden heruntergeladen'));
+    : ('Rechnung '+nummer+' erstellt – Rechnung & Leistungsnachweis werden heruntergeladen'));
   renderAdmin('rechnungen');
 }
+/* ============================================================
+   RECHNUNGSWESEN (rw*) – Einstellungen, Sammelrechnung, GoBD-
+   konformes Bearbeiten, Zahlungsabgleich (Bank + Beleg-Scan).
+   ============================================================ */
+/* ---- Parameter: je Standort, lokal gespeichert + still in der DB (standorte.rechnung_params) ---- */
+const RW_DEFAULTS={
+  nummerPrefix:'RE-', naechsteNummer:null, zahlungszielTage:14,
+  beihilfeProzent:50,
+  ustHinweis:'Der Rechnungsbetrag enthält keine Umsatzsteuer: umsatzsteuerfreie Leistung gemäß § 4 Nr. 16 UStG (nach Landesrecht anerkanntes Angebot zur Unterstützung im Alltag, §§ 45a, 45b SGB XI).',
+  abrHinweis:'Die Abrechnung erfolgt auf Basis des unterschriebenen Leistungsnachweises (inkl. Abtretungserklärung) gemäß § 45b SGB XI.',
+  zahlungsText:'Zahlbar ohne Abzug innerhalb von {tage} Tagen nach Rechnungseingang.',
+  bankName:'', iban:'', bic:''
+};
+function rwParams(){
+  if(window.__rwParams) return window.__rwParams;
+  let p={};
+  const st=standorte.find(s=>s.id===currentStandortId);
+  if(st && st.rechnungParams) p=st.rechnungParams;
+  else { try{ p=JSON.parse(localStorage.getItem('dailydo-rwparams-'+currentStandortId)||'{}'); }catch(e){} }
+  window.__rwParams=Object.assign({},RW_DEFAULTS,p);
+  return window.__rwParams;
+}
+function rwSaveParams(p){
+  window.__rwParams=Object.assign({},RW_DEFAULTS,p);
+  try{ localStorage.setItem('dailydo-rwparams-'+currentStandortId, JSON.stringify(window.__rwParams)); }catch(e){}
+  const st=standorte.find(s=>s.id===currentStandortId);
+  if(st){ st.rechnungParams=window.__rwParams;
+    // still: scheitert ohne Migration folgenlos (Spalte rechnung_params)
+    if(CLOUD&&sb){ sb.from('standorte').update({rechnung_params:window.__rwParams}).eq('id',st.id).then(()=>{},()=>{}); }
+  }
+}
+/* Fortlaufende Rechnungsnummer aus den Einstellungen (Fallback: bisheriges Schema) */
+function rwNextNummer(){
+  const p=rwParams();
+  if(p.naechsteNummer==null||p.naechsteNummer===''){
+    return 'RE-'+new Date().getFullYear()+'-'+String(nextRechnungId++).padStart(4,'0');
+  }
+  const n=+p.naechsteNummer||1;
+  const nummer=(p.nummerPrefix||'RE-')+n;
+  p.naechsteNummer=n+1; rwSaveParams(p);
+  return nummer;
+}
+/* Stille Zusatz-Updates (gesperrt/bezahlt_am/korrektur_zu) – Spalten kommen per Migration,
+   ohne Migration scheitert nur dieses Update, nichts anderes bricht. */
+function rwSaveExtrasQuiet(re){
+  if(!CLOUD||!sb||!re||!re.id) return;
+  sb.from('rechnungen').update({gesperrt:!!re.gesperrt, bezahlt_am:re.bezahltAm||null, korrektur_zu:re.korrekturZu||null})
+    .eq('id',re.id).then(()=>{},()=>{});
+}
+/* ---- Einstellungs-Dialog ---- */
+function openRwSettings(){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const p=rwParams();
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Rechnungs-Einstellungen';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="section-label" style="margin-top:0">Nummernkreis</div>'+
+    '<div class="form-row"><div><label>Präfix</label><input id="rw_prefix" value="'+(p.nummerPrefix||'')+'" placeholder="z. B. REA-"></div>'+
+    '<div><label>Nächste Nummer</label><input id="rw_next" type="number" min="1" value="'+(p.naechsteNummer==null?'':p.naechsteNummer)+'" placeholder="leer = automatisch (RE-Jahr-0001)"></div></div>'+
+    '<div class="section-label">Zahlung</div>'+
+    '<div class="form-row"><div><label>Zahlungsziel (Tage)</label><input id="rw_ziel" type="number" min="1" value="'+(p.zahlungszielTage||14)+'"></div>'+
+    '<div><label>Beihilfe-Anteil (%)</label><input id="rw_beihilfe" type="number" min="0" max="100" value="'+(p.beihilfeProzent!=null?p.beihilfeProzent:50)+'"></div></div>'+
+    '<div class="section-label">Bankverbindung auf der Rechnung</div>'+
+    '<label>Bank</label><input id="rw_bank" value="'+(p.bankName||'')+'" placeholder="z. B. Volksbank in Schaumburg und Nienburg">'+
+    '<div class="form-row"><div><label>IBAN</label><input id="rw_iban" value="'+(p.iban||'')+'"></div>'+
+    '<div><label>BIC</label><input id="rw_bic" value="'+(p.bic||'')+'"></div></div>'+
+    '<div class="section-label">Texte</div>'+
+    '<label>Abrechnungs-Hinweis</label><textarea id="rw_abr" rows="2">'+(p.abrHinweis||'')+'</textarea>'+
+    '<label>Umsatzsteuer-Hinweis</label><textarea id="rw_ust" rows="3">'+(p.ustHinweis||'')+'</textarea>'+
+    '<label>Zahlungs-Satz ({tage} wird ersetzt)</label><input id="rw_zahltext" value="'+(p.zahlungsText||'').replace(/"/g,'&quot;')+'">'+
+    '<p style="color:var(--muted);font-size:12.5px;margin-top:4px">Die Einstellungen gelten für den aktuellen Standort und fließen in alle neuen Rechnungs-PDFs ein. Steuerliche Texte bitte einmal vom Steuerberater prüfen lassen.</p>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveRwSettings()">Speichern</button>';
+  openModal();
+}
+function saveRwSettings(){
+  const v=id=>document.getElementById(id)?document.getElementById(id).value.trim():'';
+  const p=Object.assign({},rwParams(),{
+    nummerPrefix:v('rw_prefix')||'RE-',
+    naechsteNummer:v('rw_next')===''?null:Math.max(1,parseInt(v('rw_next'),10)||1),
+    zahlungszielTage:Math.max(1,parseInt(v('rw_ziel'),10)||14),
+    beihilfeProzent:Math.min(100,Math.max(0,parseFloat(v('rw_beihilfe'))||0)),
+    bankName:v('rw_bank'), iban:v('rw_iban').replace(/\s+/g,' '), bic:v('rw_bic'),
+    abrHinweis:v('rw_abr'), ustHinweis:v('rw_ust'), zahlungsText:v('rw_zahltext')
+  });
+  rwSaveParams(p);
+  closeModal(); toast('Rechnungs-Einstellungen gespeichert');
+  renderAdmin('rechnungen');
+}
+/* ---- Sammelrechnung: ausgewählte / alle bereiten Stundenzettel abrechnen ---- */
+function rwToggleAll(btn){
+  const boxes=[...document.querySelectorAll('.rw-sel')];
+  const all=boxes.every(b=>b.checked);
+  boxes.forEach(b=>b.checked=!all);
+  btn.textContent=all?'Alle auswählen':'Auswahl aufheben';
+}
+function rwBulkInvoice(){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const ids=[...document.querySelectorAll('.rw-sel:checked')].map(b=>+b.value);
+  if(!ids.length){ toastHint('Bitte mindestens einen Stundenzettel anhaken (oder „Alle auswählen")'); return; }
+  appConfirm(ids.length+' Rechnung(en) automatisch erstellen?\nJe Kunde wird die erste hinterlegte Leistung verwendet; die Menge ergibt sich aus der erfassten Zeit. Die Rechnungen entstehen als Entwurf – PDFs lädst du danach einzeln oder per E-Mail-Versand.', ()=>{
+    let ok=0; const skipped=[];
+    ids.forEach(tsId=>{
+      const t=timesheets.find(x=>x.id===tsId); if(!t){skipped.push('Stundenzettel '+tsId+' nicht gefunden');return;}
+      const cu=custById(t.customerId); if(!cu){skipped.push('Kunde zu Stundenzettel '+tsId+' fehlt');return;}
+      if(rechnungen.find(r=>r.stundenzettelId===tsId)){skipped.push(fullName(cu)+': bereits abgerechnet');return;}
+      const isGesetzlich=cu.insuranceType==='gesetzlich';
+      const kt=isGesetzlich?kostentraeger.find(k=>k.id===cu.kostentraegerId):null;
+      if(isGesetzlich&&!kt){skipped.push(fullName(cu)+': Kostenträger fehlt');return;}
+      const mine=cu.leistungen||[];
+      if(!mine.length){skipped.push(fullName(cu)+': keine Leistungen hinterlegt');return;}
+      const l=mine[0];
+      const menge=invoiceDefaultMenge(l.einheit, tsMinutes(t));
+      const re={ id:nextRechnungId++, nummer:rwNextNummer(), stundenzettelId:t.id, customerId:cu.id, kostentraegerId:kt?kt.id:null,
+        empfaengerName:kt?kt.name:fullName(cu),
+        empfaengerAdresse:kt?((kt.strasse||'')+', '+(kt.plz||'')+' '+(kt.ort||'')):(cu.address||''),
+        empfaengerEmail:kt?(kt.email||''):'',
+        leistungName:l.name, leistungEinheit:l.einheit, menge:menge,
+        datum:todayISO(), stunden:tsMinutes(t)/60, preisProStunde:l.preis, betrag:l.preis*menge,
+        status:'offen', gesperrt:false };
+      rechnungen.push(re); ok++;
+      if(CLOUD){ cloudInsert('rechnungen',rechnungToRow(re)).then(r=>{ if(r) re.id=r.id; }); }
+    });
+    logActivity('Sammelabrechnung: '+ok+' Rechnung(en) erstellt'+(skipped.length?', '+skipped.length+' übersprungen':''));
+    renderAdmin('rechnungen');
+    if(skipped.length){
+      appConfirm(ok+' Rechnung(en) erstellt.\n\nÜbersprungen:\n• '+skipped.join('\n• '),
+        ()=>{}, {title:'Sammelabrechnung – Ergebnis', okLabel:'Verstanden'});
+    } else {
+      toast('✓ '+ok+' Rechnung(en) erstellt');
+    }
+  }, {title:'Sammelabrechnung', okLabel:'Jetzt erstellen'});
+}
+/* ---- GoBD: Bearbeiten nur im Entwurf, danach Korrektur/Storno ---- */
+function rwLock(id){
+  const re=rechnungen.find(x=>x.id===id); if(!re) return;
+  appConfirm('Rechnung '+re.nummer+' festschreiben?\nDanach ist sie unveränderbar – Änderungen sind nur noch über eine Korrektur- oder Stornorechnung möglich (GoBD).', ()=>{
+    re.gesperrt=true; rwSaveExtrasQuiet(re);
+    logActivity('Rechnung festgeschrieben: '+re.nummer);
+    renderAdmin('rechnungen'); toast('🔒 '+re.nummer+' festgeschrieben');
+  }, {title:'Festschreiben', okLabel:'Festschreiben'});
+}
+function rwEditRechnung(id){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const re=rechnungen.find(x=>x.id===id); if(!re) return;
+  if(re.gesperrt){
+    appConfirm('Rechnung '+re.nummer+' ist festgeschrieben und darf nach GoBD nicht mehr geändert werden.\n\nErstelle stattdessen eine Korrekturrechnung (neue Nummer, Original bleibt erhalten).',
+      ()=>rwKorrektur(id), {title:'Festgeschrieben', okLabel:'Korrekturrechnung erstellen'});
+    return;
+  }
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Rechnung bearbeiten – '+re.nummer+' (Entwurf)';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="section-label" style="margin-top:0">Empfänger</div>'+
+    '<label>Name</label><input id="rwe_name" value="'+String(re.empfaengerName||'').replace(/"/g,'&quot;')+'">'+
+    '<label>Adresse</label><input id="rwe_adresse" value="'+String(re.empfaengerAdresse||'').replace(/"/g,'&quot;')+'">'+
+    '<label>E-Mail</label><input id="rwe_email" type="email" value="'+String(re.empfaengerEmail||'').replace(/"/g,'&quot;')+'">'+
+    '<div class="section-label">Position</div>'+
+    '<label>Leistung</label><input id="rwe_leistung" value="'+String(re.leistungName||'').replace(/"/g,'&quot;')+'">'+
+    '<div class="form-row"><div><label>Menge</label><input id="rwe_menge" type="number" step="0.01" value="'+(re.menge||0)+'"></div>'+
+    '<div><label>Einzelpreis (€)</label><input id="rwe_preis" type="number" step="0.01" value="'+(re.preisProStunde||0)+'"></div></div>'+
+    '<label>Rechnungsdatum</label><input id="rwe_datum" type="date" value="'+(re.datum||todayISO())+'">'+
+    '<div class="summary" style="margin-top:8px"><div class="sh">Betrag wird neu berechnet</div>Menge × Einzelpreis. Aktuell: '+Number(re.betrag||0).toFixed(2).replace('.',',')+' €</div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="rwSaveRechnung('+id+')">Speichern</button>';
+  openModal();
+}
+function rwSaveRechnung(id){
+  const re=rechnungen.find(x=>x.id===id); if(!re||re.gesperrt) return;
+  const v=i=>document.getElementById(i).value;
+  re.empfaengerName=cleanInput(v('rwe_name'),160);
+  re.empfaengerAdresse=cleanInput(v('rwe_adresse'),240);
+  re.empfaengerEmail=v('rwe_email').trim();
+  re.leistungName=cleanInput(v('rwe_leistung'),160);
+  re.menge=Math.max(0,parseFloat(v('rwe_menge'))||0);
+  re.preisProStunde=Math.max(0,parseFloat(v('rwe_preis'))||0);
+  re.datum=v('rwe_datum')||re.datum;
+  re.betrag=Math.round(re.menge*re.preisProStunde*100)/100;
+  if(CLOUD) cloudUpdate('rechnungen',re.id,rechnungToRow(re));
+  logActivity('Rechnung bearbeitet (Entwurf): '+re.nummer);
+  closeModal(); renderAdmin('rechnungen'); toast('Rechnung '+re.nummer+' gespeichert');
+}
+function rwKorrektur(id){
+  const alt=rechnungen.find(x=>x.id===id); if(!alt) return;
+  const re=Object.assign({},alt,{ id:nextRechnungId++, nummer:rwNextNummer(), status:'offen',
+    gesperrt:false, lexwareId:null, korrekturZu:alt.nummer, datum:todayISO(), bezahltAm:null });
+  rechnungen.push(re);
+  if(CLOUD){ cloudInsert('rechnungen',rechnungToRow(re)).then(r=>{ if(r){ re.id=r.id; rwSaveExtrasQuiet(re); } }); }
+  logActivity('Korrekturrechnung '+re.nummer+' zu '+alt.nummer);
+  renderAdmin('rechnungen');
+  rwEditRechnung(re.id);
+  toast('Korrekturrechnung '+re.nummer+' angelegt – bitte anpassen und speichern');
+}
+function rwStorno(id){
+  const alt=rechnungen.find(x=>x.id===id); if(!alt) return;
+  appConfirm('Stornorechnung zu '+alt.nummer+' erstellen?\nEs entsteht eine neue Rechnung über −'+Number(alt.betrag||0).toFixed(2).replace('.',',')+' €. Das Original bleibt unverändert erhalten (GoBD).', ()=>{
+    const re=Object.assign({},alt,{ id:nextRechnungId++, nummer:rwNextNummer(), status:'offen',
+      gesperrt:true, lexwareId:null, korrekturZu:'Storno '+alt.nummer, datum:todayISO(),
+      betrag:-Math.abs(alt.betrag||0), menge:-Math.abs(alt.menge||0), bezahltAm:null });
+    rechnungen.push(re);
+    alt.status='storniert'; if(CLOUD) cloudUpdate('rechnungen',alt.id,{status:'storniert'});
+    if(CLOUD){ cloudInsert('rechnungen',rechnungToRow(re)).then(r=>{ if(r){ re.id=r.id; rwSaveExtrasQuiet(re); } }); }
+    logActivity('Stornorechnung '+re.nummer+' zu '+alt.nummer);
+    renderAdmin('rechnungen'); toast('Stornorechnung '+re.nummer+' erstellt');
+  }, {title:'Stornorechnung', okLabel:'Storno erstellen', danger:true});
+}
+function rwMarkBezahlt(id, datum, einzeln){
+  const re=rechnungen.find(x=>x.id===id); if(!re) return;
+  re.status='bezahlt'; re.bezahltAm=datum||todayISO();
+  if(CLOUD){ cloudUpdate('rechnungen',re.id,{status:'bezahlt'}); rwSaveExtrasQuiet(re); }
+  if(einzeln){ logActivity('Rechnung als bezahlt markiert: '+re.nummer); renderAdmin('rechnungen'); toast('✓ '+re.nummer+' als bezahlt markiert'); }
+}
+/* ---- Zahlungsabgleich: gemeinsame Match-Logik für Bank-Umsätze und Beleg-Scan ----
+   Erkennung über Rechnungsnummer > Kundennummer > Name+Betrag. */
+function rwMatchZahlungen(zahlungen, quelle){
+  const offene=rechnungen.filter(r=>r.status!=='bezahlt'&&r.status!=='storniert'&&(r.betrag||0)>0);
+  const treffer=[];
+  zahlungen.forEach(z=>{
+    const text=((z.text||'')+' '+(z.name||'')).toLowerCase();
+    const betrag=Math.abs(+z.betrag||0);
+    offene.forEach(re=>{
+      if(treffer.find(t=>t.reId===re.id)) return;
+      const cu=custById(re.customerId);
+      let grund=null;
+      if(re.nummer && text.includes(String(re.nummer).toLowerCase())) grund='Rechnungsnummer im Verwendungszweck';
+      else if(cu && text.includes(kdNr(cu).toLowerCase())) grund='Kundennummer im Verwendungszweck';
+      else if(cu && betrag>0 && Math.abs(betrag-(re.betrag||0))<0.01){
+        const nachname=(cu.last||'').toLowerCase();
+        if(nachname && nachname.length>2 && text.includes(nachname)) grund='Betrag + Name stimmen überein';
+      }
+      if(grund) treffer.push({reId:re.id, nummer:re.nummer, kunde:cu?fullName(cu):re.empfaengerName,
+        betragRe:re.betrag, betragZ:betrag, datum:z.datum||todayISO(), grund:grund, zText:(z.name?z.name+' · ':'')+(z.text||'')});
+    });
+  });
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Zahlungsabgleich – '+quelle;
+  document.getElementById('modalBody').innerHTML= treffer.length
+    ? '<p style="color:var(--muted);font-size:13.5px;margin:0 0 12px">'+zahlungen.length+' Zahlung(en) geprüft, '+treffer.length+' Übereinstimmung(en) mit offenen Rechnungen. Häkchen prüfen, dann übernehmen.</p>'+
+      treffer.map((t,i)=>'<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer">'+
+        '<input type="checkbox" class="rw-match" data-i="'+i+'" checked style="width:18px;height:18px;margin-top:2px">'+
+        '<span style="flex:1"><b>'+t.nummer+'</b> · '+t.kunde+' · '+Number(t.betragRe||0).toFixed(2).replace('.',',')+' €'+
+        '<span style="display:block;font-size:12.5px;color:var(--muted)">'+t.grund+' · Zahlung: '+Number(t.betragZ||0).toFixed(2).replace('.',',')+' € · '+cleanInput(t.zText,90)+'</span></span></label>').join('')
+    : '<div class="empty"><div class="big">🔍</div><b>Keine Übereinstimmungen gefunden</b><p style="margin-top:6px">'+zahlungen.length+' Zahlung(en) geprüft. Erkannt wird über Rechnungsnummer, Kundennummer oder Name + Betrag.</p></div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
+    (treffer.length?'<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="rwApplyMatches()">Als bezahlt übernehmen</button>':'');
+  window.__rwTreffer=treffer;
+  openModal();
+}
+function rwApplyMatches(){
+  const treffer=window.__rwTreffer||[];
+  let n=0;
+  [...document.querySelectorAll('.rw-match:checked')].forEach(cb=>{
+    const t=treffer[+cb.dataset.i]; if(!t) return;
+    rwMarkBezahlt(t.reId, t.datum, false); n++;
+    logActivity('Zahlungsabgleich: '+t.nummer+' bezahlt ('+t.grund+')');
+  });
+  closeModal(); renderAdmin('rechnungen');
+  toast('✓ '+n+' Rechnung(en) als bezahlt markiert');
+}
+/* ---- Quelle 1: Bank-Umsätze (Enable Banking über bank-proxy) ---- */
+async function rwBankAbgleich(){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  if(!bankVerbindungen.length){ toastHint('Keine Bankverbindung eingerichtet – Menü „Bank" öffnen und Konto verbinden'); return; }
+  toast('Frage die letzten Bank-Umsätze ab …');
+  const zahlungen=[];
+  for(const v of bankVerbindungen){
+    const tx=await bankCall('transactions',{accountUid:v.account_uid},true);
+    if(!tx.ok) continue;
+    ((tx.data&&tx.data.transactions)||[]).forEach(t=>{
+      const neg=String(t.credit_debit_indicator||'').toUpperCase()==='DBIT';
+      if(neg) return; // nur Eingänge
+      const amt=t.transaction_amount?parseFloat(t.transaction_amount.amount):0;
+      const who=(t.debtor&&t.debtor.name)||(t.creditor&&t.creditor.name)||'';
+      const zweck=Array.isArray(t.remittance_information)?t.remittance_information.join(' '):(t.remittance_information||'');
+      zahlungen.push({name:who, text:zweck, betrag:amt, datum:t.booking_date||null});
+    });
+  }
+  if(!zahlungen.length){ toast('Keine Zahlungseingänge in den letzten Umsätzen gefunden',true); return; }
+  rwMatchZahlungen(zahlungen,'Bank-Umsätze');
+}
+/* ---- Quelle 2: Überweisungsbelege scannen (Edge Function beleg-scan, Claude Vision) ---- */
+function rwBelegScanStart(){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  let inp=document.getElementById('rwScanInput');
+  if(!inp){
+    inp=document.createElement('input'); inp.type='file'; inp.id='rwScanInput';
+    inp.accept='image/*'; inp.multiple=true; inp.style.display='none';
+    inp.onchange=()=>rwBelegScanFiles(inp.files);
+    document.body.appendChild(inp);
+  }
+  inp.value=''; inp.click();
+}
+async function rwBelegScanFiles(files){
+  if(!files||!files.length) return;
+  if(!CLOUD||!sb||!sb.functions){ toast('Keine Cloud-Verbindung',true); return; }
+  toast('Belege werden gelesen … ('+files.length+' Bild(er))');
+  const zahlungen=[];
+  for(const f of files){
+    try{
+      const b64=await rwImageToBase64(f);
+      const {data,error}=await sb.functions.invoke('beleg-scan',{body:{image:b64}});
+      if(error){ toast('Beleg-Scan fehlgeschlagen: '+(error.message||'Function beleg-scan deployen?'),true); return; }
+      ((data&&data.zahlungen)||[]).forEach(z=>zahlungen.push({name:z.name||'', text:z.verwendungszweck||'', betrag:z.betrag, datum:z.datum||null}));
+    }catch(e){ toast('Beleg konnte nicht gelesen werden: '+(e.message||e),true); return; }
+  }
+  if(!zahlungen.length){ toast('Auf den Belegen wurden keine Überweisungen erkannt',true); return; }
+  rwMatchZahlungen(zahlungen,'Beleg-Scan');
+}
+function rwImageToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const max=1600; let w=img.width,h=img.height;
+      if(Math.max(w,h)>max){ const f=max/Math.max(w,h); w=Math.round(w*f); h=Math.round(h*f); }
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      resolve(cv.toDataURL('image/jpeg',0.85).split(',')[1]);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('Bild nicht lesbar')); };
+    img.src=url;
+  });
+}
+
 function buildRechnungPdf(re, cu){
   if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
   const { jsPDF } = window.jspdf;
@@ -6567,6 +6894,7 @@ function buildRechnungPdf(re, cu){
   const lts=timesheets.find(t=>t.id===re.stundenzettelId);
   doc.text('Leistungsdatum: '+fmtDate((lts&&lts.date)||re.datum),margin,y); y+=14;
   doc.text('Leistungsempfänger / Versicherte(r): '+fullName(cu),margin,y); y+=14;
+  doc.text('Kundennummer: '+kdNr(cu),margin,y); y+=14;
   if(cu.intern&&cu.intern.kvNr){ doc.text('Versichertennummer: '+cu.intern.kvNr,margin,y); y+=14; }
   y+=20;
   // Tabelle
@@ -6586,11 +6914,14 @@ function buildRechnungPdf(re, cu){
   doc.text('Gesamtbetrag: '+re.betrag.toFixed(2).replace('.',',')+' €',pageW-margin,y,{align:'right'});
   y+=34;
   doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(90);
-  const hint=doc.splitTextToSize('Die Abrechnung erfolgt auf Basis der unterschriebenen Abtretungserklärung und des beigefügten Leistungsnachweises gemäß § 45b SGB XI.',pageW-margin*2);
-  doc.text(hint,margin,y); y+=hint.length*12+8;
-  const hintUst=doc.splitTextToSize('Der Rechnungsbetrag enthält keine Umsatzsteuer: umsatzsteuerfreie Leistung gemäß § 4 Nr. 16 UStG (nach Landesrecht anerkanntes Angebot zur Unterstützung im Alltag, §§ 45a, 45b SGB XI).',pageW-margin*2);
-  doc.text(hintUst,margin,y); y+=hintUst.length*12+8;
-  doc.text('Zahlbar ohne Abzug innerhalb von 14 Tagen nach Rechnungseingang.',margin,y);
+  const rp=rwParams();
+  if(re.korrekturZu){ doc.setFont('helvetica','bold'); doc.text((String(re.korrekturZu).startsWith('Storno')?'Stornorechnung zu ':'Korrekturrechnung zu ')+String(re.korrekturZu).replace(/^Storno /,''),margin,y); y+=14; doc.setFont('helvetica','normal'); }
+  const hint=doc.splitTextToSize(rp.abrHinweis||'',pageW-margin*2);
+  if(rp.abrHinweis){ doc.text(hint,margin,y); y+=hint.length*12+8; }
+  const hintUst=doc.splitTextToSize(rp.ustHinweis||'',pageW-margin*2);
+  if(rp.ustHinweis){ doc.text(hintUst,margin,y); y+=hintUst.length*12+8; }
+  doc.text(String(rp.zahlungsText||'').replace('{tage}',String(rp.zahlungszielTage||14)),margin,y); y+=14;
+  if(rp.iban){ y+=6; doc.text('Bankverbindung: '+(rp.bankName?rp.bankName+' · ':'')+'IBAN '+rp.iban+(rp.bic?' · BIC '+rp.bic:''),margin,y); }
   return doc;
 }
 function downloadRechnung(id){
