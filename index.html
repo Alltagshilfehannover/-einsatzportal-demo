@@ -969,7 +969,7 @@
   <script>
     // Landing schließen und in die Software wechseln
     function lpHide(){ var e=document.getElementById('landing'); if(e){ e.style.display='none'; } }
-    function lpLogin(){ lpHide(); try{ var u=document.getElementById('user'); if(u) u.focus(); }catch(e){} }
+    function lpLogin(){ lpHide(); var l=document.getElementById('loginScreen'); if(l) l.style.display='grid'; try{ var u=document.getElementById('user'); if(u) u.focus(); }catch(e){} }
     function lpApply(){ lpHide(); if(typeof startWizard==='function'){ startWizard(); } }
     function lpMenu(){ var m=document.getElementById('lp-mnav'); if(m){ m.style.display = (m.style.display==='flex') ? 'none' : 'flex'; } }
     // Einladungs-/Reset-Link (Set-Passwort): Landing sofort überspringen
@@ -978,7 +978,10 @@
 </div>
 
 <!-- ============ LOGIN ============ -->
-<div class="login-wrap" id="loginScreen">
+<!-- Initial ausgeblendet: solange die Landing (Vordergrund) sichtbar ist, darf der
+     Software-Login NICHT im DOM greifbar sein (kein Passwort-Autofill, nicht per Tab
+     erreichbar). Wird erst durch lpLogin() bzw. die App-Logik eingeblendet. -->
+<div class="login-wrap" id="loginScreen" style="display:none">
   <div class="login-art">
     <div class="brand"><img class="mark-logo" src="img/bild1_898fe1a00c.png" alt="DailyDo" onerror="this.onerror=null;this.src=this.src.split('/').pop()"> DailyDo</div>
     <div class="art-head">
