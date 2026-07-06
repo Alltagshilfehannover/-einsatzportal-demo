@@ -1035,10 +1035,13 @@
     </div>
     <div class="top-right">
       <select id="standortSwitch" onchange="switchStandort(this.value)" style="display:none;font-size:13px;font-weight:600;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--petrol-dark);margin-right:6px"></select><span class="role-pill" id="rolePill">Büro</span>
-      <div class="who"><span class="avatar" id="avatar">D</span>
-        <div class="meta"><b id="whoName">Daniel D.</b><span id="whoRole">Büro / Verwaltung</span></div></div>
+      <div class="who" id="userMenuBtn" onclick="toggleUserMenu(event)" title="Konto" style="cursor:pointer;position:relative"><span class="avatar" id="avatar">D</span>
+        <div class="meta"><b id="whoName">Daniel D.</b><span id="whoRole">Büro / Verwaltung</span></div>
+        <span style="margin-left:2px;color:var(--muted);font-size:11px">▾</span>
+        <div id="userMenu" style="display:none;position:absolute;top:calc(100% + 8px);right:0;min-width:180px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 34px rgba(31,22,51,.18);padding:6px;z-index:200;text-align:left">
+          <button onclick="logout()" style="width:100%;text-align:left;padding:10px 12px;border:none;background:none;border-radius:8px;font-weight:600;font-size:14px;color:var(--ink);cursor:pointer;display:flex;align-items:center;gap:9px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='none'">🚪 Abmelden</button>
+        </div></div>
       <img class="company-logo-img" title="DailyDo" src="img/bild1_898fe1a00c.png" alt="DailyDo" onerror="this.onerror=null;this.src=this.src.split('/').pop()">
-      <button class="logout" onclick="logout()">Abmelden</button>
     </div>
   </div>
   <div class="layout">
@@ -2713,6 +2716,17 @@ async function enterApp(role, user){
   }
 }
 
+/* Konto-Dropdown oben rechts (enthält „Abmelden" – der frühere Button in der
+   Kopfzeile wurde entfernt). Klick auf den Avatar öffnet/schließt das Menü,
+   Klick irgendwo anders schließt es wieder. */
+function toggleUserMenu(e){
+  if(e){ e.stopPropagation(); }
+  const m=document.getElementById('userMenu'); if(!m) return;
+  m.style.display = (m.style.display==='block') ? 'none' : 'block';
+}
+document.addEventListener('click',function(){
+  const m=document.getElementById('userMenu'); if(m) m.style.display='none';
+});
 async function logout(){
   // Bei echtem Modus die Supabase-Sitzung beenden
   if(USE_REAL_AUTH && sb){
@@ -2823,8 +2837,7 @@ function buildAdminNav(active){
       viewAllowed('customers')?navItem('customers','◍','Kunden',active==='customers'):'',
       viewAllowed('newcustomer')?navItem('newcustomer','＋','Kunde anlegen',active==='newcustomer'):'',
       viewAllowed('kommunikation')?navItem('kommunikation','💬','Kommunikation',active==='kommunikation',offeneKomm||'',true):'',
-      viewAllowed('aufgaben')?navItem('aufgaben','☑','Aufgaben',active==='aufgaben',offeneAufgaben||''):'',
-      viewAllowed('abwesenheiten')?navItem('abwesenheiten','🌴','Abwesenheiten',active==='abwesenheiten',(typeof tv4AbwOffen==='function'?(tv4AbwOffen()||''):''),true):''
+      viewAllowed('aufgaben')?navItem('aufgaben','☑','Aufgaben',active==='aufgaben',offeneAufgaben||''):''
     ]],
     ['Abwicklung',[
       viewAllowed('hours')?navItem('hours','⏱','Stundenzettel',active==='hours'):'',
@@ -2899,14 +2912,13 @@ function buildStaffNav(active){
     navItem('aufgaben','☑','Meine Aufgaben',active==='aufgaben',offeneAufgaben||'',true)+
     '<div class="nav-group">Organisation</div>'+
     navItem('calendar','▦','Meine Termine',active==='calendar')+
-    navItem('abwesenheiten','🌴','Urlaub & Abwesenheit',active==='abwesenheiten')+
     navItem('hours','⏱','Stundenzettel',active==='hours')+
     navItem('payroll','€','Lohnabrechnung',active==='payroll')+
     navItem('schulung','🎓','Schulung',active==='schulung')+
     '<div class="nav-group">Konto</div>'+
     navItem('profile','☺','Mein Profil',active==='profile')+
     navItem('contracts','📄','Meine Verträge',active==='contracts')+
-    navItem('emergency','✆','Notfallnummer',active==='emergency')+
+    navItem('emergency','✆','Notfallkontakt',active==='emergency')+
     '<button class="nav-item" onclick="openDesignSettings()"><span class="ic">🎨</span>Design &amp; Farben</button>'+
     '<button class="nav-item" onclick="startAppTour()"><span class="ic">🎬</span>App-Einführung</button>'+
     '<button class="nav-item nav-logout" onclick="logout()"><span class="ic">🚪</span>Abmelden</button>';
@@ -3942,8 +3954,12 @@ function renderAdmin(view){
   if(view==='mailing'){ c.innerHTML=mailingHTML(); }
   if(view==='schulung'){ c.innerHTML=schulungHTML(); }
   if(view==='notes'){ c.innerHTML=head('Notizen','Bemerkungen zu Mitarbeitern und Kunden. Intern = nur Büro, Mitarbeiter = für die Person sichtbar.')+notesAdminHTML(); }
-  if(view==='calendar'){ c.innerHTML=head('Kalender','Alle Einsätze zentral. Klick auf einen Termin für Details.')+
-    '<div style="display:flex;justify-content:flex-end;margin:-8px 0 12px"><button class="btn-ghost btn-sm" onclick="openScreenshotImport()">📷 Termine aus Screenshot importieren</button></div>'+
+  if(view==='calendar'){ c.innerHTML=head('Kalender','Alle Einsätze zentral. Nach Kunde oder Mitarbeiter suchen, um nur deren Termine zu sehen. Klick auf einen Termin für Details.')+
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin:-8px 0 10px;flex-wrap:wrap">'+
+      '<input id="calSearchInput" class="search-input" style="flex:1;min-width:220px;max-width:420px" placeholder="🔍 Nach Kunde oder Mitarbeiter suchen …" value="'+((calSearch||'').replace(/"/g,'&quot;'))+'" oninput="calSearchSet(this.value)" onkeydown="if(event.key===\'Escape\'){this.value=\x27\x27;calSearchSet(\x27\x27);}">'+
+      '<button class="btn-ghost btn-sm" onclick="openScreenshotImport()">📷 Termine aus Screenshot importieren</button>'+
+    '</div>'+
+    '<div id="calSearchHint" style="margin:0 0 12px;font-size:13px;color:var(--muted);'+((calSearch||'').trim()?'':'display:none')+'"></div>'+
     calendarHTML(null); }
 }
 
@@ -4884,7 +4900,6 @@ function renderStaff(view){
     '</div></div>';
   }
   if(view==='calendar'){ c.innerHTML=head('Meine Termine','Deine vereinbarten Einsätze. Termine entstehen, wenn du bei „Meine Kunden” einen Termin vereinbarst.')+
-    '<div style="display:flex;justify-content:flex-end;margin:-8px 0 12px"><button class="btn-ghost btn-sm" onclick="openScreenshotImport()">📷 Termine aus Screenshot importieren</button></div>'+
     calendarHTML(myId); }
   if(view==='hours'){
     const mine=timesheets.filter(t=>t.staffId===myId);
@@ -4968,11 +4983,12 @@ function renderStaff(view){
       :placeholder('📄','Noch keine Verträge hinterlegt','Sobald du den Bewerbungsprozess abgeschlossen hast, erscheinen deine unterschriebenen Verträge hier.'));
   }
   if(view==='emergency'){
-    c.innerHTML=head('Notfallnummer','Im Notfall sofort erreichbar.')+
+    c.innerHTML=head('Notfallkontakt','Im Notfall sofort erreichbar.')+
     '<div class="panel"><div class="panel-body" style="padding:26px;text-align:center">'+
-      '<div style="font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Einsatzleitung / Notfall</div>'+
-      '<div style="font-size:32px;font-weight:700;color:var(--petrol-dark);margin:8px 0">0511 / 123 456 78</div>'+
-      '<div style="color:var(--muted);font-size:14px">Erreichbar Mo–Fr 7–20 Uhr · außerhalb: Bereitschaft</div>'+
+      '<div style="font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Einsatzleitung / Notfallkontakt</div>'+
+      '<a href="tel:053187894111" style="display:block;font-size:32px;font-weight:700;color:var(--petrol-dark);margin:8px 0;text-decoration:none">0531 / 87894111</a>'+
+      '<a href="mailto:Support@daily-do.de" style="display:inline-block;font-size:16px;font-weight:600;color:var(--petrol);text-decoration:none">Support@daily-do.de</a>'+
+      '<div style="color:var(--muted);font-size:14px;margin-top:12px">Erreichbar Mo–Fr 7–20 Uhr · außerhalb: Bereitschaft</div>'+
     '</div></div>';
   }
   if(view==='schulung'){ c.innerHTML=schulungHTML(); }
@@ -5709,6 +5725,7 @@ function wizDone(){
 let calView='month';           // 'month' | 'week' | 'day'
 let calCursor=new Date();      // aktuell angezeigter Zeitraum
 let calStaffFilter=null;       // null = alle (Admin), sonst staffId
+let calSearch='';              // Admin-Kalender: Suche nach Kunde ODER Mitarbeiter
 
 function calendarHTML(staffFilter){
   calStaffFilter=staffFilter;
@@ -5731,8 +5748,29 @@ function calEvents(){
     // Mitarbeiter-Ansicht: nur eigene UND abgesagte ausblenden
     list=list.filter(a=>a.staffId===calStaffFilter && a.status!=='abgesagt');
   }
-  // Admin-Ansicht (calStaffFilter===null): alle, auch abgesagte
+  // Admin-Ansicht (calStaffFilter===null): alle, auch abgesagte.
+  // Zusätzlich: freie Suche nach Kunde ODER Mitarbeiter.
+  const q=(typeof calSearch==='string'?calSearch:'').trim().toLowerCase();
+  if(calStaffFilter===null && q){
+    list=list.filter(function(a){
+      let cn=''; try{ const c=custById(a.customerId); cn=c?fullName(c):''; }catch(e){}
+      let sn=''; try{ sn=a.staffId?staffName(a.staffId):''; }catch(e){}
+      return cn.toLowerCase().indexOf(q)>-1 || sn.toLowerCase().indexOf(q)>-1;
+    });
+  }
   return list;
+}
+/* Admin-Kalender: Suchfeld über dem Kalender. Tippt man einen Kunden- oder
+   Mitarbeiternamen, zeigt der Kalender automatisch nur dessen Termine. */
+function calSearchSet(v){
+  calSearch=String(v||'');
+  refreshCal();
+  const hint=document.getElementById('calSearchHint');
+  if(hint){
+    const q=calSearch.trim();
+    if(!q){ hint.style.display='none'; hint.textContent=''; }
+    else { hint.style.display='block'; hint.textContent='Zeige '+calEvents().length+' Termin(e) passend zu „'+q+'".'; }
+  }
 }
 /* Status-Merkmale eines Termins für Kalender & Detailansicht.
    "Unterschrift fehlt", "Zeiten angepasst" und "verpasst" werden aus dem
@@ -6928,6 +6966,26 @@ function saveBeratung(cu, sig){
   if(CLOUD){
     cloudInsert('beratungen',{customer_id:cu.id, mitarbeiter_id:mid, datum:datum, punkte:ctx.punkte||[], signature:sig, standort_id:currentStandortId});
   }
+  // Beratungsgespräch eines Mitarbeiters zählt automatisch als TERMIN und als
+  // STUNDENZETTEL (erscheint beim Büro/Admin unter „Stundenzettel"). Nur einmal
+  // anlegen – kein Doppel-Eintrag, falls die Funktion erneut aufgerufen wird.
+  if(mid){
+    const schonTs=timesheets.some(t=>t.staffId===mid&&t.customerId===cu.id&&t.date===datum&&/beratung/i.test(t.task||''));
+    if(!schonTs){
+      const now=new Date();
+      const start=pad2(now.getHours())+':'+pad2(now.getMinutes());
+      const endD=new Date(now.getTime()+60*60000);
+      const end=pad2(endD.getHours())+':'+pad2(endD.getMinutes());
+      // 1) Termin im Kalender
+      const appt={id:nextApptId++,staffId:mid,customerId:cu.id,date:datum,time:start,duration:60,note:'Beratungsgespräch',type:'beratung',status:'geplant'};
+      appointments.push(appt);
+      if(CLOUD){ cloudInsert('termine',apptToRow(appt)).then(r=>{ if(r&&r.id){ appt.id=r.id; } }); }
+      // 2) Stundenzettel (Unterschriftsprobe des Kunden zählt als Nachweis)
+      const ts={id:nextTsId++,staffId:mid,customerId:cu.id,date:datum,start:start,end:end,task:'Beratungsgespräch',status:'offen',proof:true,signature:sig,signedAt:datum};
+      timesheets.push(ts);
+      if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:mid,customer_id:cu.id,date:datum,start:start,ende:end,task:'Beratungsgespräch',status:'offen',proof:true,signature:sig,signed_at:datum,standort_id:currentStandortId}); }
+    }
+  }
   // Offene Erstberatungs-Aufgabe für diesen Kunden als erledigt markieren
   const auf=aufgaben.find(a=>a.customerId===cu.id&&/^Erstberatung/.test(a.title||'')&&a.status!=='erledigt');
   if(auf){ auf.status='erledigt'; if(CLOUD&&auf.id) cloudUpdate('aufgaben',auf.id,{status:'erledigt'}); }
@@ -6935,7 +6993,7 @@ function saveBeratung(cu, sig){
   const doc=buildBeratungsvertragPdf(cu, sig, datum);
   if(doc) doc.save(('Beratungsvereinbarung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
   window.__beratungCtx=null;
-  toast('Beratung abgeschlossen – Vereinbarung gespeichert, PDF wird heruntergeladen');
+  toast(mid?'Beratung abgeschlossen – als Termin & Stundenzettel erfasst, PDF wird heruntergeladen':'Beratung abgeschlossen – Vereinbarung gespeichert, PDF wird heruntergeladen');
   if(currentRole==='staff') renderStaff('aufgaben');
 }
 function buildBeratungsvertragPdf(cu, sig, datum){
@@ -8770,7 +8828,9 @@ const HILFE_WISSEN=[
 ];
 let __hilfeOffen=false;
 function ensureHilfeWidget(){
-  if(document.getElementById('hilfeBtn')) return;
+  // Der frühere schwebende „❓ Hilfe"-Button wurde entfernt – die Hilfe ist
+  // jetzt nahtlos in NEXUS integriert. Bedienungsfragen einfach dort eintippen.
+  return;
   const btn=document.createElement('button');
   btn.id='hilfeBtn'; btn.title='Hilfe-Chat öffnen'; btn.textContent='❓ Hilfe';
   btn.style.cssText='position:fixed;bottom:52px;right:12px;z-index:9998;background:#6d28d9;color:#fff;border:0;border-radius:20px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.2)';
@@ -9881,6 +9941,22 @@ function nxRow(icon,title,sub,fn){
   __nxActions.push(fn);
   return '<div class="nx-row" onclick="nxAct('+(__nxActions.length-1)+')"><div class="nx-ic">'+icon+'</div><div><b>'+title+'</b><div class="nx-sub2">'+sub+'</div></div></div>';
 }
+/* Durchsucht die eingebaute Hilfe-Wissensbasis (früher „❓ Hilfe"-Chat) – jetzt
+   direkt in NEXUS integriert. Liefert den besten Treffer oder null. */
+function nxHelpSearch(qRaw){
+  const q=String(qRaw||'').toLowerCase().trim();
+  if(q.length<3) return null;
+  const words=q.split(/[^a-zäöüß0-9]+/).filter(function(w){return w.length>=3;});
+  if(!words.length) return null;
+  let best=null,bs=0;
+  (typeof HILFE_WISSEN!=='undefined'?HILFE_WISSEN:[]).forEach(function(e){
+    const keys=(e.k+' '+e.t).toLowerCase();
+    let s=0;
+    words.forEach(function(w){ if(keys.indexOf(w)>-1) s+=2; });
+    if(s>bs){bs=s;best=e;}
+  });
+  return bs>=2?best:null;
+}
 function nxRun(qRaw){
   // Mitarbeiter bekommen den mehrsprachigen Navigations-Copiloten
   if(nxSafe(function(){return currentRole==='staff';},false)){ nxRunStaff(qRaw); return; }
@@ -9996,7 +10072,11 @@ function nxRun(qRaw){
   }); });
   if(bestVs>=40) hits.push({s:bestVs-5,html:nxRowData('📂','Ansicht öffnen: '+nxEsc(target),'Navigation',function(){nxViewGo(bestView);})});
   hits.sort(function(a,b){return b.s-a.s;});
-  if(!hits.length){ nxAnswer('Dazu habe ich nichts gefunden. Tippe „hilfe" für Beispiele.'); return; }
+  if(!hits.length){
+    const help=nxHelpSearch(qRaw);
+    if(help){ nxAnswer('<b>'+nxEsc(help.t)+'</b><br>'+help.a); return; }
+    nxAnswer('Dazu habe ich nichts gefunden. Tippe „hilfe" für Beispiele oder stell mir eine Bedienungsfrage.'); return;
+  }
   box.innerHTML=hits.slice(0,7).map(function(h,i){ return h.html.replace('class="nx-row"',i===0?'class="nx-row sel"':'class="nx-row"'); }).join('');
 }
 function nxRowData(icon,title,sub,fn){ __nxActions.push(fn); return '<div class="nx-row" onclick="nxAct('+(__nxActions.length-1)+')"><div class="nx-ic">'+icon+'</div><div><b>'+nxEsc(title).replace(/&lt;(\/?b)&gt;/g,'<$1>')+'</b><div class="nx-sub2">'+sub+'</div></div></div>'; }
@@ -10018,7 +10098,7 @@ const NX_STAFF_VIEWS=[
   {view:'schulung',ic:'🎓',label:'Schulung · Training',de:['schulung','schulungen'],en:['training','courses','course'],tr:['eğitim','eğitimler','kurs'],ru:['обучение','тренинг','курс'],ar:['تدريب','دورات'],ua:['навчання','тренінг','курс']},
   {view:'profile',ic:'☺',label:'Mein Profil · Profile',de:['profil','mein profil','status'],en:['profile','my profile'],tr:['profil','profilim'],ru:['профиль','мой профиль'],ar:['الملف الشخصي','ملفي'],ua:['профіль','мій профіль']},
   {view:'contracts',ic:'📄',label:'Meine Verträge · Contracts',de:['verträge','meine verträge','vertrag'],en:['contracts','my contracts'],tr:['sözleşmeler','sözleşmelerim'],ru:['договоры','контракты'],ar:['العقود','عقودي'],ua:['договори','контракти']},
-  {view:'emergency',ic:'✆',label:'Notfallnummer · Emergency',de:['notfall','notfallnummer'],en:['emergency','emergency number'],tr:['acil','acil durum'],ru:['экстренный','срочная помощь'],ar:['طوارئ','رقم الطوارئ'],ua:['екстрений','термінова допомога']}
+  {view:'emergency',ic:'✆',label:'Notfallkontakt · Emergency',de:['notfall','notfallnummer','notfallkontakt'],en:['emergency','emergency number'],tr:['acil','acil durum'],ru:['экстренный','срочная помощь'],ar:['طوارئ','رقم الطوارئ'],ua:['екстрений','термінова допомога']}
 ];
 function nxSetLang(l){
   nxLang=NX_LANGS[l]?l:'de';
@@ -10044,7 +10124,11 @@ function nxRunStaff(qRaw){
     if(best>0) hits.push({s:best,v:v});
   });
   hits.sort(function(a,b){return b.s-a.s;});
-  if(!hits.length){ nxAnswer(nxEsc(NX_STAFF_NOHIT[nxLang])); return; }
+  if(!hits.length){
+    const help=nxHelpSearch(qRaw);
+    if(help){ nxAnswer('<b>'+nxEsc(help.t)+'</b><br>'+help.a); return; }
+    nxAnswer(nxEsc(NX_STAFF_NOHIT[nxLang])); return;
+  }
   box.innerHTML=hits.slice(0,6).map(function(h,i){
     const html=nxRowData(h.v.ic,h.v.label,'',function(){ nxClose(); nxSafe(function(){ renderStaff(h.v.view); }); });
     return i===0?html.replace('class="nx-row"','class="nx-row sel"'):html;
