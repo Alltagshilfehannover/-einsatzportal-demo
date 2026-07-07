@@ -2818,6 +2818,8 @@ function navItem(id,icon,label,active,badge,blue){
   return '<button class="nav-item '+(active?'active':'')+'" onclick="'+(currentRole==='staff'?'renderStaff':'renderAdmin')+'(\''+id+'\')"><span class="ic">'+icon+'</span>'+label+(badge?'<span class="badge'+(blue?' blue':'')+'">'+badge+'</span>':'')+'</button>';
 }
 function buildAdminNav(active){
+  // Standort-Umschalter nur im Büro-/Admin-Bereich, und nur wenn es Standorte gibt.
+  var _ssAdmin=document.getElementById('standortSwitch'); if(_ssAdmin) _ssAdmin.style.display=(standorte&&standorte.length)?'inline-block':'none';
   const open=jobs.filter(j=>j.status==='available').length;
   // Nur offene Bewerbungen zählen: "versendet" = Zugang verschickt = angenommen/erledigt
   const newApps=applications.filter(a=>a.status==='neu'||a.status==='geprüft').length;
@@ -2900,6 +2902,9 @@ function toggleNavGroup(el,label){
   try{ localStorage.setItem('dailydo-navclosed',JSON.stringify(closed)); }catch(e){}
 }
 function buildStaffNav(active){
+  // Mitarbeiter dürfen NIE zwischen Standorten wechseln – Umschalter immer ausblenden.
+  // (Absicherung, weil loadStandorte() beim Start läuft, bevor die Rolle gesetzt ist.)
+  var _ssStaff=document.getElementById('standortSwitch'); if(_ssStaff) _ssStaff.style.display='none';
   const m=me();
   const mineCount=jobs.filter(j=>j.status==='assigned'&&j.assignedTo===myId).length;
   const open=availableForMe().length;
@@ -5808,7 +5813,14 @@ function renderCalendar(){
       '<div class="cal-arrows"><button onclick="calMove(-1)">‹</button><button class="cal-today-btn" onclick="calToday()">Heute</button><button onclick="calMove(1)">›</button></div>'+
     '</div>';
   const body = calView==='month' ? monthView() : calView==='week' ? timeView(7) : timeView(1);
-  return '<div class="cal-wrap">'+toolbar+body+'</div>';
+  const adminBar = calCanEdit()
+    ? '<div style="display:flex;gap:8px;align-items:center;padding:8px 2px 12px;flex-wrap:wrap">'+
+        '<button class="btn-primary btn-sm" style="width:auto" onclick="calNewAppt()">+ Neuer Termin</button>'+
+        '<button class="btn-danger-ghost btn-sm" onclick="calDeleteAll()">🗑 Alle Termine löschen</button>'+
+        '<span style="font-size:12.5px;color:var(--muted)">Termine per Drag &amp; Drop verschieben · in der Wochen-/Tagesansicht auf freie Fläche ziehen = neuer Termin</span>'+
+      '</div>'
+    : '';
+  return '<div class="cal-wrap">'+toolbar+adminBar+body+'</div>';
 }
 
 function monthTitle(d){ const m=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']; return m[d.getMonth()]+' '+d.getFullYear(); }
@@ -5827,9 +5839,9 @@ function monthView(){
     const d=new Date(start); d.setDate(start.getDate()+i);
     const other=d.getMonth()!==calCursor.getMonth();
     const dayEvs=evs.filter(e=>e.date===dateKey(d)).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
-    const shown=dayEvs.slice(0,3).map(e=>{const cu=custById(e.customerId);const cl=e.status==='abgesagt'?' cm-ev-cancel':'';const fl=apptStatusFlags(e);return '<div class="cm-ev'+cl+'" onclick="event.stopPropagation();showAppt('+e.id+')" '+(fl.length?'title="'+fl.map(f=>f.label).join(' · ').replace(/"/g,'&quot;')+'"':'')+'>'+(e.status==='abgesagt'?'✕ ':'')+(fl.map(f=>f.ic).join(''))+(fl.length?' ':'')+(e.time||'')+' '+(cu?cu.last:'Termin')+'</div>';}).join('');
+    const shown=dayEvs.slice(0,3).map(e=>{const cu=custById(e.customerId);const cl=e.status==='abgesagt'?' cm-ev-cancel':'';const fl=apptStatusFlags(e);return '<div class="cm-ev'+cl+'"'+(calCanEdit()?' draggable="true" ondragstart="calDragStart(event,'+e.id+')"':'')+' onclick="event.stopPropagation();showAppt('+e.id+')" '+(fl.length?'title="'+fl.map(f=>f.label).join(' · ').replace(/"/g,'&quot;')+'"':'')+'>'+(e.status==='abgesagt'?'✕ ':'')+(fl.map(f=>f.ic).join(''))+(fl.length?' ':'')+(e.time||'')+' '+(cu?cu.last:'Termin')+'</div>';}).join('');
     const more=dayEvs.length>3?'<div class="cm-more">+'+(dayEvs.length-3)+' mehr</div>':'';
-    cells+='<div class="cm-cell'+(other?' other':'')+(sameDay(d,today)?' today':'')+'" onclick="openDay(\''+dateKey(d)+'\')"><span class="cm-num">'+d.getDate()+'</span>'+shown+more+'</div>';
+    cells+='<div class="cm-cell'+(other?' other':'')+(sameDay(d,today)?' today':'')+'"'+(calCanEdit()?' ondragover="calDragOver(event)" ondrop="calDropDay(event,\''+dateKey(d)+'\')"':'')+' onclick="openDay(\''+dateKey(d)+'\')"><span class="cm-num">'+d.getDate()+'</span>'+shown+more+'</div>';
   }
   return '<div class="cm-grid">'+dow.map(x=>'<div class="cm-dow">'+x+'</div>').join('')+cells+'</div>';
 }
@@ -5872,9 +5884,9 @@ function timeView(days){
       const cancCl=e.status==='abgesagt'?' ct-ev-cancel':'';
       const fl=apptStatusFlags(e);
       const flIcons=fl.length?'<span class="ct-flags" title="'+fl.map(f=>f.label).join(' · ').replace(/"/g,'&quot;')+'">'+fl.map(f=>f.ic).join('')+'</span>':'';
-      evLayer+='<div class="ct-ev'+cancCl+'" style="top:'+top+'px;height:'+height+'px" onclick="showAppt('+e.id+')"><div class="et">'+(e.status==='abgesagt'?'✕ ':'')+(e.time||'')+' '+(cu?fullName(cu):'Termin')+' '+flIcons+'</div>'+(height>34?'<div class="es">'+(e.status==='abgesagt'?'Abgesagt: '+(e.cancelReason||''):(e.note||(cu?cu.area:'')))+'</div>':'')+'</div>';
+      evLayer+='<div class="ct-ev'+cancCl+'" style="top:'+top+'px;height:'+height+'px"'+(calCanEdit()?' draggable="true" ondragstart="event.stopPropagation();calDragStart(event,'+e.id+')"':'')+' onclick="showAppt('+e.id+')"><div class="et">'+(e.status==='abgesagt'?'✕ ':'')+(e.time||'')+' '+(cu?fullName(cu):'Termin')+' '+flIcons+'</div>'+(height>34?'<div class="es">'+(e.status==='abgesagt'?'Abgesagt: '+(e.cancelReason||''):(e.note||(cu?cu.area:'')))+'</div>':'')+'</div>';
     });
-    dayCols+='<div class="ct-col" style="height:'+totalH+'px">'+slots+evLayer+'</div>';
+    dayCols+='<div class="ct-col" style="height:'+totalH+'px;position:relative"'+(calCanEdit()?' ondragover="calDragOver(event)" ondrop="calDropTime(event,\''+dateKey(d)+'\')" onmousedown="calCreateDown(event,\''+dateKey(d)+'\')"':'')+'>'+slots+evLayer+'</div>';
   });
 
   const gridCols='60px repeat('+days+',1fr)';
@@ -5892,6 +5904,146 @@ function openDay(dateStr){
 }
 function quickAddInfo(){
   toast('Tipp: Termine legst du über „Meine Kunden“ → Kunde → Termin vereinbaren an');
+}
+/* ============================================================
+   KALENDER: DRAG & DROP + LÖSCHEN  (nur Admin-/Bürokalender)
+   - bestehende Termine per Ziehen verschieben (Tag & Uhrzeit)
+   - in der Wochen-/Tagesansicht auf freie Fläche ziehen = neuer Termin
+   - einzelne Termine löschen und alle Termine löschen
+   Aktiv nur wenn der Admin-/Bürokalender gerendert wird (calStaffFilter===null).
+   ============================================================ */
+const CAL_START_HOUR=6, CAL_SLOT_H=48;   // muss zu timeView() passen
+function calCanEdit(){ return calStaffFilter===null; }
+var __calDragId=null;
+function calDragStart(ev,id){
+  __calDragId=id;
+  try{ ev.dataTransfer.setData('text/plain',String(id)); ev.dataTransfer.effectAllowed='move'; }catch(e){}
+}
+function calDragOver(ev){ if(__calDragId!=null){ ev.preventDefault(); try{ ev.dataTransfer.dropEffect='move'; }catch(e){} } }
+function calDragId(ev){ let id=__calDragId; if(id==null){ try{ id=+ev.dataTransfer.getData('text/plain'); }catch(e){} } return id; }
+/* Pixel-Y in einer Tagesspalte -> Uhrzeit (15-Minuten-Raster) */
+function calYToTime(y){
+  let mins=Math.round((y/CAL_SLOT_H*60)/15)*15 + CAL_START_HOUR*60;
+  if(mins<CAL_START_HOUR*60) mins=CAL_START_HOUR*60;
+  if(mins>22*60) mins=22*60;
+  return pad2(Math.floor(mins/60))+':'+pad2(mins%60);
+}
+/* Termin auf einen anderen Tag ziehen (Monatsansicht) – Uhrzeit bleibt */
+function calDropDay(ev,dateStr){
+  ev.preventDefault();
+  const id=calDragId(ev); __calDragId=null;
+  const a=appointments.find(x=>x.id===id); if(!a||a.date===dateStr) return;
+  a.date=dateStr;
+  if(CLOUD) cloudUpdate('termine',a.id,apptToRow(a));
+  logActivity('Termin verschoben auf '+fmtDate(dateStr));
+  refreshCal(); toast('Termin verschoben auf '+fmtDate(dateStr));
+}
+/* Termin in der Wochen-/Tagesansicht auf Tag + Uhrzeit ziehen */
+function calDropTime(ev,dateStr){
+  ev.preventDefault();
+  const id=calDragId(ev); __calDragId=null;
+  const a=appointments.find(x=>x.id===id); if(!a) return;
+  const rect=ev.currentTarget.getBoundingClientRect();
+  const t=calYToTime(ev.clientY-rect.top);
+  a.date=dateStr; a.time=t;
+  if(CLOUD) cloudUpdate('termine',a.id,apptToRow(a));
+  logActivity('Termin verschoben: '+fmtDate(dateStr)+' '+t);
+  refreshCal(); toast('Termin verschoben: '+fmtDate(dateStr)+' um '+t+' Uhr');
+}
+/* Auf freier Fläche ziehen = neuen Termin anlegen (Zeitraum = Dauer) */
+var __calCreate=null;
+function calCreateDown(ev,dateStr){
+  if(!calCanEdit()||ev.button!==0) return;
+  if(ev.target.closest('.ct-ev')) return;   // auf einem Termin = verschieben, nicht anlegen
+  const col=ev.currentTarget, rect=col.getBoundingClientRect();
+  __calCreate={col:col,date:dateStr,y0:ev.clientY-rect.top};
+  const box=document.createElement('div');
+  box.style.cssText='position:absolute;left:2px;right:2px;background:rgba(109,40,217,.18);border:1px dashed var(--petrol);border-radius:6px;pointer-events:none;z-index:5';
+  col.appendChild(box); __calCreate.box=box;
+  calCreateMove(ev);
+  document.addEventListener('mousemove',calCreateMove);
+  document.addEventListener('mouseup',calCreateUp);
+  ev.preventDefault();
+}
+function calCreateMove(ev){
+  if(!__calCreate) return;
+  const rect=__calCreate.col.getBoundingClientRect();
+  const y=ev.clientY-rect.top, y0=__calCreate.y0;
+  __calCreate.box.style.top=Math.max(0,Math.min(y0,y))+'px';
+  __calCreate.box.style.height=Math.max(6,Math.abs(y-y0))+'px';
+}
+function calCreateUp(ev){
+  document.removeEventListener('mousemove',calCreateMove);
+  document.removeEventListener('mouseup',calCreateUp);
+  const c=__calCreate; __calCreate=null; if(!c) return;
+  if(c.box&&c.box.parentNode) c.box.parentNode.removeChild(c.box);
+  const rect=c.col.getBoundingClientRect();
+  const y1=ev.clientY-rect.top, a=Math.min(c.y0,y1), b=Math.max(c.y0,y1);
+  let dur=Math.round(((b-a)/CAL_SLOT_H*60)/15)*15;
+  if(dur<15) dur=60;   // reiner Klick -> Standarddauer
+  calNewAppt(c.date, calYToTime(a), dur);
+}
+/* Modal: neuen Termin im Kalender anlegen (Kunde + Mitarbeiter frei wählbar) */
+function calNewAppt(dateStr,timeStr,dur){
+  if(!calCanEdit()) return;
+  dateStr=dateStr||todayISO(); timeStr=timeStr||'09:00'; dur=dur||60;
+  const custOpts=(customers||[]).slice().sort((a,b)=>fullName(a).localeCompare(fullName(b)))
+    .map(c=>'<option value="'+c.id+'">'+fullName(c)+(c.area?' · '+c.area:'')+'</option>').join('');
+  const staffOpts=(staff||[]).slice().sort((a,b)=>staffName(a.id).localeCompare(staffName(b.id)))
+    .map(s=>'<option value="'+s.id+'">'+staffName(s.id)+'</option>').join('');
+  document.getElementById('modalTitle').textContent='Neuer Termin';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="content-form">'+
+    '<label>Kunde *</label><select id="na_cust">'+(custOpts||'<option value="">– keine Kunden –</option>')+'</select>'+
+    '<label>Mitarbeiter *</label><select id="na_staff">'+(staffOpts||'<option value="">– keine Mitarbeiter –</option>')+'</select>'+
+    '<div class="form-row"><div><label>Datum</label><input id="na_date" type="date" value="'+dateStr+'"></div>'+
+    '<div><label>Uhrzeit</label><input id="na_time" type="time" value="'+timeStr+'"></div></div>'+
+    '<label>Dauer (Minuten)</label><input id="na_dur" type="number" value="'+dur+'">'+
+    '<label>Notiz (optional)</label><input id="na_note" placeholder="z. B. Einkauf + Reinigung">'+
+    '</div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="calSaveNewAppt()">Termin anlegen</button>';
+  openModal();
+}
+function calSaveNewAppt(){
+  if(currentRole!=='admin'&&currentRole!=='buero'){ toast('Keine Berechtigung',true); return; }
+  const cid=+val('na_cust'), sid=+val('na_staff'), date=val('na_date'), time=val('na_time');
+  if(!cid){ toastHint('Bitte einen Kunden wählen'); return; }
+  if(!sid){ toastHint('Bitte einen Mitarbeiter wählen'); return; }
+  if(!date||!time){ toastHint('Bitte Datum und Uhrzeit angeben'); return; }
+  const cu=custById(cid);
+  const type=(cu&&cu.status==='Interessent'&&!cu.vertrag)?'kennenlernen':'einsatz';
+  const appt={id:nextApptId++,staffId:sid,customerId:cid,date:date,time:time,duration:parseInt(val('na_dur'))||60,note:val('na_note'),type:type,status:'geplant'};
+  appointments.push(appt);
+  if(CLOUD) cloudInsert('termine',apptToRow(appt)).then(r=>{ if(r&&r.id){ appt.id=r.id; } });
+  logActivity('Termin angelegt (Kalender): '+(cu?fullName(cu):'')+' '+fmtDate(date)+' '+time);
+  closeModal(); toast('Termin angelegt'); refreshCal();
+}
+/* Einzelnen Termin endgültig löschen (Admin/Büro) */
+function calDeleteAppt(id){
+  if(currentRole!=='admin'&&currentRole!=='buero'){ toast('Keine Berechtigung',true); return; }
+  const a=appointments.find(x=>x.id===id); if(!a) return;
+  const cu=custById(a.customerId);
+  confirmDangerDelete('Termin löschen','Soll der Termin mit <b>'+(cu?fullName(cu):'—')+'</b> am '+fmtDateLong(a.date)+' um '+a.time+' Uhr wirklich endgültig gelöscht werden?',function(){
+    appointments=appointments.filter(x=>x.id!==id);
+    if(CLOUD) cloudDelete('termine',id);
+    logActivity('Termin gelöscht: '+(cu?fullName(cu):'')+' '+fmtDate(a.date));
+    closeModal(); toast('Termin gelöscht'); refreshCal();
+  });
+}
+/* ALLE Termine löschen (nur Admin) */
+function calDeleteAll(){
+  if(!requireAdminAction()) return;
+  const n=appointments.length;
+  if(!n){ toastHint('Es sind keine Termine vorhanden'); return; }
+  confirmDangerDelete('Alle Termine löschen','Sollen wirklich <b>ALLE '+n+' Termine</b> endgültig gelöscht werden?<br><br>Das lässt sich nicht rückgängig machen.',function(){
+    const ids=appointments.map(a=>a.id);
+    appointments=[];
+    if(CLOUD){ ids.forEach(function(id){ cloudDelete('termine',id); }); }
+    logActivity('Alle Termine gelöscht ('+n+')');
+    closeModal(); toast(n+' Termine gelöscht'); refreshCal();
+  });
 }
 function addAppointment(customerId){
   const cu=custById(customerId);
@@ -5969,6 +6121,10 @@ function showAppt(id){
   // Büro: gemeldetes Problem / Wunsch als geklärt markieren
   if(isOfficeRole()&&!cancelled&&(a.problem||a.wunsch)){
     foot+='<button class="btn-ghost" style="width:auto" onclick="apptFeedbackClear('+id+')">✓ Als geklärt markieren</button>';
+  }
+  // Büro/Admin: Termin endgültig löschen
+  if((currentRole==='admin'||currentRole==='buero')&&!cancelled){
+    foot+='<button class="btn-danger-ghost" style="width:auto" onclick="calDeleteAppt('+id+')">🗑 Löschen</button>';
   }
   // Admin darf einen abgesagten Termin endgültig aus dem Kalender entfernen
   if(currentRole==='admin'&&cancelled){
