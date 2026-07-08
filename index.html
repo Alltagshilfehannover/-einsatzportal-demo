@@ -1291,7 +1291,7 @@ const ROLE_VIEWS={
   admin:null, // null = alle Views erlaubt
   buero:['dashboard','karte','staff','customers','newcustomer','applications','kommunikation','hours','leistungen','calendar','vorlagen','mailing','marketing','schulung','mylogin'],
   callcenter:['dashboard','customers','newcustomer','kommunikation','calendar','marketing','schulung','mylogin'],
-  buchhaltung:['dashboard','rechnungen','lexware','bank','hours','payroll','customers','staff','kostentraeger','leistungen','standorte','calendar','marketing','schulung','mylogin']
+  buchhaltung:['dashboard','rechnungen','lexware','bank','hours','payroll','steuerberater','customers','staff','kostentraeger','leistungen','standorte','calendar','marketing','schulung','mylogin']
 };
 const ROLE_LABELS={admin:'Büro',buero:'Büro',callcenter:'CallCenter',buchhaltung:'Buchhaltung',staff:'Mitarbeiter'};
 function hasRole(...roles){ return roles.includes(currentRole); }
@@ -1999,7 +1999,7 @@ const SCHULUNGEN=[
     slides:[
       { h:"Bedienung der Mitarbeiter-App", sub:"So nutzt du Daily Do sicher im Arbeitsalltag", points:[] },
       { h:"Anmelden", points:["Mit deiner geschäftlichen E-Mail und Passwort anmelden","„Passwort vergessen?“ schickt dir einen Link per E-Mail","Auf fremden Geräten immer wieder abmelden – Zugangsdaten sind vertraulich"] },
-      { h:"Dein Dashboard", points:["Bestätigte und voraussichtliche Stunden im Monat","Dein Verdienst auf Basis deines Stundenlohns","Bonus: bereits erhalten und noch ausstehend","70-Tage-Regel: verbleibende Tage kurzfristiger Beschäftigung"] },
+      { h:"Dein Dashboard", points:["Bestätigte und voraussichtliche Stunden im Monat","Dein Verdienst auf Basis deines Stundenlohns","Bonus: bereits erhalten und noch ausstehend"] },
       { h:"Aufträge annehmen", points:["Die Auftragsbörse zeigt verfügbare Einsätze in deinem Gebiet","Auftrag antippen: Bedarf, Häufigkeit und Zeitfenster prüfen","Auf „Annehmen“ – der Kunde wird dir zugeordnet","Angenommene Einsätze sind verbindlich"] },
       { h:"Meine Kunden", points:["Alle dir zugeordneten Kunden an einem Ort","Adresse, Telefon, Anfahrt und wichtige Hinweise","Kontaktperson für Rückfragen","Kundendaten sind streng vertraulich"] },
       { h:"Termine & Einsatz", points:["Geplante Termine im Kalender","Vor Ort „Termin starten“ – Zeiten werden erfasst","Bei neuen Kunden: Kennenlerngespräch","Pünktlich sein, Verspätung sofort melden"] },
@@ -2847,6 +2847,7 @@ function buildAdminNav(active){
       viewAllowed('lexware')&&hasRole('admin','buchhaltung')?navItem('lexware','🔗','Lexware Office',active==='lexware'):'',
       viewAllowed('bank')&&hasRole('admin','buchhaltung')?navItem('bank','🏦','Bank',active==='bank'):'',
       viewAllowed('payroll')?navItem('payroll','€','Lohnabrechnung',active==='payroll'):'',
+      viewAllowed('steuerberater')?navItem('steuerberater','🧮','Steuerberater',active==='steuerberater'):'',
       viewAllowed('notes')?navItem('notes','✎','Notizen',active==='notes'):'',
       viewAllowed('calendar')?navItem('calendar','▦','Kalender',active==='calendar'):''
     ]],
@@ -3966,6 +3967,7 @@ function renderAdmin(view){
     '</div>'+
     '<div id="calSearchHint" style="margin:0 0 12px;font-size:13px;color:var(--muted);'+((calSearch||'').trim()?'':'display:none')+'"></div>'+
     calendarHTML(null); }
+  if(view==='steuerberater'){ c.innerHTML=head('Steuerberater','Genehmigte Mitarbeiter mit allen Unterlagen zur Übermittlung an den Steuerberater – Personalfragebogen, Verträge und Beschäftigungsdaten.')+steuerberaterHTML(); }
 }
 
 /* ---- Auftrags-Zusammenfassung (Modal) ---- */
@@ -4613,6 +4615,69 @@ function deleteCustomer(id){
   });
 }
 /* ============ BEWERBUNGS-GENEHMIGUNG (ADMIN) ============ */
+/* ============================================================
+   STEUERBERATER-BEREICH
+   Zeigt genehmigte Mitarbeiter (Bewerbungsstatus „versendet") mit allen
+   Unterlagen zur Übermittlung an den Steuerberater: Personalfragebogen,
+   signierte Verträge und Beschäftigungsdaten. Quelle sind die Bewerbungen
+   (dort liegt der vollständige Fragebogen) – daher keine DB-Änderung nötig.
+   ============================================================ */
+function steuerberaterHTML(){
+  const approved=(applications||[]).filter(a=>a.status==='versendet');
+  if(!approved.length) return placeholder('🧮','Noch keine genehmigten Mitarbeiter','Sobald du eine Bewerbung genehmigt und den Zugang verschickt hast, erscheint die Person hier mit allen Unterlagen für den Steuerberater.');
+  return '<div class="panel"><div class="panel-body" style="padding-top:8px">'+
+    approved.map(function(a){
+      const q=a.questionnaire||{};
+      const contracts=Object.keys(a.docs||{}).filter(function(k){return a.docs[k];});
+      return '<div class="list-row" style="padding:13px 0;border-bottom:1px solid var(--line)">'+
+        '<div class="li-main" style="flex:1"><b>'+fullName(a)+'</b> <span class="tag green">genehmigt</span>'+
+        '<div class="li-sub">'+(q.employment||'—')+' · '+wizContractHours(q)+' Std./Monat · '+contracts.length+' signierte Verträge</div></div>'+
+        '<div style="display:flex;gap:7px;align-items:center">'+
+        '<button class="btn-primary btn-sm" style="width:auto" onclick="openTaxDatasheet('+a.id+')">📄 Datenblatt</button>'+
+        '</div></div>';
+    }).join('')+
+    '</div></div>';
+}
+function taxDatasheetRows(a){
+  const q=a.questionnaire||{};
+  const kinder=(Array.isArray(q.children)&&q.children.length)?q.children.map(function(c){return c.name+' ('+isoToGerman(c.birth)+')';}).join(', '):'keine';
+  const rows=[
+    ['Name',fullName(a)],['E-Mail',a.email||'—'],['Telefon',a.phone||'—'],
+    ['Geburtsdatum',isoToGerman(q.birth||'')||'—'],['Anschrift',q.address||'—'],
+    ['Familienstand',q.maritalStatus||'—'],['Steuerklasse',q.taxClass||'—'],
+    ['Kirchensteuer',q.church||'—'],['Kinder',kinder],
+    ['Steuer-ID',q.taxId||'—'],['KV-Nummer',q.kvNr||'—'],['Krankenkasse',q.kasse||'—'],
+    ['IBAN',q.iban||'—'],['Beschäftigungsart',q.employment||'—'],
+    ['Stunden/Monat',String(wizContractHours(q))],['Stundenlohn',PFB_WAGE+' €'],
+    ['Vertragsbeginn',isoToGerman(q.contractStart||'')||'—'],
+    ['Arbeitgeber','Alltagshilfe Hannover UG (haftungsbeschränkt), Bahnhofstraße 85, 31515 Wunstorf']
+  ];
+  if(q.parentName||q.parentSig) rows.push(['Einverständnis Erziehungsberechtigte(r)',(q.parentName||'')+(q.parentSig?' (unterschrieben)':'')]);
+  return rows;
+}
+function openTaxDatasheet(id){
+  const a=applications.find(function(x){return x.id===id;}); if(!a){ toast('Nicht gefunden',true); return; }
+  const rows=taxDatasheetRows(a);
+  const contracts=Object.keys(a.docs||{}).filter(function(k){return a.docs[k];});
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Steuerberater-Datenblatt: '+fullName(a);
+  document.getElementById('modalBody').innerHTML=
+    '<div class="section-label">Personal- & Beschäftigungsdaten</div>'+
+    rows.map(function(r){return '<div class="reveal-row"><span class="k">'+r[0]+'</span><span class="v">'+r[1]+'</span></div>';}).join('')+
+    '<div class="section-label" style="margin-top:14px">Signierte Verträge</div>'+
+    (contracts.length?contracts.map(function(name){return '<div class="reveal-row"><span class="k">'+name+'</span><span class="v"><button class="btn-ghost btn-sm" style="width:auto" onclick="viewAppContract('+a.id+',\''+name.replace(/'/g,'')+'\')">Ansehen</button></span></div>';}).join(''):'<div style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine signierten Verträge.</div>');
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal();document.getElementById(\'modalBox\').classList.remove(\'wide\')">Schließen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="copyTaxDatasheet('+a.id+')">📋 Für Steuerberater kopieren</button>';
+  openModal();
+}
+function copyTaxDatasheet(id){
+  const a=applications.find(function(x){return x.id===id;}); if(!a) return;
+  const text='Steuerberater-Datenblatt – '+fullName(a)+'\n'+taxDatasheetRows(a).map(function(r){return r[0]+': '+r[1];}).join('\n');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){ toast('Datenblatt in die Zwischenablage kopiert'); }).catch(function(){ toast('Kopieren nicht möglich',true); });
+  } else { toast('Kopieren wird von diesem Browser nicht unterstützt',true); }
+}
 function showApplication(id){
   const a=applications.find(x=>x.id===id);
   if(!a){ toast('Bewerbung nicht gefunden',true); return; }
@@ -4631,7 +4696,7 @@ function showApplication(id){
     const sig=(a.signatures&&a.signatures[name])||null;
     return '<div class="reveal-row"><span class="k">'+name+'</span><span class="v" style="display:flex;align-items:center;gap:8px;justify-content:flex-end">'+(a.docs[name]?'<span class="tag green">✓ signiert</span>':'<span class="tag red">offen</span>')+(a.docs[name]?'<button class="btn-ghost btn-sm" style="width:auto" onclick="viewAppContract('+a.id+',\''+name.replace(/'/g,'')+'\')">Ansehen</button>':'')+'</span></div>';
   };
-  const PFB_LABELS={birth:'Geburtsdatum',birthplace:'Geburtsort',address:'Anschrift',maritalStatus:'Familienstand',taxId:'Steuer-ID',taxClass:'Steuerklasse',kvNr:'KV-Nummer',kasse:'Krankenkasse',iban:'IBAN',employment:'Anstellungsart',otherJob:'Weitere Beschäftigung'};
+  const PFB_LABELS={birth:'Geburtsdatum',birthplace:'Geburtsort',address:'Anschrift',maritalStatus:'Familienstand',taxClass:'Steuerklasse',church:'Kirchensteuer',taxId:'Steuer-ID',kvNr:'KV-Nummer',kasse:'Krankenkasse',iban:'IBAN',employment:'Anstellungsart',teilzeitStunden:'Teilzeit-Stunden/Monat',otherJob:'Weitere Beschäftigung'};
   const q=a.questionnaire||{};const decl=a.declaration||{};
   const pfbRows=Object.keys(PFB_LABELS).filter(k=>q[k]).map(k=>'<div class="reveal-row"><span class="k">'+PFB_LABELS[k]+'</span><span class="v">'+q[k]+'</span></div>').join('')||'<div style="color:var(--muted);font-size:13px;padding:4px 0">Keine Angaben.</div>';
   document.getElementById('modalBody').innerHTML=
@@ -4827,8 +4892,8 @@ function renderStaff(view){
       stat('Voraussichtliche Stunden',plannedH.toFixed(1).replace('.',',')+' h','inkl. noch offener Einträge')+
       stat('Verdienst (Monat)',earned.toFixed(2).replace('.',',')+' €','bei '+wage.toFixed(2).replace('.',',')+' €/h')+
     '</div><div style="height:16px"></div>'+
-    '<div class="cards grid-2">'+
-      // Bonus-Karte
+    '<div class="cards">'+
+      // Bonus-Karte (70-Tage-Karte für kurzfristige Beschäftigung entfernt)
       '<div class="panel"><div class="panel-body" style="padding:18px 20px">'+
         '<div class="stat-row" style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="label" style="font-size:13px;color:var(--muted);font-weight:600">Bonus</div>'+
         '<div class="value" style="font-size:28px;font-weight:700;color:var(--good);margin-top:4px">'+(bonus.earned).toFixed(0)+' €</div>'+
@@ -4836,13 +4901,6 @@ function renderStaff(view){
         '<div style="text-align:right"><div class="value" style="font-size:22px;font-weight:700;color:'+(bonus.pending>0?'var(--amber)':'var(--muted)')+'">'+(bonus.pending).toFixed(0)+' €</div>'+
         '<div class="foot" style="font-size:12.5px;color:var(--muted)">ausstehend</div></div></div>'+
         (bonus.reason?'<div style="margin-top:10px;font-size:12.5px;color:var(--muted);border-top:1px solid #eef3f3;padding-top:10px">'+bonus.reason+'</div>':'')+
-      '</div></div>'+
-      // 70-Tage-Karte
-      '<div class="panel"><div class="panel-body" style="padding:18px 20px">'+
-        '<div class="label" style="font-size:13px;color:var(--muted);font-weight:600">70-Tage-Richtlinie (kurzfristige Beschäftigung)</div>'+
-        '<div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><div class="value" style="font-size:28px;font-weight:700;color:'+dayColor+'">'+daysLeft+'</div><div style="font-size:13px;color:var(--muted)">Tage noch möglich</div></div>'+
-        '<div style="height:9px;background:#eef3f3;border-radius:6px;margin-top:10px;overflow:hidden"><div style="height:100%;width:'+dayPct+'%;background:'+dayColor+';border-radius:6px"></div></div>'+
-        '<div style="font-size:12.5px;color:var(--muted);margin-top:6px">'+(m.daysWorked||0)+' von 70 Tagen genutzt</div>'+
       '</div></div>'+
     '</div><div style="height:16px"></div>'+
     '<div class="cards grid-3">'+
@@ -5187,6 +5245,7 @@ let wizStep=0;
 const WIZ_TOTAL=10;
 function freshWizData(){return {gender:'',skills:[],docs:{Arbeitsvertrag:false,Datenschutzvertrag:false,NDA:false,Haftungserklärung:false},signatures:{},questionnaire:{},declaration:{noCrime:false,bringCertificate:false,bringFirstAid:false,sendKvCard:false},idFront:false,idBack:false,selfie:false};}
 let wizData=freshWizData();
+let wizSubmitted=false;   // true nach erfolgreichem Absenden – unterdrückt die „Abbrechen?"-Warnung
 
 const TEAM=[['👩','Bianca','Einsatzleiterin'],['👨','Daniel','Geschäftsführung'],['👩','Ivonne','Haushaltshilfe'],['👨','Sven','Geschäftsführung'],['👩','Natalie','Betreuung'],['👩','Silvana','Haushaltshilfe']];
 const DOC_TEXTS={
@@ -5198,12 +5257,16 @@ const DOC_TEXTS={
 
 function startWizard(){
   wizStep=0;
+  wizSubmitted=false;
   wizData=freshWizData();
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('wizard').classList.add('active');
   renderWizard();
 }
 function exitWizard(){
+  // Nach erfolgreichem Absenden ist die Bewerbung bereits beim Büro angekommen –
+  // dann KEINE „Bewerbung geht verloren"-Warnung mehr, sondern direkt schließen.
+  if(wizSubmitted){ doExitWizard(); return; }
   // Ab Schritt 2 stecken echte Eingaben drin – ein Fehlklick darf sie nicht wegwerfen
   if(wizStep>0){
     appConfirm('Möchtest du die Bewerbung wirklich abbrechen?\nDeine bisherigen Eingaben gehen dabei verloren.',
@@ -5224,6 +5287,8 @@ function renderWizard(){
   const w=document.getElementById('wizWrap');
   const steps=[wizAbout,wizTasks,wizRequirements,wizDataForm,wizQuestionnaire,wizContracts,wizDeclaration,wizIdSelfie,wizAgb,wizDone];
   w.innerHTML='<div class="wiz-step active">'+steps[wizStep]()+'</div>';
+  // Personalfragebogen (Schritt-Index 4): dynamische Teile aufbauen
+  if(wizStep===4) setTimeout(function(){ pfbKidsChange(); pfbAgeCheck(); pfbUpdateNet(); },30);
   if(wizStep===5) setTimeout(initSignPads,30);
   // AGB-Schritt: falls der Text ohne Scrollen komplett sichtbar ist, Häkchen sofort freigeben
   if(wizStep===8) setTimeout(function(){ agbScrollCheck(document.getElementById('agbScroll')); },80);
@@ -5326,7 +5391,7 @@ const PFB_QUESTIONS=[
   {key:'kvNr',label:'Krankenversicherungsnummer',type:'text',ph:'KV-Nummer'},
   {key:'kasse',label:'Krankenkasse',type:'text',ph:'z. B. AOK Niedersachsen'},
   {key:'iban',label:'IBAN (für die Lohnzahlung)',type:'text',ph:'DE..'},
-  {key:'employment',label:'Gewünschte Anstellungsart',type:'select',opts:['Minijob','Midijob','Teilzeit','Vollzeit','kurzfristige Beschäftigung']},
+  {key:'employment',label:'Gewünschte Anstellungsart',type:'select',opts:['Minijob','Teilzeit','Werkstudent']},
   {key:'otherJob',label:'Übst du weitere Beschäftigungen aus?',type:'select',opts:['nein','ja, ein Minijob','ja, Hauptbeschäftigung','ja, Sonstiges']}
 ];
 // --- Validierungs-Helfer ---
@@ -5373,33 +5438,40 @@ function splitStreetHouseNo(v){ // "Bahnhofstraße 85a" -> Straße + Hausnr.
 let pfbIndex=0;
 function wizQuestionnaire(){
   const q=wizData.questionnaire||{};
+  const emp=q.employment||'';
+  const kids=Array.isArray(q.children)?q.children:[];
   return wizNumLabel(5)+
   '<div class="wiz-card"><h2>Personalfragebogen</h2>'+
-  '<p class="lead">Diese Angaben verwenden wir für deinen Arbeitsvertrag. Alle Felder sind Pflicht.</p>'+
+  '<p class="lead">Diese Angaben verwenden wir für deinen Arbeitsvertrag und die Lohnabrechnung. Alle Felder sind Pflicht.</p>'+
   '<div class="wiz-form">'+
     '<div class="form-row"><div><label>Vorname *</label><input id="pf_first" value="'+(wizData.first||'')+'"></div>'+
     '<div><label>Nachname *</label><input id="pf_last" value="'+(wizData.last||'')+'"></div></div>'+
     '<label>Straße und Hausnummer *</label><input id="pf_streetfull" value="'+(((q.street||'')+' '+(q.houseNo||'')).trim())+'" placeholder="z. B. Bahnhofstraße 85">'+
     '<div class="form-row"><div style="flex:1"><label>PLZ *</label><input id="pf_plz" inputmode="numeric" value="'+(q.plz||'')+'"></div>'+
     '<div style="flex:2"><label>Ort *</label><input id="pf_city" value="'+(q.city||'')+'"></div></div>'+
-    '<label>Geburtsdatum *</label><input id="pf_birth" inputmode="numeric" placeholder="TT.MM.JJJJ" oninput="dateAutoFormat(this)" value="'+isoToGerman(q.birth||'')+'">'+
+    '<label>Geburtsdatum *</label><input id="pf_birth" inputmode="numeric" placeholder="TT.MM.JJJJ" oninput="dateAutoFormat(this);pfbAgeCheck()" value="'+isoToGerman(q.birth||'')+'">'+
+    '<div id="pf_minorbox" style="display:none"></div>'+
+    '<label>Familienstand *</label>'+
+    '<select id="pf_marital"><option value="">Bitte wählen …</option>'+['ledig','verheiratet','eingetragene Lebenspartnerschaft','geschieden','verwitwet'].map(x=>'<option '+(q.maritalStatus===x?'selected':'')+'>'+x+'</option>').join('')+'</select>'+
+    '<label>Steuerklasse *</label>'+
+    '<select id="pf_taxclass" onchange="pfbUpdateNet()"><option value="">Bitte wählen …</option>'+['I','II','III','IV','V','VI'].map(x=>'<option '+(q.taxClass===x?'selected':'')+'>'+x+'</option>').join('')+'</select>'+
+    '<label>Kirchensteuerpflichtig? *</label>'+
+    '<div class="seg" id="pf_church">'+['ja','nein'].map(x=>'<button data-v="'+x+'" class="'+(q.church===x?'on':'')+'" onclick="segPick(this,\'pf_church\');pfbUpdateNet()">'+x+'</button>').join('')+'</div>'+
+    '<div style="height:10px"></div>'+
+    '<label>Anzahl Kinder</label><input id="pf_kids" type="number" min="0" max="12" value="'+(kids.length||0)+'" oninput="pfbKidsChange();pfbUpdateNet()">'+
+    '<div id="pf_kidrows" style="margin-top:6px"></div>'+
     '<label>Steuer-Identifikationsnummer *</label><input id="pf_taxid" inputmode="numeric" value="'+(q.taxId||'')+'" placeholder="11 Ziffern">'+
-    '<label>Krankenversicherungsnummer *</label><input id="pf_kvnr" value="'+(q.kvNr||'')+'" placeholder="1 Buchstabe + 9 Ziffern">'+
+    '<label>Krankenversicherungsnummer *</label><input id="pf_kvnr" oninput="kvAutoFormat(this)" value="'+(q.kvNr||'')+'" placeholder="A 123 456 789">'+
     '<label>Krankenkasse *</label><input id="pf_kasse" value="'+(q.kasse||'')+'" placeholder="z. B. AOK Niedersachsen">'+
     '<label>IBAN *</label><input id="pf_iban" oninput="ibanAutoFormat(this)" value="'+(q.iban||'')+'" placeholder="DE12 3456 7890 …">'+
     '<label>Beschäftigungsart *</label>'+
-    '<select id="pf_employment"><option value="">Bitte wählen …</option>'+['Minijob','Midijob','Werkstudent','Kurzfristige Beschäftigung'].map(e=>'<option '+(q.employment===e?'selected':'')+'>'+e+'</option>').join('')+'</select>'+
-    '<label>Übst du weitere Beschäftigungen aus? *</label>'+
-    '<select id="pf_otherjob" onchange="pfbOtherJobChange()"><option value="">Bitte wählen …</option>'+['Ja, Student','Ja, Hauptbeschäftigung','Nein'].map(e=>'<option '+(q.otherJob===e?'selected':'')+'>'+e+'</option>').join('')+'</select>'+
-    '<div id="pf_studentbox" style="display:'+(q.otherJob==='Ja, Student'?'block':'none')+';margin-top:14px">'+
-      '<div class="info-note">🎓 <b>Hinweis:</b> Als Student benötigen wir später eine Immatrikulationsbescheinigung. Du lädst sie im Schritt „Ausweis & Selfie" hoch.</div>'+
-    '</div>'+
+    '<select id="pf_employment" onchange="pfbEmploymentChange()"><option value="">Bitte wählen …</option>'+['Minijob','Teilzeit','Werkstudent'].map(e=>'<option '+(emp===e?'selected':'')+'>'+e+'</option>').join('')+'</select>'+
+    '<div id="pf_teilzeitbox" style="display:'+(emp==='Teilzeit'?'block':'none')+';margin-top:10px"><label>Gewünschte Stunden pro Monat (50–120) *</label><input id="pf_tzhours" type="number" min="50" max="120" value="'+(q.teilzeitStunden||'')+'" oninput="pfbUpdateNet()"></div>'+
+    '<div id="pfb_netbox" style="margin-top:12px"></div>'+
+    '<label style="margin-top:8px">Übst du weitere Beschäftigungen aus? *</label>'+
+    '<select id="pf_otherjob"><option value="">Bitte wählen …</option>'+['Nein','Ja, Minijob','Ja, Hauptbeschäftigung','Ja, Student/Werkstudent'].map(e=>'<option '+(q.otherJob===e?'selected':'')+'>'+e+'</option>').join('')+'</select>'+
   '</div>'+
   '<div class="wiz-nav"><button class="btn-ghost" onclick="wizBack()">← Zurück</button><button class="btn-primary" onclick="savePfb()">Weiter →</button></div></div>';
-}
-function pfbOtherJobChange(){
-  const v=document.getElementById('pf_otherjob').value;
-  document.getElementById('pf_studentbox').style.display=(v==='Ja, Student')?'block':'none';
 }
 function handleEnrollFile(input){
   const file=input.files&&input.files[0]; if(!file)return;
@@ -5413,6 +5485,97 @@ function handleEnrollFile(input){
   };
   reader.readAsDataURL(file);
 }
+/* --- Personalfragebogen: dynamische Helfer --- */
+const PFB_WAGE=17;   // €/Std. (einheitlich)
+function pfbEmploymentChange(){
+  const emp=(document.getElementById('pf_employment')||{}).value||'';
+  const tz=document.getElementById('pf_teilzeitbox'); if(tz) tz.style.display=(emp==='Teilzeit')?'block':'none';
+  pfbUpdateNet();
+}
+function kvAutoFormat(el){
+  let v=el.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const letter=v.slice(0,1).replace(/[^A-Z]/g,'');
+  const digits=v.slice(1).replace(/[^0-9]/g,'').slice(0,9);
+  let out=letter;
+  for(let i=0;i<digits.length;i+=3){ out+=' '+digits.slice(i,i+3); }
+  el.value=out.trim();
+}
+function ageFromIso(iso){
+  const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/); if(!m) return 0;
+  const b=new Date(+m[1],+m[2]-1,+m[3]); const now=new Date();
+  let a=now.getFullYear()-b.getFullYear();
+  const md=now.getMonth()-b.getMonth(); if(md<0||(md===0&&now.getDate()<b.getDate())) a--;
+  return a;
+}
+function pfbAgeCheck(){
+  const box=document.getElementById('pf_minorbox'); if(!box) return;
+  const iso=parseGermanDate((document.getElementById('pf_birth')||{}).value);
+  if(!iso){ box.style.display='none'; box.innerHTML=''; return; }
+  const age=ageFromIso(iso); const q=wizData.questionnaire||{};
+  if(age<16){
+    box.style.display='block';
+    box.innerHTML='<div class="info-note" style="margin-top:8px;border-color:#e11d48;background:#ffe4e9;color:#b42318">⚠ Eine Beschäftigung ist erst ab 16 Jahren möglich.</div>';
+  } else if(age<18){
+    box.style.display='block';
+    box.innerHTML='<div class="info-note" style="margin-top:8px">🔒 <b>Unter 18:</b> Für die Beschäftigung ist die Einverständniserklärung eines Erziehungsberechtigten nötig.'+
+      '<div style="margin-top:8px"><input id="pf_parent" placeholder="Name des Erziehungsberechtigten" value="'+(q.parentName||'')+'"></div>'+
+      '<button class="btn-primary btn-sm" style="width:auto;margin-top:8px" onclick="pfbParentSign()">'+(q.parentSig?'✓ Einverständnis unterschrieben – ändern':'Einverständnis unterschreiben')+'</button></div>';
+  } else { box.style.display='none'; box.innerHTML=''; }
+}
+function pfbParentSign(){
+  const q=wizData.questionnaire||{};
+  q.parentName=(document.getElementById('pf_parent')||{}).value||q.parentName||'';
+  wizData.questionnaire=q;
+  openSignatureModal('Einverständnis Erziehungsberechtigte(r)','Ein Erziehungsberechtigter bestätigt mit seiner Unterschrift das Einverständnis zur Beschäftigung der/des Minderjährigen.',function(sig){
+    q.parentSig=sig; wizData.questionnaire=q; toast('Einverständnis gespeichert'); pfbAgeCheck();
+  });
+}
+function pfbKidsChange(){
+  const box=document.getElementById('pf_kidrows'); if(!box) return;
+  const n=Math.max(0,Math.min(12,parseInt((document.getElementById('pf_kids')||{}).value)||0));
+  const q=wizData.questionnaire||{}; const ex=Array.isArray(q.children)?q.children:[];
+  let html='';
+  for(let i=0;i<n;i++){ const c=ex[i]||{};
+    html+='<div class="form-row" style="margin-bottom:6px"><div style="flex:2"><input id="pf_kidname_'+i+'" placeholder="Name des Kindes" value="'+(c.name||'')+'"></div>'+
+          '<div style="flex:1"><input id="pf_kidbirth_'+i+'" inputmode="numeric" placeholder="TT.MM.JJJJ" oninput="dateAutoFormat(this)" value="'+isoToGerman(c.birth||'')+'"></div></div>';
+  }
+  box.innerHTML=html;
+}
+/* Netto-Beispielrechnung (grobe, unverbindliche Schätzung) */
+function pfbEstTax(monthlyGross,taxClass,church,kids){
+  const frei={I:1100,II:1300,III:2100,IV:1100,V:120,VI:0}[taxClass||'I'];
+  let base=Math.max(0, monthlyGross - (frei||1100) - (kids||0)*260);
+  let tax=Math.round(base*0.16);
+  if(church&&tax>0) tax=Math.round(tax*1.09);
+  return tax;
+}
+function pfbNetEstimate(type,hours,taxClass,church,kids){
+  if(type==='Minijob'){ return {type:type,hours:38,gross:602,social:0,tax:0,net:602}; }
+  let h=parseInt(hours)||0;
+  if(type==='Werkstudent'){ if(!h||h>80) h=80; }
+  const gross=Math.round(h*PFB_WAGE);
+  const socialRate=(type==='Werkstudent')?0.093:0.202;   // Werkstudent: nur RV; Teilzeit: RV+KV+PV+ALV (grob)
+  const social=Math.round(gross*socialRate);
+  const tax=pfbEstTax(gross,taxClass,church,kids);
+  return {type:type,hours:h,gross:gross,social:social,tax:tax,net:Math.max(0,gross-social-tax)};
+}
+function pfbUpdateNet(){
+  const box=document.getElementById('pfb_netbox'); if(!box) return;
+  const type=(document.getElementById('pf_employment')||{}).value||'';
+  if(!type){ box.innerHTML=''; return; }
+  const hours=(document.getElementById('pf_tzhours')||{}).value;
+  const taxClass=(document.getElementById('pf_taxclass')||{}).value||'I';
+  const chBtn=document.querySelector('#pf_church button.on'); const church=!!(chBtn&&chBtn.dataset.v==='ja');
+  const kids=parseInt((document.getElementById('pf_kids')||{}).value)||0;
+  const r=pfbNetEstimate(type,hours,taxClass,church,kids);
+  let rows='<div style="display:flex;justify-content:space-between"><span>Brutto ('+r.hours+' Std. × '+PFB_WAGE+' €)</span><b>'+r.gross+' €</b></div>';
+  if(r.social) rows+='<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>− Sozialabgaben</span><span>'+r.social+' €</span></div>';
+  if(r.tax) rows+='<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>− Lohnsteuer (Kl. '+taxClass+(church?' + Kirche':'')+')</span><span>'+r.tax+' €</span></div>';
+  rows+='<div style="display:flex;justify-content:space-between;margin-top:4px;padding-top:6px;border-top:1px solid var(--line)"><b>Netto (ca.)</b><b style="color:var(--petrol-dark)">'+r.net+' €</b></div>';
+  box.innerHTML='<div style="background:var(--petrol-soft);border-radius:12px;padding:12px 14px;font-size:13.5px">'+
+    '<div style="font-weight:700;margin-bottom:6px">💶 Beispielrechnung – '+type+(type==='Minijob'?' (steuer- & abgabenfrei)':'')+'</div>'+rows+
+    '<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Unverbindliche Schätzung nach deiner Steuerklasse. Die genaue Abrechnung erstellt der Steuerberater anhand deiner tatsächlichen Daten.</div></div>';
+}
 function savePfb(){
   const q=wizData.questionnaire||{};
   const sh=splitStreetHouseNo(val('pf_streetfull'));
@@ -5420,33 +5583,72 @@ function savePfb(){
   q.address=(q.street+' '+q.houseNo+', '+q.plz+' '+q.city).trim();
   const birthIso=parseGermanDate(val('pf_birth'));
   q.birth=birthIso||'';
+  q.maritalStatus=(document.getElementById('pf_marital')||{}).value||'';
+  q.taxClass=(document.getElementById('pf_taxclass')||{}).value||'';
+  const chBtn=document.querySelector('#pf_church button.on'); q.church=chBtn?chBtn.dataset.v:'';
   q.taxId=val('pf_taxid');q.kvNr=val('pf_kvnr');q.kasse=val('pf_kasse');q.iban=val('pf_iban');
   q.employment=document.getElementById('pf_employment').value;
   q.otherJob=document.getElementById('pf_otherjob').value;
+  q.teilzeitStunden=(q.employment==='Teilzeit')?(parseInt(val('pf_tzhours'))||0):'';
+  // Kinder einsammeln
+  const nk=Math.max(0,Math.min(12,parseInt(val('pf_kids'))||0));
+  const kids=[];
+  for(let i=0;i<nk;i++){ kids.push({name:val('pf_kidname_'+i)||'', birth:parseGermanDate(val('pf_kidbirth_'+i))||''}); }
+  q.children=kids;
+  if(document.getElementById('pf_parent')) q.parentName=val('pf_parent')||q.parentName||'';
   wizData.questionnaire=q;
   wizData.first=val('pf_first');wizData.last=val('pf_last');
   // Pflichtprüfung
+  if(!wizData.first||!wizData.last){toastHint('Bitte Vor- und Nachnamen ausfüllen');return;}
   if(!q.street||!q.houseNo){toastHint('Bitte Straße mit Hausnummer angeben (z. B. Bahnhofstraße 85)');return;}
   if(!q.plz||!q.city){toastHint('Bitte PLZ und Ort ausfüllen');return;}
   if(!birthIso){toastHint('Bitte Geburtsdatum im Format TT.MM.JJJJ angeben');return;}
+  const age=ageFromIso(birthIso);
+  if(age<16){toast('Eine Beschäftigung ist erst ab 16 Jahren möglich.',true);return;}
+  if(age<18){
+    if(!q.parentName||!q.parentSig){ toast('Unter 18: Bitte Name und Unterschrift eines Erziehungsberechtigten erfassen.',true); pfbAgeCheck(); return; }
+  }
+  if(!q.maritalStatus){toastHint('Bitte Familienstand wählen');return;}
+  if(!q.taxClass){toastHint('Bitte Steuerklasse wählen');return;}
+  if(!q.church){toastHint('Bitte angeben, ob du kirchensteuerpflichtig bist');return;}
+  for(let i=0;i<kids.length;i++){ if(!kids[i].name||!kids[i].birth){ toastHint('Bitte für jedes Kind Name und Geburtsdatum angeben'); return; } }
   if(!validTaxId(q.taxId)){toast('Steuer-ID muss aus genau 11 Ziffern bestehen',true);return;}
   if(!validKvNr(q.kvNr)){toast('KV-Nummer: 1 Buchstabe gefolgt von 9 Ziffern',true);return;}
   if(!q.kasse){toastHint('Bitte Krankenkasse angeben');return;}
   if(!validIban(q.iban)){toastHint('Bitte eine gültige deutsche IBAN eingeben');return;}
   if(!q.employment){toastHint('Bitte Beschäftigungsart wählen');return;}
+  if(q.employment==='Teilzeit'){ const th=q.teilzeitStunden; if(!th||th<50||th>120){toastHint('Bei Teilzeit bitte 50–120 Stunden pro Monat angeben');return;} }
   if(!q.otherJob){toastHint('Bitte Angabe zu weiterer Beschäftigung machen');return;}
-  if(q.otherJob==='Nein'){toast('Eine Bewerbung ist nur mit Studenten- oder Hauptbeschäftigungsstatus möglich.',true);return;}
-  wizData.isStudent=(q.otherJob==='Ja, Student');
+  // Hinweis: Haupt-/Nebenbeschäftigung oder Studium sind KEIN Ausschlusskriterium mehr.
+  wizData.isStudent=(q.employment==='Werkstudent'||q.otherJob==='Ja, Student/Werkstudent');
   if(wizData.isStudent){
     toast('Hinweis: Im Schritt „Ausweis & Selfie" benötigen wir noch deine Immatrikulationsbescheinigung.');
   }
   wizNext();
 }
+/* Vertrags-Automatik: Stunden/Monat & Bruttolohn nach Beschäftigungsart */
+function wizContractHours(q){
+  const emp=(q&&q.employment)||'';
+  if(emp==='Werkstudent') return 80;
+  if(emp==='Teilzeit') return parseInt(q.teilzeitStunden)||80;
+  return 38; // Minijob
+}
+function wizContractGross(q){
+  const emp=(q&&q.employment)||'';
+  if(emp==='Minijob') return 602;
+  return Math.round(wizContractHours(q)*PFB_WAGE);
+}
 function fillContract(text){
   const name=((wizData.first||'')+' '+(wizData.last||'')).trim();
   const q=wizData.questionnaire||{};
+  // Startdatum = Tag der Bewerbung (wird beim ersten Aufruf fixiert)
+  if(!q.contractStart){ q.contractStart=todayISO(); wizData.questionnaire=q; }
+  const startDE=isoToGerman(q.contractStart);
+  const hoursMonat=wizContractHours(q);
+  const brutto=wizContractGross(q);
   const nameMitAnschrift = name + (q.address?(', '+q.address):'');
   const taetigkeit=(wizData.skills&&wizData.skills.length)?wizData.skills.join(' / '):'Alltagshilfe';
+  const ARBEITGEBER='Alltagshilfe Hannover UG (haftungsbeschränkt), Bahnhofstraße 85, 31515 Wunstorf';
   let t=text;
   // Platzhalter in allen Vertragsarten füllen
   t=t.split('[Name und Anschrift Arbeitnehmer]').join(nameMitAnschrift);
@@ -5454,8 +5656,19 @@ function fillContract(text){
   t=t.split('[Mitarbeiter/Auftragnehmer]').join(nameMitAnschrift);
   t=t.split('[Mitarbeiter]').join(name);
   t=t.split('[Tätigkeitsbezeichnung]').join(taetigkeit);
-  // Beschäftigungsdaten, falls vorhanden
   if(q.address){ t=t.split('[Anschrift]').join(q.address); }
+  // Arbeitgeber vollständig (UG + Adresse)
+  t=t.split('der Alltagshilfe Hannover (Arbeitgeber)').join('der '+ARBEITGEBER+' (Arbeitgeber)');
+  t=t.split('zwischen der Alltagshilfe Hannover\n').join('zwischen der '+ARBEITGEBER+'\n');
+  // Beginn = Bewerbungstag
+  t=t.split('[Datum]').join(startDE);
+  // Arbeitszeit + Stundenlohn (17 €), Stunden nach Beschäftigungsart
+  t=t.split('[z. B. 40 Stunden] pro Woche').join(hoursMonat+' Stunden pro Monat (Stundenlohn '+PFB_WAGE+' €)');
+  t=t.split('[z. B. 40 Stunden]').join(hoursMonat+' Stunden pro Monat');
+  // Bruttovergütung
+  t=t.split('[Betrag]').join(String(brutto));
+  // Urlaub (gesetzlicher Rahmen als Standardwert)
+  t=t.split('[Anzahl]').join('20');
   return t;
 }
 function wizContracts(){
@@ -5713,6 +5926,7 @@ async function submitApplication(){
     }
   }
   applications.unshift(safeApp);
+  wizSubmitted=true;   // Bewerbung ist gesendet – „Fertig" schließt jetzt ohne Warnung
   wizNext();
 }
 function wizDone(){
