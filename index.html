@@ -1289,7 +1289,7 @@ function requireAdminAction(){
    buchhaltung (Abrechnung & kaufmännische Übersicht). */
 const ROLE_VIEWS={
   admin:null, // null = alle Views erlaubt
-  buero:['dashboard','karte','staff','customers','newcustomer','applications','kommunikation','hours','leistungen','calendar','vorlagen','mailing','marketing','schulung','mylogin'],
+  buero:['dashboard','karte','staff','customers','newcustomer','applications','kommunikation','hours','leistungen','calendar','vorlagen','beratungsvorlage','mailing','marketing','schulung','mylogin'],
   callcenter:['dashboard','customers','newcustomer','kommunikation','calendar','marketing','schulung','mylogin'],
   buchhaltung:['dashboard','rechnungen','lexware','bank','hours','payroll','steuerberater','customers','staff','kostentraeger','leistungen','standorte','calendar','marketing','schulung','mylogin']
 };
@@ -1743,6 +1743,10 @@ async function loadFromCloud(){
 
   // E-Mail-Vorlagen
   await loadEmailTemplates();
+
+  // V5-Zusatzdaten (Steuer-Aufgaben, Ausstattung/Kosten, Beratungsvorlage, Kündigungen) – teamweit über v5_state
+  try{ if(typeof v5LoadCloudState==='function'){ await v5LoadCloudState(); DIAG.push('v5_state: geladen'); } }
+  catch(e){ DIAG.push('FEHLER v5_state (V5_MIGRATION.sql ausführen?): '+(e.message||e)); }
 
   // Geladene Inhalte entschärfen, bevor sie per innerHTML gerendert werden
   sanitizeAllLocalData();
@@ -2855,6 +2859,7 @@ function buildAdminNav(active){
       viewAllowed('leistungen')?navItem('leistungen','📋','Leistungen',active==='leistungen'):'',
       viewAllowed('kostentraeger')?navItem('kostentraeger','🏦','Kostenträger',active==='kostentraeger'):'',
       viewAllowed('vorlagen')?navItem('vorlagen','✉','E-Mail-Vorlagen',active==='vorlagen'):'',
+      viewAllowed('beratungsvorlage')?navItem('beratungsvorlage','📋','Beratungsvorlage',active==='beratungsvorlage'):'',
       viewAllowed('mailing')?navItem('mailing','📣','E-Mail-Marketing',active==='mailing'):'',
       viewAllowed('marketing')?navItem('marketing','🖼','Marketing-Material',active==='marketing'):'',
       viewAllowed('aktivitaeten')?navItem('aktivitaeten','📜','Aktivitätsprotokoll',active==='aktivitaeten'):'',
@@ -3471,7 +3476,7 @@ function renderAdmin(view){
   const newApps=applications.filter(a=>a.status==='neu'||a.status==='geprüft').length;
 
   if(view==='dashboard'){
-    c.innerHTML=adminDashboardHTML(open,newApps)+(typeof tv4TeamHeuteHTML==='function'?tv4TeamHeuteHTML():'')+(typeof tv4GeburtstageHTML==='function'?tv4GeburtstageHTML():'');
+    c.innerHTML=adminDashboardHTML(open,newApps)+(typeof tv4TeamHeuteHTML==='function'?tv4TeamHeuteHTML():'')+(typeof tv4GeburtstageHTML==='function'?tv4GeburtstageHTML():'')+(typeof v5RentabilitaetHTML==='function'?v5RentabilitaetHTML():'');
     if(hasRole('admin','buchhaltung')&&lexwareReady()&&CLOUD) setTimeout(lexwareDashboardFill,80);
     if(hasRole('admin','buchhaltung')&&CLOUD) setTimeout(bankDashboardFill,100);
   }
@@ -3960,14 +3965,18 @@ function renderAdmin(view){
   if(view==='mailing'){ c.innerHTML=mailingHTML(); }
   if(view==='schulung'){ c.innerHTML=schulungHTML(); }
   if(view==='notes'){ c.innerHTML=head('Notizen','Bemerkungen zu Mitarbeitern und Kunden. Intern = nur Büro, Mitarbeiter = für die Person sichtbar.')+notesAdminHTML(); }
-  if(view==='calendar'){ c.innerHTML=head('Kalender','Alle Einsätze zentral. Nach Kunde oder Mitarbeiter suchen, um nur deren Termine zu sehen. Klick auf einen Termin für Details.')+
+  if(view==='calendar'){ c.innerHTML=head('Kalender','Alle Einsätze zentral. Nach Kunde/Mitarbeiter suchen oder gezielt einen Mitarbeiter filtern. Klick auf einen Termin für Details.')+
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin:-8px 0 10px;flex-wrap:wrap">'+
-      '<input id="calSearchInput" class="search-input" style="flex:1;min-width:220px;max-width:420px" placeholder="🔍 Nach Kunde oder Mitarbeiter suchen …" value="'+((calSearch||'').replace(/"/g,'&quot;'))+'" oninput="calSearchSet(this.value)" onkeydown="if(event.key===\'Escape\'){this.value=\x27\x27;calSearchSet(\x27\x27);}">'+
+      '<div style="display:flex;gap:8px;flex:1;flex-wrap:wrap;align-items:center">'+
+        '<input id="calSearchInput" class="search-input" style="flex:1;min-width:200px;max-width:360px" placeholder="🔍 Nach Kunde oder Mitarbeiter suchen …" value="'+((calSearch||'').replace(/"/g,'&quot;'))+'" oninput="calSearchSet(this.value)" onkeydown="if(event.key===\'Escape\'){this.value=\x27\x27;calSearchSet(\x27\x27);}">'+
+        v5CalStaffFilterHTML()+
+      '</div>'+
       '<button class="btn-ghost btn-sm" onclick="openScreenshotImport()">📷 Termine aus Screenshot importieren</button>'+
     '</div>'+
     '<div id="calSearchHint" style="margin:0 0 12px;font-size:13px;color:var(--muted);'+((calSearch||'').trim()?'':'display:none')+'"></div>'+
     calendarHTML(null); }
-  if(view==='steuerberater'){ c.innerHTML=head('Steuerberater','Genehmigte Mitarbeiter mit allen Unterlagen zur Übermittlung an den Steuerberater – Personalfragebogen, Verträge und Beschäftigungsdaten.')+steuerberaterHTML(); }
+  if(view==='steuerberater'){ c.innerHTML=head('Steuerberater','Aufgaben zur Übermittlung an den Steuerberater, Datenblätter je Mitarbeiter und der Kündigungs-Ablauf.')+steuerberaterHTML(); }
+  if(view==='beratungsvorlage'){ c.innerHTML=beratungsvorlageHTML(); }
 }
 
 /* ---- Auftrags-Zusammenfassung (Modal) ---- */
@@ -4040,6 +4049,8 @@ function openStaffModal(id){
             .map(([k,label,ic])=>'<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>'+ic+' '+label+'</b></div><div style="display:flex;gap:7px;align-items:center"><img src="'+s.docImages[k]+'" style="height:40px;border:1px solid var(--line);border-radius:6px;background:#fff" onerror="this.style.display=\'none\'"><button class="btn-ghost btn-sm" style="width:auto" onclick="viewStaffDoc('+id+',\''+k+'\',\''+label.replace(/'/g,'')+'\')">Ansehen</button></div></div>').join('')
         : '')+
 
+      v5ExtrasEditorHTML(id)+
+
       '<div class="section-label">Zugangsdaten</div>'+
       (s.hasLogin
         ? '<p style="font-size:13.5px;color:var(--good);margin-bottom:12px">✓ Login aktiv: <b>'+(s.login||s.email)+'</b></p><label>Passwort zurücksetzen</label><input id="es_pass" type="password" placeholder="Neues Passwort (optional)">'
@@ -4067,6 +4078,7 @@ function saveStaff(){
   if(!requireAdminAction()) return;
   if(editingStaffId!==null){
     const s=staff.find(x=>x.id===editingStaffId);gatherStaff(s);
+    v5GatherExtras(s.id);
     if(s.email && !isValidEmail(s.email)){toastHint('Bitte gültige E-Mail-Adresse eingeben');return;}
     if(!isValidPhone(s.phone)){toastHint('Bitte gültige Telefonnummer eingeben');return;}
     if(CLOUD) cloudUpdate('mitarbeiter',s.id,staffToRow(s));
@@ -4131,15 +4143,25 @@ function staffBulkDelete(){
 function deleteStaff(id){
   if(!requireAdminAction()) return;
   const s=staff.find(x=>x.id===id); if(!s) return;
-  confirmDangerDelete('Mitarbeiter löschen','Soll <b>'+fullName(s)+'</b> wirklich endgültig gelöscht werden? Zugehörige Termine und Stundenzettel bleiben in der Datenbank bestehen, verweisen danach aber auf keinen Mitarbeiter mehr. Ein eventuell vorhandenes Login-Konto wird dadurch NICHT gelöscht – das bitte separat in Supabase entfernen.',function(){
+  confirmDangerDelete('Mitarbeiter löschen','Soll <b>'+fullName(s)+'</b> wirklich endgültig gelöscht werden? Zugehörige Termine und Stundenzettel bleiben in der Datenbank bestehen, verweisen danach aber auf keinen Mitarbeiter mehr. Ein eventuell vorhandenes Login-Konto wird dabei automatisch aus Supabase entfernt – falls das fehlschlägt, erscheint ein Hinweis.',function(){
     const removedJobs=jobs.filter(j=>j.assignedTo===id);
     staff=staff.filter(x=>x.id!==id);
     jobs=jobs.filter(j=>j.assignedTo!==id);
     document.getElementById('modalBox').classList.remove('wide');
     renderAdmin('staff');
     // Endgültige Löschung erst nach Ablauf der Rückgängig-Frist
+    const loginEmail=s.login||s.email;
     undoableDelete('Mitarbeiter gelöscht: '+fullName(s),
-      function(){ if(CLOUD) cloudDelete('mitarbeiter',id); logActivity('Mitarbeiter gelöscht: '+fullName(s)); },
+      function(){ if(CLOUD) cloudDelete('mitarbeiter',id);
+        if(v5StaffExtras[id]){ delete v5StaffExtras[id]; v5SaveExtras(); }
+        if(v5Kuend[id]){ delete v5Kuend[id]; v5KuendSave(); }
+        if(CLOUD && loginEmail && isValidEmail(loginEmail)){
+          v5DeleteAuthUser(loginEmail).then(function(r){
+            if(r&&r.ok) toast('Login-Konto '+loginEmail+' in Supabase gelöscht');
+            else if(r&&!r.skipped) toast('Login-Konto nicht automatisch gelöscht ('+(r.error||'')+') – bitte in Supabase prüfen',true);
+          });
+        }
+        logActivity('Mitarbeiter gelöscht: '+fullName(s)); },
       function(){ staff.push(s); jobs=jobs.concat(removedJobs); renderAdmin('staff'); });
   });
 }
@@ -4256,6 +4278,8 @@ function customerFormHTML(c){
     '<div style="height:14px"></div>'+
     '<div class="form-row"><div><label>Budget (§45b)</label><input id="nc_budget" value="'+(it.budget||'')+'" placeholder="z. B. 131 €/Monat"></div>'+
     '<div><label>Davon genutzt</label><input id="nc_budgetUsed" value="'+(it.budgetUsed||'')+'" placeholder="z. B. 40 €"></div></div>'+
+    '<div style="height:6px"></div>'+
+    v5PauschaleEditorHTML(c)+
 
     (isNew
       ? '<button class="btn-primary" style="width:auto;padding:12px 24px;margin-top:8px" onclick="createCustomer()">Anlegen & als Auftrag freigeben</button>'
@@ -4338,6 +4362,7 @@ function gatherCustomer(c){
     const pEl=document.getElementById('nc_lk_preis_'+l.id);
     return {leistungId:l.id,name:l.name,preis:pEl?(parseFloat(pEl.value)||l.preis):l.preis,einheit:l.einheit};
   });
+  if(typeof v5GatherPauschale==='function') v5GatherPauschale(c);
 }
 function createCustomer(){
   if(!requireRoleAction('admin','buero','callcenter')) return;
@@ -4431,7 +4456,7 @@ function editCustomer(id){
   // Abtretung: kein eigenes Dokument mehr – der Abtretungstext steht auf dem Leistungsnachweis (04.07.2026)
   // Beratungsvereinbarung mit Unterschriftsprobe – NUR für Admin sichtbar
   if(hasRole('admin') && c.beratung && c.beratung.signature){
-    docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📋 Beratungsvereinbarung + Unterschriftsprobe</b><div class="li-sub">Beratung am '+fmtDate(c.beratung.date)+(c.beratung.mitarbeiterId?' · geführt von '+staffName(c.beratung.mitarbeiterId):'')+' · Referenz für den Leistungsnachweis-Abgleich</div></div><div style="display:flex;gap:7px;align-items:center"><img src="'+c.beratung.signature+'" title="Unterschriftsprobe" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-primary btn-sm" style="width:auto" onclick="downloadBeratungsvertrag('+c.id+')">⬇ PDF</button></div></div>';
+    docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📋 Beratungsvereinbarung + Unterschriftsprobe</b><div class="li-sub">Beratung am '+fmtDate(c.beratung.date)+(c.beratung.mitarbeiterId?' · geführt von '+staffName(c.beratung.mitarbeiterId):'')+' · Referenz für den Leistungsnachweis-Abgleich</div></div><div style="display:flex;gap:7px;align-items:center"><img src="'+c.beratung.signature+'" title="Unterschriftsprobe" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-ghost btn-sm" style="width:auto" onclick="v5ShowBeratungsprotokoll('+c.id+')">📋 Protokoll</button><button class="btn-primary btn-sm" style="width:auto" onclick="downloadBeratungsvertrag('+c.id+')">⬇ PDF</button></div></div>';
   }
   if(hasRole('admin') && !(c.beratung&&c.beratung.signature) && c.status==='aktiv'){
     docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📋 Beratungsvereinbarung</b><div class="li-sub">Noch keine Erstberatung / Unterschriftsprobe vorhanden</div></div><button class="btn-ghost btn-sm" style="width:auto" onclick="openBeratung('+c.id+')">Jetzt durchführen</button></div>';
@@ -4869,6 +4894,14 @@ function sendAppLogin(id){
 /* ============ MITARBEITER VIEWS ============ */
 function renderStaff(view){
   ensureHilfeWidget();
+  const m0=me();
+  // Gekündigte Mitarbeiter haben keinen Zugang mehr zur App
+  if(m0 && m0.status==='gekündigt'){
+    const c0=document.getElementById('content');
+    document.getElementById('sidebar').innerHTML='';
+    if(c0) c0.innerHTML='<div class="empty" style="margin-top:40px"><div class="big">🔒</div><b>Kein Zugang mehr</b><p style="margin-top:8px;max-width:420px;margin-left:auto;margin-right:auto">Dein Arbeitsverhältnis wurde beendet. Der Zugang zur App ist deaktiviert. Bei Fragen wende dich bitte an das Büro.</p><button class="btn-primary" style="width:auto;margin-top:16px" onclick="logout()">Abmelden</button></div>';
+    return;
+  }
   buildStaffNav(view);
   closeSidebar();
   const c=document.getElementById('content');const m=me();
@@ -5173,6 +5206,7 @@ function mineCard(j){
       '<div class="reveal-row"><span class="k">Hinweise</span><span class="v" style="max-width:60%">'+cu.notes+'</span></div>'+
     '</div>'+
     '<div class="job-actions"><button class="btn-accept" onclick="addAppointment('+cu.id+')">Termin vereinbaren</button>'+
+    (cu.beratung&&((cu.beratung.punkte&&cu.beratung.punkte.length)||cu.beratung.signature)?'<button class="btn-ghost" onclick="v5ShowBeratungsprotokoll('+cu.id+')">📋 Beratungsprotokoll</button>':'')+
     '<button class="btn-danger-ghost" onclick="releaseJob('+j.id+')">Zurückgeben</button></div></div>';
 }
 function emptyBoard(){return '<div class="empty"><div class="big">🎉</div><b>Aktuell keine offenen Aufträge</b><p style="margin-top:6px">Sobald das Büro einen neuen Kunden freigibt, erscheint er hier. Abgelehnte Aufträge werden dir nicht erneut angezeigt.</p></div>';}
@@ -5977,6 +6011,10 @@ function calEvents(){
       return cn.toLowerCase().indexOf(q)>-1 || sn.toLowerCase().indexOf(q)>-1;
     });
   }
+  // Admin-Kalender: zusätzlicher Filter auf einen einzelnen Mitarbeiter (Dropdown)
+  if(calStaffFilter===null && typeof calStaffPick!=='undefined' && calStaffPick!=null){
+    list=list.filter(function(a){ return a.staffId===calStaffPick; });
+  }
   return list;
 }
 /* Admin-Kalender: Suchfeld über dem Kalender. Tippt man einen Kunden- oder
@@ -6214,6 +6252,7 @@ function calNewAppt(dateStr,timeStr,dur){
     '<div><label>Uhrzeit</label><input id="na_time" type="time" value="'+timeStr+'"></div></div>'+
     '<label>Dauer (Minuten)</label><input id="na_dur" type="number" value="'+dur+'">'+
     '<label>Notiz (optional)</label><input id="na_note" placeholder="z. B. Einkauf + Reinigung">'+
+    v5RepFieldsHTML('na')+
     '</div>';
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
@@ -6222,17 +6261,17 @@ function calNewAppt(dateStr,timeStr,dur){
 }
 function calSaveNewAppt(){
   if(currentRole!=='admin'&&currentRole!=='buero'){ toast('Keine Berechtigung',true); return; }
-  const cid=+val('na_cust'), sid=+val('na_staff'), date=val('na_date'), time=val('na_time');
-  if(!cid){ toastHint('Bitte einen Kunden wählen'); return; }
-  if(!sid){ toastHint('Bitte einen Mitarbeiter wählen'); return; }
+  const cidRaw=val('na_cust'), sidRaw=val('na_staff'), date=val('na_date'), time=val('na_time');
+  const cid = cidRaw===''?NaN:+cidRaw, sid = sidRaw===''?NaN:+sidRaw;  // ID 0 ist gültig – nur echte Leerauswahl abweisen
+  if(isNaN(cid)){ toastHint('Bitte einen Kunden wählen'); return; }
+  if(isNaN(sid)){ toastHint('Bitte einen Mitarbeiter wählen'); return; }
   if(!date||!time){ toastHint('Bitte Datum und Uhrzeit angeben'); return; }
   const cu=custById(cid);
   const type=(cu&&cu.status==='Interessent'&&!cu.vertrag)?'kennenlernen':'einsatz';
-  const appt={id:nextApptId++,staffId:sid,customerId:cid,date:date,time:time,duration:parseInt(val('na_dur'))||60,note:val('na_note'),type:type,status:'geplant'};
-  appointments.push(appt);
-  if(CLOUD) cloudInsert('termine',apptToRow(appt)).then(r=>{ if(r&&r.id){ appt.id=r.id; } });
-  logActivity('Termin angelegt (Kalender): '+(cu?fullName(cu):'')+' '+fmtDate(date)+' '+time);
-  closeModal(); toast('Termin angelegt'); refreshCal();
+  const base={staffId:sid,customerId:cid,time:time,date:date,duration:parseInt(val('na_dur'))||60,note:val('na_note'),type:type,status:'geplant'};
+  const created=v5CreateApptSeries(base,'na');
+  logActivity('Termin angelegt (Kalender): '+(cu?fullName(cu):'')+' '+fmtDate(date)+' '+time+(created.length>1?' (+'+(created.length-1)+' Serie)':''));
+  closeModal(); toast(created.length>1?(created.length+' Serientermine angelegt'):'Termin angelegt'); refreshCal();
 }
 /* Einzelnen Termin endgültig löschen (Admin/Büro) */
 function calDeleteAppt(id){
@@ -6271,6 +6310,7 @@ function addAppointment(customerId){
     '<div><label>Uhrzeit</label><input id="ap_time" type="time" value="09:00"></div></div>'+
     '<label>Dauer (Minuten)</label><input id="ap_dur" type="number" value="90">'+
     '<label>Notiz (optional)</label><input id="ap_note" placeholder="z. B. Einkauf + Reinigung">'+
+    v5RepFieldsHTML('ap')+
     '</div>';
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Abbrechen</button><button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveAppointment('+customerId+')">Termin speichern</button>';
   openModal();
@@ -6281,13 +6321,9 @@ function saveAppointment(customerId){
   if(!date||!time){toastHint('Bitte Datum und Uhrzeit angeben');return;}
   const cu=custById(customerId);
   const type=(cu.status==='Interessent' && !cu.vertrag)?'kennenlernen':'einsatz';
-  const appt={id:nextApptId++,staffId:myId,customerId,date,time,duration:parseInt(val('ap_dur'))||60,note:val('ap_note'),type:type};
-  appointments.push(appt);
-  // Auch in der Datenbank speichern, damit der Termin nach Neuladen erhalten bleibt
-  if(CLOUD){
-    cloudInsert('termine', apptToRow(appt)).then(r=>{ if(r&&r.id){ appt.id=r.id; } });
-  }
-  closeModal();toast('Termin gespeichert – unter „Meine Termine“ sichtbar');
+  const base={staffId:myId,customerId:customerId,time:time,date:date,duration:parseInt(val('ap_dur'))||60,note:val('ap_note'),type:type,status:'geplant'};
+  const created=v5CreateApptSeries(base,'ap');
+  closeModal();toast(created.length>1?(created.length+' Serientermine gespeichert – unter „Meine Termine“ sichtbar'):'Termin gespeichert – unter „Meine Termine“ sichtbar');
   renderStaff('calendar');
 }
 function apptToRow(a){
@@ -6299,6 +6335,8 @@ function rowToAppt(r){
 function showAppt(id){
   const a=appointments.find(x=>x.id===id);const cu=custById(a.customerId);
   const cancelled=a.status==='abgesagt';
+  const serieN = a.seriesId ? appointments.filter(x=>x.seriesId===a.seriesId).length
+                            : appointments.filter(x=>v5ApptSig(x)===v5ApptSig(a)).length;
   const isKennenlernen=a.type==='kennenlernen';
   document.getElementById('modalTitle').textContent= cancelled?'Termin (abgesagt)':(isKennenlernen?'Kennenlerngespräch':'Termin-Details');
   document.getElementById('modalBody').innerHTML=
@@ -6328,6 +6366,7 @@ function showAppt(id){
     foot+='<button class="btn-ghost" style="width:auto" onclick="apptFeedback('+id+',\'problem\')">⚠ Problem melden</button>';
     foot+='<button class="btn-ghost" style="width:auto" onclick="apptFeedback('+id+',\'wunsch\')">💡 Wunsch</button>';
     foot+='<button class="btn-danger-ghost" onclick="deleteAppt('+id+')">Absagen</button>';
+    if(serieN>1) foot+='<button class="btn-danger-ghost" style="width:auto" onclick="v5DeleteSeries('+id+')">🗑 Ganze Serie löschen ('+serieN+')</button>';
     foot+= isKennenlernen
       ? '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="startKennenlernen('+id+')">▶ Kennenlerngespräch starten</button>'
       : '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="startTermin('+id+')">▶ Termin starten</button>';
@@ -6339,6 +6378,7 @@ function showAppt(id){
   // Büro/Admin: Termin endgültig löschen
   if((currentRole==='admin'||currentRole==='buero')&&!cancelled){
     foot+='<button class="btn-danger-ghost" style="width:auto" onclick="calDeleteAppt('+id+')">🗑 Löschen</button>';
+    if(serieN>1) foot+='<button class="btn-danger-ghost" style="width:auto" onclick="v5DeleteSeries('+id+')">🗑 Ganze Serie löschen ('+serieN+')</button>';
   }
   // Admin darf einen abgesagten Termin endgültig aus dem Kalender entfernen
   if(currentRole==='admin'&&cancelled){
@@ -7290,10 +7330,12 @@ function openBeratung(customerId){
   document.getElementById('modalTitle').textContent='Beratungsgespräch – '+fullName(cu);
   document.getElementById('modalBody').innerHTML=
     '<p style="color:var(--muted);font-size:13.5px;margin:0 0 12px">Führe das Gespräch entlang dieser Punkte und hake ab, was besprochen wurde. Am Ende – wenn der Kunde zustimmt – wird die Vereinbarung mit Unterschriftsprobe unterschrieben.</p>'+
-    BERATUNG_LEITFADEN.map((s,si)=>
+    v5GetLeitfaden().map((s,si)=>
       '<div class="section-label" style="margin-top:'+(si?'14px':'0')+'">'+s.t+'</div>'+
-      s.p.map((p,pi)=>'<label style="display:flex;gap:9px;align-items:flex-start;padding:5px 0;font-size:14px;cursor:pointer"><input type="checkbox" class="ber-chk" data-p="'+s.t+' – '+p.replace(/"/g,'&quot;')+'" style="width:auto;margin-top:3px">'+p+'</label>').join('')+
-      '<textarea class="ber-antwort" data-t="'+s.t.replace(/"/g,'&quot;')+'" rows="2" placeholder="Antworten / Wünsche des Kunden zu diesem Abschnitt (optional)" style="width:100%;margin-top:4px;font-size:13px"></textarea>'
+      (s.p||[]).map((p,pi)=>'<div style="padding:6px 0;border-bottom:1px dashed #eef3f3">'+
+        '<label style="display:flex;gap:9px;align-items:flex-start;font-size:14px;cursor:pointer"><input type="checkbox" class="ber-chk" data-p="'+(s.t+' – '+p).replace(/"/g,'&quot;')+'" style="width:auto;margin-top:3px">'+p+'</label>'+
+        '<input class="ber-antwort-q" data-q="'+(s.t+' – '+p).replace(/"/g,'&quot;')+'" placeholder="Antwort des Kunden (optional)" style="width:100%;margin-top:5px;font-size:13px">'+
+      '</div>').join('')
     ).join('');
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Später fortsetzen</button>'+
@@ -7305,7 +7347,11 @@ function beratungWeiter(){
   const ctx=window.__beratungCtx; if(!ctx) return;
   const cu=custById(ctx.customerId); if(!cu) return;
   ctx.punkte=[...document.querySelectorAll('.ber-chk:checked')].map(c=>c.dataset.p);
-  // Kundenantworten je Abschnitt mit aufnehmen (landen mit in der Dokumentation)
+  // Kundenantworten je Frage mit aufnehmen (landen mit in der Dokumentation)
+  [...document.querySelectorAll('.ber-antwort-q')].forEach(t=>{
+    if(t.value.trim()) ctx.punkte.push('💬 Antwort ('+t.dataset.q+'): '+cleanInput(t.value,400));
+  });
+  // Rückwärtskompatibel: evtl. vorhandene Abschnitts-Textfelder
   [...document.querySelectorAll('.ber-antwort')].forEach(t=>{
     if(t.value.trim()) ctx.punkte.push('💬 Antwort des Kunden ('+t.dataset.t+'): '+cleanInput(t.value,400));
   });
@@ -7978,6 +8024,7 @@ function showCustomerForTask(custId){
   document.getElementById('modalBody').innerHTML=
     '<div class="form-row"><div><label>Adresse</label><p>'+addrLinkHtml(((cu.street?cu.street+' '+(cu.houseNo||''):'')+', '+(cu.plz||'')+' '+(cu.city||'')).replace(/^, |, $/g,'')||cu.address)+'</p></div>'+
     '<div><label>Telefon</label><p>'+telLinkHtml(cu.phone||cu.phoneMobile||cu.phoneLandline)+'</p></div></div>'+
+    (cu.beratung&&((cu.beratung.punkte&&cu.beratung.punkte.length)||cu.beratung.signature)?'<div class="section-label">Beratung</div><button class="btn-ghost btn-sm" style="width:auto" onclick="v5ShowBeratungsprotokoll('+custId+')">📋 Beratungsprotokoll ansehen</button>':'')+
     '<div class="section-label">Kommunikation</div>'+custKommListHTML(custId).replace(/onclick="openKommModal/g,'onclick="void(0);//');
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
   openModal();
@@ -8006,7 +8053,11 @@ function openInvoiceModal(tsId){
       ()=>editCustomer(cu.id), {title:'Kostenträger fehlt', okLabel:'Beim Kunden eintragen'});
     return;
   }
-  const mine=cu.leistungen||[];
+  let mine=(cu.leistungen||[]).slice();
+  // Pauschale je Einsatz (falls aktiv) als vorausgewählte Leistung voranstellen –
+  // bleibt bei der Abrechnung nachsteuerbar (andere Leistung/Menge wählbar).
+  const _pB=cu.pauschale&&cu.pauschale.aktiv?parseFloat(String(cu.pauschale.betrag).replace(',','.')):0;
+  if(_pB>0){ mine.unshift({name:(cu.pauschale.leistung||'Pauschale je Einsatz'), preis:_pB, einheit:'pro Einsatz', pauschal:true}); }
   if(!mine.length){
     appConfirm('Für '+fullName(cu)+' sind keine abzurechnenden Leistungen hinterlegt.',
       ()=>editCustomer(cu.id), {title:'Leistungen fehlen', okLabel:'Beim Kunden eintragen'});
@@ -12625,6 +12676,624 @@ window.tv4AbwRerender=tv4AbwRerender;
 window.tv4AbwSubmit=tv4AbwSubmit;
 window.tv4AbwSetStatus=tv4AbwSetStatus;
 window.tv4AbwDelete=tv4AbwDelete;
+</script>
+
+<script>
+/* ============================================================
+   V5-ERWEITERUNGEN
+   1) Serientermine (Admin + Mitarbeiter) anlegen & ganze Serie löschen
+   2) Admin-Kalender: Filter nach einzelnem Mitarbeiter
+   3) Steuerberater-Workflow: Übermittlungs-Aufgaben (Download + „Erledigt"
+      bleibt 5 Tage sichtbar) und Kündigungs-Ablauf (MA hat gekündigt /
+      wir kündigen) inkl. E-Mail, Statuswechsel „gekündigt" (kein Zugang)
+   4) Editierbare Beratungsvorlage + Beratungsprotokoll je Kunde
+   5) Mitarbeiter-Ausstattung/Kosten + Rentabilitäts-Block im Dashboard
+   6) Pauschale Leistungen je Kunde
+   7) Supabase-Login beim Löschen eines Mitarbeiters mitentfernen
+
+   Persistenz neuer Zusatzdaten: localStorage (wie die tv4-Features).
+   Cloud-kritische Zustände (Termine, Mitarbeiter-Status „gekündigt")
+   laufen über die bestehenden Tabellen bzw. Spalten.
+   ============================================================ */
+
+/* ---------- localStorage-Helfer + kleine Utilities ---------- */
+function v5Load(key, def){ try{ const s=localStorage.getItem(key); return s?JSON.parse(s):def; }catch(e){ return def; } }
+function v5Save(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){} }
+function v5Uid(p){ return (p||'id')+Date.now().toString(36)+Math.floor(Math.random()*1e5).toString(36); }
+function v5DaysSince(iso){ if(!iso) return 9999; const d=new Date(String(iso).length<=10?iso+'T00:00:00':iso); return Math.floor((Date.now()-d.getTime())/86400000); }
+function v5Esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function v5SegPick(btn,groupId){ const g=document.getElementById(groupId); if(!g) return; Array.prototype.forEach.call(g.querySelectorAll('button'),function(b){b.classList.remove('on');}); btn.classList.add('on'); }
+
+/* ---------- Cloud-Sync der V5-Zusatzdaten (Tabelle v5_state, standort-scoped) ----------
+   Jede Sammlung liegt als ein JSON-Blob pro Standort. Ohne Cloud/Tabelle läuft
+   alles weiter über localStorage (offline-Fallback). Erfordert V5_MIGRATION.sql. */
+async function v5CloudUpsertState(schluessel, wert){
+  if(typeof CLOUD==='undefined' || !CLOUD || !sb) return;
+  try{
+    const row={schluessel:schluessel, wert:wert, standort_id:currentStandortId, updated_at:new Date().toISOString()};
+    const {error}=await sb.from('v5_state').upsert(row, {onConflict:'schluessel,standort_id'});
+    if(error) console.warn('v5_state upsert '+schluessel+':', error.message);
+  }catch(e){ console.warn('v5_state upsert '+schluessel, e); }
+}
+async function v5LoadCloudState(){
+  if(typeof CLOUD==='undefined' || !CLOUD || !sb) return;
+  const {data,error}=await sb.from('v5_state').select('schluessel,wert').eq('standort_id',currentStandortId);
+  if(error){ throw error; }
+  const map={}; (data||[]).forEach(function(r){ map[r.schluessel]=r.wert; });
+  if(map.taxtasks!=null){ v5TaxTasks=Array.isArray(map.taxtasks)?map.taxtasks:[]; v5Save('dailydo-taxtasks',v5TaxTasks); }
+  if(map.staffextras!=null && typeof map.staffextras==='object'){ v5StaffExtras=map.staffextras; v5Save('dailydo-staffextras',v5StaffExtras); }
+  if(map.kuendigungen!=null && typeof map.kuendigungen==='object'){ v5Kuend=map.kuendigungen; v5Save('dailydo-kuendigungen',v5Kuend); }
+  if(map.beratungvorlage!=null && Array.isArray(map.beratungvorlage)){ v5Save('dailydo-beratungvorlage', map.beratungvorlage); }
+}
+
+/* ============================================================
+   1) SERIENTERMINE
+   ============================================================ */
+function v5RepFieldsHTML(prefix){
+  return '<div class="section-label" style="margin-top:8px">Wiederholung (Serientermin)</div>'+
+    '<label>Rhythmus</label>'+
+    '<select id="'+prefix+'_rep" onchange="v5RepToggle(\''+prefix+'\')">'+
+      '<option value="none">Einmaliger Termin</option>'+
+      '<option value="weekly">Wöchentlich</option>'+
+      '<option value="biweekly">Alle 2 Wochen</option>'+
+      '<option value="monthly">Monatlich</option>'+
+    '</select>'+
+    '<div id="'+prefix+'_repBox" style="display:none;margin-top:10px;padding:12px 14px;background:var(--bg);border-radius:10px">'+
+      '<div class="seg" id="'+prefix+'_repMode">'+
+        '<button data-v="count" class="on" onclick="v5SegPick(this,\''+prefix+'_repMode\');v5RepToggle(\''+prefix+'\')">Anzahl Termine</button>'+
+        '<button data-v="until" onclick="v5SegPick(this,\''+prefix+'_repMode\');v5RepToggle(\''+prefix+'\')">Bis Datum</button>'+
+      '</div>'+
+      '<div style="height:10px"></div>'+
+      '<div id="'+prefix+'_repCountBox"><label>Anzahl Termine (inkl. erstem)</label><input id="'+prefix+'_repCount" type="number" min="2" max="104" value="8"></div>'+
+      '<div id="'+prefix+'_repUntilBox" style="display:none"><label>Serie bis einschließlich</label><input id="'+prefix+'_repUntil" type="date"></div>'+
+    '</div>';
+}
+function v5RepToggle(prefix){
+  const repEl=document.getElementById(prefix+'_rep'); const rep=repEl?repEl.value:'none';
+  const box=document.getElementById(prefix+'_repBox'); if(box) box.style.display=(rep==='none'?'none':'block');
+  const modeBtn=document.querySelector('#'+prefix+'_repMode button.on');
+  const mode=modeBtn?modeBtn.dataset.v:'count';
+  const cb=document.getElementById(prefix+'_repCountBox'), ub=document.getElementById(prefix+'_repUntilBox');
+  if(cb) cb.style.display=(mode==='count'?'block':'none');
+  if(ub) ub.style.display=(mode==='until'?'block':'none');
+}
+/* Liefert die Datumsliste (YYYY-MM-DD) einer Serie */
+function v5SeriesDates(startISO, rep, mode, count, untilISO){
+  if(!startISO) return [];
+  if(rep==='none'||!rep) return [startISO];
+  const start=new Date(startISO+'T12:00:00');
+  const step = rep==='weekly'?7 : rep==='biweekly'?14 : 0;
+  const until = untilISO?new Date(untilISO+'T23:59:59'):null;
+  const target = mode==='count'? Math.max(2,Math.min(104, parseInt(count)||2)) : 366;
+  const out=[];
+  for(let i=0;i<400 && out.length<target;i++){
+    const d=new Date(start);
+    if(rep==='monthly') d.setMonth(d.getMonth()+i); else d.setDate(d.getDate()+i*step);
+    if(mode==='until'){ if(until && d>until) break; }
+    out.push(dateKey(d));
+  }
+  return out.length?out:[startISO];
+}
+/* Signatur „gleichartiger" Termine – für Serien-Löschen auch nach Neuladen */
+function v5ApptSig(a){ return [a.customerId,a.staffId,a.time,a.duration||60,(a.note||''),(a.type||'einsatz')].join('|'); }
+/* Erzeugt die Termine einer Serie aus den Formularfeldern <prefix>_rep* */
+function v5CreateApptSeries(base, prefix){
+  const repEl=document.getElementById(prefix+'_rep'); const rep=repEl?repEl.value:'none';
+  let dates=[base.date], seriesId=null;
+  if(rep && rep!=='none'){
+    const modeBtn=document.querySelector('#'+prefix+'_repMode button.on');
+    const mode=modeBtn?modeBtn.dataset.v:'count';
+    const count=(document.getElementById(prefix+'_repCount')||{}).value;
+    const until=(document.getElementById(prefix+'_repUntil')||{}).value;
+    dates=v5SeriesDates(base.date, rep, mode, count, until);
+    seriesId=v5Uid('S');
+  }
+  const created=[];
+  dates.forEach(function(d){
+    const appt=Object.assign({}, base, {id:nextApptId++, date:d});
+    if(seriesId) appt.seriesId=seriesId;
+    appointments.push(appt);
+    if(CLOUD){ cloudInsert('termine',apptToRow(appt)).then(function(r){ if(r&&r.id){ appt.id=r.id; } }); }
+    created.push(appt);
+  });
+  return created;
+}
+/* Ganze Serie löschen (Admin/Büro/eigener Mitarbeiter) */
+function v5DeleteSeries(id){
+  if(currentRole!=='admin'&&currentRole!=='buero'&&currentRole!=='staff'){ toast('Keine Berechtigung',true); return; }
+  const a=appointments.find(function(x){return x.id===id;}); if(!a) return;
+  let serie;
+  if(a.seriesId){ serie=appointments.filter(function(x){return x.seriesId===a.seriesId;}); }
+  else { const sig=v5ApptSig(a); serie=appointments.filter(function(x){return v5ApptSig(x)===sig;}); }
+  if(currentRole==='staff'){ serie=serie.filter(function(x){return x.staffId===myId;}); }
+  const n=serie.length; const cu=custById(a.customerId);
+  confirmDangerDelete('Ganze Serie löschen','Es werden <b>'+n+' gleichartige Termine</b>'+(cu?' mit '+fullName(cu):'')+' gelöscht (die komplette Serie). Fortfahren?',function(){
+    const ids=serie.map(function(x){return x.id;});
+    appointments=appointments.filter(function(x){return ids.indexOf(x.id)===-1;});
+    if(CLOUD){ ids.forEach(function(i){ cloudDelete('termine',i); }); }
+    logActivity('Terminserie gelöscht ('+n+')'+(cu?': '+fullName(cu):''));
+    closeModal(); toast(n+' Termine der Serie gelöscht');
+    if(typeof refreshCal==='function') refreshCal();
+    if(currentRole==='staff') renderStaff('calendar');
+  });
+}
+
+/* ============================================================
+   2) ADMIN-KALENDER: FILTER NACH MITARBEITER
+   (zusätzlich zur bestehenden Freitextsuche; wirkt in calEvents())
+   ============================================================ */
+var calStaffPick=null;
+function v5CalStaffFilterHTML(){
+  const opts=(staff||[]).slice().sort(function(a,b){return staffName(a.id).localeCompare(staffName(b.id));})
+    .map(function(s){ return '<option value="'+s.id+'" '+(calStaffPick===s.id?'selected':'')+'>'+v5Esc(staffName(s.id))+'</option>'; }).join('');
+  return '<select id="calStaffSelect" class="search-input" style="max-width:260px" onchange="v5CalStaffPick(this.value)">'+
+    '<option value="">👥 Alle Mitarbeiter</option>'+opts+'</select>';
+}
+function v5CalStaffPick(v){
+  calStaffPick = (v===''||v==null)?null:(+v);
+  if(typeof refreshCal==='function') refreshCal();
+}
+
+/* ============================================================
+   3) STEUERBERATER-WORKFLOW
+   ============================================================ */
+var v5TaxTasks=v5Load('dailydo-taxtasks', []);
+var v5Kuend=v5Load('dailydo-kuendigungen', {});   // staffId -> {richtung,datum,doc,docName,text}
+function v5TaxSave(){ v5Save('dailydo-taxtasks', v5TaxTasks); v5CloudUpsertState('taxtasks', v5TaxTasks); }
+function v5KuendSave(){ v5Save('dailydo-kuendigungen', v5Kuend); v5CloudUpsertState('kuendigungen', v5Kuend); }
+function v5StaffForApp(a){ return (staff||[]).find(function(s){return a.email && s.email===a.email;}); }
+
+/* Legt fehlende Übermittlungs-Aufgaben automatisch an (Onboarding je genehmigtem MA). */
+function v5EnsureTaxTasks(){
+  (applications||[]).filter(function(a){return a.status==='versendet';}).forEach(function(a){
+    const key='onboarding:app'+a.id;
+    if(!v5TaxTasks.some(function(t){return t.key===key;})){
+      v5TaxTasks.push({id:v5Uid('t'), key:key, art:'onboarding', kind:'onboarding',
+        appId:a.id, staffId:(v5StaffForApp(a)||{}).id, name:fullName(a),
+        title:'Personalfragebogen + Verträge übermitteln', status:'offen', createdAt:todayISO()});
+    }
+  });
+  v5TaxSave();
+}
+/* Entfernt erledigte Aufgaben, die älter als 5 Tage sind. */
+function v5PruneTaxTasks(){
+  const before=v5TaxTasks.length;
+  v5TaxTasks=v5TaxTasks.filter(function(t){ return t.status!=='erledigt' || v5DaysSince(t.doneAt)<5; });
+  if(v5TaxTasks.length!==before) v5TaxSave();
+}
+function v5AddTaxTask(o){
+  if(o.key && v5TaxTasks.some(function(t){return t.key===o.key && t.status!=='erledigt';})) return;
+  v5TaxTasks.push(Object.assign({id:v5Uid('t'), status:'offen', createdAt:todayISO()}, o));
+  v5TaxSave();
+}
+function v5TaxDone(id){
+  const t=v5TaxTasks.find(function(x){return x.id===id;}); if(!t) return;
+  t.status='erledigt'; t.doneAt=todayISO(); v5TaxSave();
+  logActivity('Steuerberater-Aufgabe erledigt: '+t.title+(t.name?' ('+t.name+')':''));
+  toast('Als erledigt markiert – bleibt 5 Tage sichtbar');
+  if(currentRole&&currentRole!=='staff') renderAdmin('steuerberater');
+}
+function v5TaxReopen(id){
+  const t=v5TaxTasks.find(function(x){return x.id===id;}); if(!t) return;
+  t.status='offen'; t.doneAt=null; v5TaxSave(); renderAdmin('steuerberater');
+}
+function v5TaxAction(id){
+  const t=v5TaxTasks.find(function(x){return x.id===id;}); if(!t) return;
+  if(t.kind==='onboarding'){
+    const s=t.staffId!=null?staff.find(function(x){return x.id===t.staffId;}):null;
+    if(s && typeof downloadPersonalfragebogen==='function'){ downloadPersonalfragebogen(s.id); }
+    else if(t.appId!=null && typeof openTaxDatasheet==='function'){ openTaxDatasheet(t.appId); return; }
+    else { toast('Keine Unterlagen gefunden',true); return; }
+    toast('Personalfragebogen wird heruntergeladen');
+  } else if(t.kind==='kuendigung'){
+    const k=v5Kuend[t.staffId];
+    if(k && k.doc){ v5DownloadDataUrl(k.doc, (k.docName||('Kuendigung_'+(t.name||'MA'))).replace(/[^a-zA-Z0-9_.-]+/g,'_')); toast('Kündigung wird heruntergeladen'); }
+    else if(k && k.text){ v5DownloadTextPdf('Kündigung – '+(t.name||''), k.text, 'Kuendigung_'+(t.name||'MA')); }
+    else { toast('Kein Kündigungsdokument hinterlegt',true); }
+  } else { // arbeitspapiere / info
+    v5ArbeitspapiereModal(t.name);
+  }
+}
+function v5DownloadDataUrl(dataUrl, filename){
+  try{ const a=document.createElement('a'); a.href=dataUrl; a.download=filename||'dokument'; document.body.appendChild(a); a.click(); a.remove(); }
+  catch(e){ toast('Download nicht möglich',true); }
+}
+function v5DownloadTextPdf(title, text, filename){
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return; }
+  const jsPDF=window.jspdf.jsPDF; const doc=new jsPDF({unit:'pt',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight(), margin=52; let y=margin;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.text(String(title||''),margin,y); y+=22;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
+  String(text||'').split('\n').forEach(function(par){
+    const lines=doc.splitTextToSize(par||' ', pageW-margin*2);
+    lines.forEach(function(ln){ if(y>pageH-margin){ doc.addPage(); y=margin; } doc.text(ln,margin,y); y+=15; });
+  });
+  doc.save((filename||'dokument').replace(/[^a-zA-Z0-9_.-]+/g,'_')+'.pdf');
+}
+function v5ArbeitspapiereModal(name){
+  document.getElementById('modalTitle').textContent='Arbeitspapiere zusenden'+(name?' – '+name:'');
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin-bottom:10px">Diese Unterlagen sind dem ausgeschiedenen Mitarbeiter auszuhändigen bzw. zuzusenden:</p>'+
+    '<ul style="margin:0;padding-left:20px;line-height:1.9;font-size:14px">'+
+      '<li>Arbeitsbescheinigung (§ 312 SGB III)</li>'+
+      '<li>Lohnsteuerbescheinigung</li>'+
+      '<li>Sozialversicherungs-/Meldebescheinigung (DEÜV)</li>'+
+      '<li>Urlaubsbescheinigung (Resturlaub)</li>'+
+      '<li>Arbeitszeugnis (auf Wunsch qualifiziert)</li>'+
+    '</ul>'+
+    '<p style="font-size:12.5px;color:var(--muted);margin-top:12px">Die Erstellung übernimmt in der Regel der Steuerberater (Lohnabrechnung). Nach dem Versand die Aufgabe als „Erledigt" markieren.</p>';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  openModal();
+}
+
+/* ----- Kündigungs-Ablauf ----- */
+function v5KuendVorlageText(s){
+  const heute=fmtDate(todayISO());
+  return firmaName()+'\nBahnhofstraße 85 · 31515 Wunstorf\n\n'+
+    fullName(s)+'\n'+((s.intern&&s.intern.address)||'')+'\n\n'+
+    'Wunstorf, den '+heute+'\n\n'+
+    'Ordentliche Kündigung des Arbeitsverhältnisses\n\n'+
+    'Sehr geehrte(r) '+fullName(s)+',\n\n'+
+    'hiermit kündigen wir das zwischen Ihnen und '+firmaName()+' bestehende Arbeitsverhältnis '+
+    'ordentlich und fristgerecht zum nächstmöglichen Zeitpunkt, das ist der [Enddatum eintragen].\n\n'+
+    'Die Kündigung erfolgt unter Einhaltung der maßgeblichen gesetzlichen bzw. vertraglichen Kündigungsfrist. '+
+    'Ihren Resturlaub gewähren wir bis zum Ende des Arbeitsverhältnisses; nicht genommener Urlaub wird abgegolten.\n\n'+
+    'Wir bitten Sie, alle in Ihrem Besitz befindlichen Firmenunterlagen und Arbeitsmittel (z. B. Diensthandy/Tablet, Schlüssel, Arbeitskleidung) bis zum Austrittstag zurückzugeben.\n\n'+
+    'Für Ihre bisherige Mitarbeit danken wir Ihnen und wünschen Ihnen für Ihren weiteren Weg alles Gute.\n\n'+
+    'Mit freundlichen Grüßen\n\n\n_________________________\n'+firmaName()+' · Geschäftsführung';
+}
+function v5KuendigenModal(staffId){
+  if(!requireRoleAction('admin','buero','buchhaltung')) return;
+  const s=staff.find(function(x){return x.id===staffId;}); if(!s){ toast('Mitarbeiter nicht gefunden',true); return; }
+  window.__v5KuendCtx={staffId:staffId};
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Mitarbeiter kündigen – '+fullName(s);
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin:0 0 14px">Wie endet das Arbeitsverhältnis mit <b>'+v5Esc(fullName(s))+'</b>?</p>'+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap">'+
+      '<button class="btn-ghost" style="flex:1;min-width:220px;text-align:left;padding:16px;height:auto;white-space:normal" onclick="v5KuendChoose(\'mitarbeiter\')">'+
+        '<b>📨 Mitarbeiter hat gekündigt</b><div style="font-size:12.5px;color:var(--muted);margin-top:4px">Kündigungsschreiben des Mitarbeiters hochladen. Er erhält eine Eingangsbestätigung per E-Mail.</div></button>'+
+      '<button class="btn-ghost" style="flex:1;min-width:220px;text-align:left;padding:16px;height:auto;white-space:normal" onclick="v5KuendChoose(\'firma\')">'+
+        '<b>🏢 Wir kündigen dem Mitarbeiter</b><div style="font-size:12.5px;color:var(--muted);margin-top:4px">Kündigungsschreiben aus Vorlage erstellen, anpassen, per E-Mail senden bzw. herunterladen.</div></button>'+
+    '</div>'+
+    '<div style="margin-top:14px;padding:11px 13px;background:var(--amber-soft);border:1px solid #f0dcc2;border-radius:10px;font-size:12.5px;color:#7a5b1e">⚖️ Hinweis: Kündigungen sind rechtlich heikel (Fristen, Form, Kündigungsschutz). Bitte vor dem Ausspruch anwaltlich prüfen lassen.</div>';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal();document.getElementById(\'modalBox\').classList.remove(\'wide\')">Abbrechen</button>';
+  openModal();
+}
+function v5KuendChoose(richtung){
+  const ctx=window.__v5KuendCtx; if(!ctx) return;
+  const s=staff.find(function(x){return x.id===ctx.staffId;}); if(!s) return;
+  ctx.richtung=richtung;
+  if(richtung==='mitarbeiter'){
+    document.getElementById('modalTitle').textContent='Eigenkündigung erfassen – '+fullName(s);
+    document.getElementById('modalBody').innerHTML=
+      '<div class="content-form">'+
+      '<label>Datum der Kündigung</label><input id="v5k_datum" type="date" value="'+todayISO()+'">'+
+      '<label>Kündigungsschreiben des Mitarbeiters (PDF/Bild)</label>'+
+      '<label class="btn-ghost btn-sm" style="cursor:pointer;width:auto;display:inline-block">⬆ Datei auswählen<input type="file" accept="application/pdf,image/jpeg,image/png" style="display:none" onchange="v5KuendUpload(this)"></label>'+
+      '<div id="v5k_fileinfo" style="font-size:13px;color:var(--muted);margin-top:8px">Noch keine Datei ausgewählt.</div>'+
+      '<div style="margin-top:12px;font-size:13px;color:var(--muted)">Nach dem Speichern: Der Mitarbeiter erhält eine Bestätigungs-E-Mail'+(s.email?' an '+v5Esc(s.email):' (keine E-Mail hinterlegt)')+', der Status wechselt auf „gekündigt" (kein App-Zugang), und beim Steuerberater erscheinen die Aufgaben „Kündigung übermitteln" und „Arbeitspapiere zusenden".</div>'+
+      '</div>';
+    document.getElementById('modalFoot').innerHTML=
+      '<button class="btn-ghost" onclick="v5KuendigenModal('+s.id+')">← Zurück</button>'+
+      '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="v5KuendSpeichernMitarbeiter()">Speichern & bestätigen</button>';
+  } else {
+    document.getElementById('modalTitle').textContent='Kündigung erstellen – '+fullName(s);
+    document.getElementById('modalBody').innerHTML=
+      '<div class="content-form">'+
+      '<label>Kündigungsschreiben (anpassbar)</label>'+
+      '<textarea id="v5k_text" rows="16" style="font-size:13px;line-height:1.5">'+v5Esc(v5KuendVorlageText(s))+'</textarea>'+
+      '<div style="font-size:12.5px;color:var(--muted);margin-top:6px">Bitte [Enddatum eintragen] ersetzen. Nach dem Senden: Status „gekündigt" (kein App-Zugang) und Steuerberater-Aufgaben werden angelegt.</div>'+
+      '<div style="margin-top:10px;padding:11px 13px;background:var(--amber-soft);border:1px solid #f0dcc2;border-radius:10px;font-size:12.5px;color:#7a5b1e">⚖️ Kündigungen bitte vor dem Versand anwaltlich prüfen lassen (Fristen, Form, Kündigungsschutz).</div>'+
+      '</div>';
+    document.getElementById('modalFoot').innerHTML=
+      '<button class="btn-ghost" onclick="v5KuendigenModal('+s.id+')">← Zurück</button>'+
+      '<button class="btn-ghost" style="width:auto" onclick="v5KuendFirmaDownload()">⬇ Als PDF</button>'+
+      (s.email&&isValidEmail(s.email)?'<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="v5KuendSpeichernFirma(true)">✉ Senden & kündigen</button>':'')+
+      '<button class="btn-primary" style="width:auto;padding:11px 20px;background:var(--danger)" onclick="v5KuendSpeichernFirma(false)">Ohne E-Mail kündigen</button>';
+  }
+}
+function v5KuendUpload(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  if(!validateUploadFile(f)) return;
+  const r=new FileReader();
+  r.onload=function(){ const ctx=window.__v5KuendCtx; if(ctx){ ctx.doc=r.result; ctx.docName=f.name; }
+    const el=document.getElementById('v5k_fileinfo'); if(el) el.innerHTML='<span style="color:var(--good)">✓ '+v5Esc(f.name)+'</span>'; };
+  r.readAsDataURL(f);
+}
+function v5MarkGekuendigt(s, datum){
+  s.status='gekündigt'; s.gekuendigtAm=datum||todayISO();
+  if(CLOUD) cloudUpdate('mitarbeiter', s.id, staffToRow(s));
+}
+async function v5KuendMail(s, betreff, text){
+  if(!s.email||!isValidEmail(s.email)) return;
+  try{
+    const res=await sendEmail({to:s.email, subject:betreff, text:text, html:textToHtml(text)});
+    if(res&&res.ok){ if(typeof logEmail==='function') logEmail('kuendigung', betreff, s.email, 1, 'gesendet'); toast('E-Mail an '+s.email+' gesendet'); }
+    else { if(typeof logEmail==='function') logEmail('kuendigung', betreff, s.email, 1, 'fehler', res&&res.error); toast('E-Mail-Versand fehlgeschlagen',true); }
+  }catch(e){ toast('E-Mail-Versand fehlgeschlagen',true); }
+}
+function v5KuendSpeichernMitarbeiter(){
+  const ctx=window.__v5KuendCtx; if(!ctx) return;
+  const s=staff.find(function(x){return x.id===ctx.staffId;}); if(!s) return;
+  const datum=val('v5k_datum')||todayISO();
+  v5Kuend[s.id]={richtung:'mitarbeiter', datum:datum, doc:ctx.doc||null, docName:ctx.docName||null}; v5KuendSave();
+  v5MarkGekuendigt(s, datum);
+  v5AddTaxTask({key:'kuendigung:staff'+s.id, art:'kuendigung', kind:'kuendigung', staffId:s.id, name:fullName(s), title:'Kündigung an Steuerberater übermitteln'});
+  v5AddTaxTask({key:'arbeitspapiere:staff'+s.id, art:'arbeitspapiere', kind:'info', staffId:s.id, name:fullName(s), title:'Arbeitspapiere zusenden'});
+  v5KuendMail(s, 'Eingangsbestätigung Ihrer Kündigung',
+    'Sehr geehrte(r) '+fullName(s)+',\n\nhiermit bestätigen wir den Eingang Ihrer Kündigung vom '+fmtDate(datum)+'. '+
+    'Das Arbeitsverhältnis endet entsprechend der geltenden Kündigungsfrist. Ihre Arbeitspapiere lassen wir Ihnen fristgerecht zukommen.\n\n'+
+    'Mit freundlichen Grüßen\n'+firmaName());
+  logActivity('Eigenkündigung erfasst: '+fullName(s));
+  closeModal(); document.getElementById('modalBox').classList.remove('wide');
+  toast('Kündigung erfasst – Mitarbeiter auf „gekündigt" gesetzt');
+  renderAdmin('steuerberater');
+}
+function v5KuendFirmaDownload(){
+  const ctx=window.__v5KuendCtx; if(!ctx) return;
+  const s=staff.find(function(x){return x.id===ctx.staffId;}); if(!s) return;
+  v5DownloadTextPdf('Kündigung – '+fullName(s), val('v5k_text')||'', 'Kuendigung_'+fullName(s));
+}
+function v5KuendSpeichernFirma(send){
+  const ctx=window.__v5KuendCtx; if(!ctx) return;
+  const s=staff.find(function(x){return x.id===ctx.staffId;}); if(!s) return;
+  const text=val('v5k_text')||v5KuendVorlageText(s);
+  const datum=todayISO();
+  v5Kuend[s.id]={richtung:'firma', datum:datum, text:text}; v5KuendSave();
+  v5MarkGekuendigt(s, datum);
+  v5AddTaxTask({key:'kuendigung:staff'+s.id, art:'kuendigung', kind:'kuendigung', staffId:s.id, name:fullName(s), title:'Kündigung an Steuerberater übermitteln'});
+  v5AddTaxTask({key:'arbeitspapiere:staff'+s.id, art:'arbeitspapiere', kind:'info', staffId:s.id, name:fullName(s), title:'Arbeitspapiere zusenden'});
+  if(send) v5KuendMail(s, 'Kündigung Ihres Arbeitsverhältnisses', text);
+  v5DownloadTextPdf('Kündigung – '+fullName(s), text, 'Kuendigung_'+fullName(s));
+  logActivity('Kündigung ausgesprochen: '+fullName(s));
+  closeModal(); document.getElementById('modalBox').classList.remove('wide');
+  toast('Mitarbeiter gekündigt – Status „gekündigt", PDF wird erstellt'+(send?', E-Mail gesendet':''));
+  renderAdmin('steuerberater');
+}
+
+/* ----- Steuerberater-Ansicht (ersetzt die alte steuerberaterHTML) ----- */
+function taxTaskRowHTML(t){
+  const btnLabel = t.kind==='onboarding'?'⬇ Fragebogen/Verträge' : t.kind==='kuendigung'?'⬇ Kündigung' : '📋 Checkliste';
+  return '<div class="list-row" style="padding:12px 0;border-bottom:1px solid var(--line)">'+
+    '<div class="li-main" style="flex:1"><b>'+v5Esc(t.title)+'</b>'+
+      '<div class="li-sub">'+v5Esc(t.name||'—')+(t.art==='kuendigung'?' · <span class="tag amber">Kündigung</span>':t.art==='arbeitspapiere'?' · <span class="tag amber">Austritt</span>':' · neuer Mitarbeiter')+'</div></div>'+
+    '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">'+
+      '<button class="btn-ghost btn-sm" style="width:auto" onclick="v5TaxAction(\''+t.id+'\')">'+btnLabel+'</button>'+
+      '<button class="btn-primary btn-sm" style="width:auto" onclick="v5TaxDone(\''+t.id+'\')">✓ Erledigt</button>'+
+    '</div></div>';
+}
+function taxTaskDoneRowHTML(t){
+  return '<div class="list-row" style="padding:10px 0;border-bottom:1px solid var(--line);opacity:.7">'+
+    '<div class="li-main" style="flex:1"><b style="text-decoration:line-through">'+v5Esc(t.title)+'</b>'+
+      '<div class="li-sub">'+v5Esc(t.name||'—')+' · erledigt am '+fmtDate(t.doneAt)+' · verschwindet in '+Math.max(0,5-v5DaysSince(t.doneAt))+' Tag(en)</div></div>'+
+    '<button class="btn-ghost btn-sm" style="width:auto" onclick="v5TaxReopen(\''+t.id+'\')">↺ Wieder öffnen</button></div>';
+}
+function steuerberaterHTML(){
+  v5EnsureTaxTasks(); v5PruneTaxTasks();
+  const openTasks=v5TaxTasks.filter(function(t){return t.status!=='erledigt';});
+  const doneTasks=v5TaxTasks.filter(function(t){return t.status==='erledigt';}).sort(function(a,b){return String(b.doneAt).localeCompare(String(a.doneAt));});
+  const aktive=(staff||[]).filter(function(s){return s.status!=='gekündigt';});
+  let html='';
+  // Block A: Übermittlungs-Aufgaben
+  html+='<div class="panel" style="margin-bottom:16px"><div class="panel-head"><h3>📤 An den Steuerberater übermitteln ('+openTasks.length+')</h3></div><div class="panel-body" style="padding-top:8px">'+
+    (openTasks.length? openTasks.map(taxTaskRowHTML).join('')
+      : '<p style="color:var(--muted);padding:6px 0">Aktuell nichts zu übermitteln. Neue Aufgaben entstehen automatisch, sobald ein Mitarbeiter genehmigt oder gekündigt wird.</p>')+
+    '</div></div>';
+  // Block A2: erledigte (5 Tage)
+  if(doneTasks.length){
+    html+='<div class="panel" style="margin-bottom:16px"><div class="panel-head"><h3>✓ Erledigt <span style="font-weight:400;color:var(--muted);font-size:12.5px">(bleibt 5 Tage sichtbar)</span></h3></div><div class="panel-body" style="padding-top:8px">'+
+      doneTasks.map(taxTaskDoneRowHTML).join('')+'</div></div>';
+  }
+  // Block B: Mitarbeiter (Datenblatt + kündigen)
+  html+='<div class="panel"><div class="panel-head"><h3>Aktive Mitarbeiter</h3></div><div class="panel-body" style="padding-top:8px">';
+  if(!aktive.length){
+    html+='<p style="color:var(--muted);padding:6px 0">Keine aktiven Mitarbeiter.</p>';
+  } else {
+    html+=aktive.map(function(s){
+      const app=(applications||[]).find(function(a){return a.status==='versendet' && a.email===s.email;});
+      return '<div class="list-row" style="padding:12px 0;border-bottom:1px solid var(--line)">'+
+        '<div class="li-main" style="flex:1"><b>'+v5Esc(fullName(s))+'</b> '+statusTag(s.status)+
+          '<div class="li-sub">'+v5Esc((s.intern&&s.intern.employment)||s.role||'—')+(s.hasLogin?' · Login aktiv':'')+'</div></div>'+
+        '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">'+
+          (app?'<button class="btn-ghost btn-sm" style="width:auto" onclick="openTaxDatasheet('+app.id+')">📄 Datenblatt</button>':'<button class="btn-ghost btn-sm" style="width:auto" onclick="downloadPersonalfragebogen('+s.id+')">📄 Fragebogen</button>')+
+          '<button class="btn-danger-ghost btn-sm" style="width:auto" onclick="v5KuendigenModal('+s.id+')">Mitarbeiter kündigen</button>'+
+        '</div></div>';
+    }).join('');
+  }
+  html+='</div></div>';
+  // Block C: bereits gekündigte
+  const gek=(staff||[]).filter(function(s){return s.status==='gekündigt';});
+  if(gek.length){
+    html+='<div class="panel" style="margin-top:16px"><div class="panel-head"><h3>Gekündigt</h3></div><div class="panel-body" style="padding-top:8px">'+
+      gek.map(function(s){ const k=v5Kuend[s.id]||{};
+        return '<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>'+v5Esc(fullName(s))+'</b> <span class="tag red">gekündigt</span><div class="li-sub">'+(k.richtung==='mitarbeiter'?'Eigenkündigung':(k.richtung==='firma'?'arbeitgeberseitig':''))+(s.gekuendigtAm?' · '+fmtDate(s.gekuendigtAm):'')+' · kein App-Zugang</div></div>'+
+        (k.doc||k.text?'<button class="btn-ghost btn-sm" style="width:auto" onclick="v5KuendShow('+s.id+')">Kündigung ansehen</button>':'')+'</div>';
+      }).join('')+'</div></div>';
+  }
+  return html;
+}
+function v5KuendShow(staffId){
+  const s=staff.find(function(x){return x.id===staffId;}); const k=v5Kuend[staffId]; if(!s||!k) return;
+  document.getElementById('modalTitle').textContent='Kündigung – '+fullName(s);
+  document.getElementById('modalBody').innerHTML= k.doc
+    ? ((k.doc.indexOf('application/pdf')>-1)
+        ? '<iframe src="'+k.doc+'" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px"></iframe>'
+        : '<img src="'+k.doc+'" style="width:100%;max-height:72vh;object-fit:contain;border-radius:8px;background:#f3f0fb">')
+    : '<div class="doc-text" style="max-height:60vh;white-space:pre-wrap">'+v5Esc(k.text||'')+'</div>';
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="v5TaxAction2ByStaff('+staffId+')">⬇ Herunterladen</button><button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  openModal();
+}
+function v5TaxAction2ByStaff(staffId){
+  const s=staff.find(function(x){return x.id===staffId;}); const k=v5Kuend[staffId]; if(!s||!k) return;
+  if(k.doc) v5DownloadDataUrl(k.doc, (k.docName||('Kuendigung_'+fullName(s))).replace(/[^a-zA-Z0-9_.-]+/g,'_'));
+  else if(k.text) v5DownloadTextPdf('Kündigung – '+fullName(s), k.text, 'Kuendigung_'+fullName(s));
+}
+
+/* ============================================================
+   4) BERATUNGSVORLAGE (editierbar) + PROTOKOLL JE KUNDE
+   ============================================================ */
+function v5DefaultLeitfaden(){ return JSON.parse(JSON.stringify(typeof BERATUNG_LEITFADEN!=='undefined'?BERATUNG_LEITFADEN:[])); }
+function v5GetLeitfaden(){ const s=v5Load('dailydo-beratungvorlage', null); return (s&&s.length)?s:v5DefaultLeitfaden(); }
+function v5SetLeitfaden(l){ v5Save('dailydo-beratungvorlage', l); v5CloudUpsertState('beratungvorlage', l); }
+
+function beratungsvorlageHTML(){
+  const l=v5GetLeitfaden();
+  let html=head('Beratungsvorlage','Der Leitfaden für das Beratungsgespräch. Hier bearbeitbar – Mitarbeiter sehen beim Kunden immer die aktuelle Version. Zu jeder Frage kann direkt im Gespräch eine Antwort erfasst werden; das Protokoll wird beim Kunden gespeichert.');
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-6px 0 14px"><button class="btn-primary btn-sm" style="width:auto" onclick="v5BvAddSection()">＋ Abschnitt hinzufügen</button><button class="btn-ghost btn-sm" onclick="v5BvReset()">↺ Auf Standard zurücksetzen</button></div>';
+  l.forEach(function(sec,si){
+    html+='<div class="panel" style="margin-bottom:14px"><div class="panel-body" style="padding:14px 16px">'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><input value="'+v5Esc(sec.t)+'" style="flex:1;font-weight:700" onchange="v5BvEditSectionTitle('+si+',this.value)"><button class="btn-danger-ghost btn-sm" style="width:auto" onclick="v5BvDelSection('+si+')">🗑</button></div>';
+    (sec.p||[]).forEach(function(p,pi){
+      html+='<div style="display:flex;gap:8px;align-items:center;margin:5px 0"><span style="color:var(--muted)">•</span><input value="'+v5Esc(p)+'" style="flex:1;font-size:13.5px" onchange="v5BvEditPoint('+si+','+pi+',this.value)"><button class="btn-danger-ghost btn-sm" style="width:auto" onclick="v5BvDelPoint('+si+','+pi+')">✕</button></div>';
+    });
+    html+='<button class="btn-ghost btn-sm" style="margin-top:6px" onclick="v5BvAddPoint('+si+')">＋ Frage/Punkt</button>'+
+      '</div></div>';
+  });
+  return html;
+}
+function v5BvMutate(fn){ const l=v5GetLeitfaden(); fn(l); v5SetLeitfaden(l); renderAdmin('beratungsvorlage'); }
+function v5BvAddSection(){ v5BvMutate(function(l){ l.push({t:(l.length+1)+'. Neuer Abschnitt', p:['Neue Frage']}); }); }
+function v5BvDelSection(si){ v5BvMutate(function(l){ l.splice(si,1); }); }
+function v5BvEditSectionTitle(si,v){ const l=v5GetLeitfaden(); if(l[si]){ l[si].t=cleanInput(v,120); v5SetLeitfaden(l);} }
+function v5BvAddPoint(si){ v5BvMutate(function(l){ if(l[si]){ l[si].p=l[si].p||[]; l[si].p.push('Neue Frage'); } }); }
+function v5BvDelPoint(si,pi){ v5BvMutate(function(l){ if(l[si]&&l[si].p) l[si].p.splice(pi,1); }); }
+function v5BvEditPoint(si,pi,v){ const l=v5GetLeitfaden(); if(l[si]&&l[si].p){ l[si].p[pi]=cleanInput(v,300); v5SetLeitfaden(l);} }
+function v5BvReset(){ confirmDangerDelete('Vorlage zurücksetzen','Die Beratungsvorlage auf den Standard-Leitfaden zurücksetzen? Eigene Änderungen gehen verloren.',function(){ localStorage.removeItem('dailydo-beratungvorlage'); v5CloudUpsertState('beratungvorlage', v5DefaultLeitfaden()); closeModal(); renderAdmin('beratungsvorlage'); }); }
+
+/* Beratungsprotokoll eines Kunden ansehen (Admin + Mitarbeiter) */
+function v5ShowBeratungsprotokoll(custId){
+  const cu=custById(custId); if(!cu){ toast('Kunde nicht gefunden',true); return; }
+  const b=cu.beratung;
+  document.getElementById('modalTitle').textContent='Beratungsprotokoll – '+fullName(cu);
+  if(!b || !(b.punkte&&b.punkte.length) && !b.signature){
+    document.getElementById('modalBody').innerHTML='<p style="color:var(--muted)">Für diesen Kunden liegt noch kein Beratungsprotokoll vor.</p>';
+  } else {
+    const punkte=(b.punkte||[]);
+    const antworten=punkte.filter(function(p){return /^💬/.test(p);});
+    const besprochen=punkte.filter(function(p){return !/^💬/.test(p);});
+    document.getElementById('modalBody').innerHTML=
+      '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Beratung am '+fmtDate(b.date)+(b.mitarbeiterId!=null?' · geführt von '+v5Esc(staffName(b.mitarbeiterId)):'')+'</div>'+
+      (besprochen.length?'<div class="section-label" style="margin-top:0">Besprochene Punkte</div>'+besprochen.map(function(p){return '<div style="font-size:13.5px;padding:3px 0">✓ '+v5Esc(p)+'</div>';}).join(''):'')+
+      (antworten.length?'<div class="section-label">Antworten / Wünsche des Kunden</div>'+antworten.map(function(p){return '<div style="font-size:13.5px;padding:3px 0">'+v5Esc(p)+'</div>';}).join(''):'')+
+      (b.signature?'<div class="section-label">Unterschriftsprobe</div><img src="'+b.signature+'" style="height:56px;border:1px solid var(--line);border-radius:7px;background:#fff">':'');
+  }
+  let foot='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  if(hasRole('admin')&&cu.beratung&&cu.beratung.signature) foot+='<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="downloadBeratungsvertrag('+cu.id+')">⬇ Vereinbarung (PDF)</button>';
+  document.getElementById('modalFoot').innerHTML=foot;
+  openModal();
+}
+
+/* ============================================================
+   5) MITARBEITER-AUSSTATTUNG/KOSTEN + RENTABILITÄT
+   ============================================================ */
+var v5StaffExtras=v5Load('dailydo-staffextras', {});   // staffId -> [{name, betrag}]
+function v5ExtrasFor(id){ return v5StaffExtras[id]||[]; }
+function v5ExtrasSum(id){ return v5ExtrasFor(id).reduce(function(n,e){ return n+(parseFloat(String(e.betrag).replace(',','.'))||0); },0); }
+function v5SaveExtras(){ v5Save('dailydo-staffextras', v5StaffExtras); v5CloudUpsertState('staffextras', v5StaffExtras); }
+
+/* HTML für den Ausstattungs-Block im Mitarbeiter-Modal */
+function v5ExtrasEditorHTML(id){
+  if(id==null) return '';
+  const rows=v5ExtrasFor(id);
+  return '<div class="section-label">Ausstattung &amp; Kosten <span style="font-weight:400;color:var(--muted);font-size:12px">(was hat der MA von uns – monatliche Kosten für die Rentabilität)</span></div>'+
+    '<div id="v5_extras">'+(rows.length?rows.map(v5ExtraRowHTML).join(''):'')+'</div>'+
+    '<button class="btn-ghost btn-sm" style="margin-top:6px" onclick="v5AddExtraRow()">＋ Position hinzufügen</button>'+
+    '<div style="font-size:12px;color:var(--muted);margin-top:6px">Beispiele: Diensthandy/Tablet, Arbeitskleidung, Fahrtkosten, Werkzeug. Betrag = monatliche Kosten in €.</div>';
+}
+function v5ExtraRowHTML(e){
+  e=e||{name:'',betrag:''};
+  return '<div class="form-row v5-extra-row" style="align-items:flex-end"><div style="flex:2"><input class="v5-extra-name" placeholder="Bezeichnung (z. B. iPad)" value="'+v5Esc(e.name)+'"></div>'+
+    '<div style="flex:1"><input class="v5-extra-betrag" type="number" step="0.01" placeholder="€ / Monat" value="'+v5Esc(e.betrag)+'"></div>'+
+    '<button class="btn-danger-ghost btn-sm" style="width:auto;margin-bottom:2px" onclick="this.closest(\'.v5-extra-row\').remove()">✕</button></div>';
+}
+function v5AddExtraRow(){ const box=document.getElementById('v5_extras'); if(box){ box.insertAdjacentHTML('beforeend', v5ExtraRowHTML({name:'',betrag:''})); } }
+function v5GatherExtras(id){
+  if(id==null) return;
+  const rows=[];
+  document.querySelectorAll('#v5_extras .v5-extra-row').forEach(function(r){
+    const name=cleanInput((r.querySelector('.v5-extra-name')||{}).value||'',80);
+    const betrag=(r.querySelector('.v5-extra-betrag')||{}).value||'';
+    if(name) rows.push({name:name, betrag:betrag});
+  });
+  if(rows.length) v5StaffExtras[id]=rows; else delete v5StaffExtras[id];
+  v5SaveExtras();
+}
+/* Rentabilität je Mitarbeiter (laufender Monat) */
+function v5StaffRentabilitaet(){
+  const mon=todayISO().slice(0,7);
+  const satz=(typeof STUNDENSATZ!=='undefined'?STUNDENSATZ:40);
+  return (staff||[]).filter(function(s){return s.status!=='gekündigt';}).map(function(s){
+    let min=0; timesheets.forEach(function(t){ if(t.staffId===s.id && t.status==='freigegeben' && String(t.date||'').slice(0,7)===mon) min+=tsMinutes(t); });
+    const std=min/60;
+    const umsatz=std*satz;
+    const lohn=std*(parseFloat(s.wage)||0);
+    const sach=v5ExtrasSum(s.id);
+    const kosten=lohn+sach;
+    const gewinn=umsatz-kosten;
+    const rent= umsatz>0 ? Math.round(gewinn/umsatz*100) : (kosten>0?-100:0);
+    return {s:s, std:std, umsatz:umsatz, lohn:lohn, sach:sach, kosten:kosten, gewinn:gewinn, rent:rent};
+  }).sort(function(a,b){return b.gewinn-a.gewinn;});
+}
+function v5Eur(n){ return (Math.round(n*100)/100).toFixed(2).replace('.',',')+' €'; }
+function v5RentabilitaetHTML(){
+  if(!hasRole('admin','buchhaltung')) return '';
+  const rows=v5StaffRentabilitaet();
+  if(!rows.length) return '';
+  const mon=todayISO().slice(0,7);
+  let html='<div class="panel" style="margin-top:18px"><div class="panel-head"><h3>📈 Rentabilität je Mitarbeiter <span style="font-weight:400;color:var(--muted);font-size:12.5px">(Monat '+fmtMonat(mon)+')</span></h3></div>'+
+    '<div class="panel-body" style="padding-top:10px"><div style="overflow-x:auto"><table><thead><tr>'+
+      '<th>Mitarbeiter</th><th>Std.</th><th>Umsatz</th><th>Lohnkosten</th><th>Sachkosten</th><th>Deckungsbeitrag</th><th>Rentabilität</th></tr></thead><tbody>'+
+    rows.map(function(r){
+      const col = r.rent>=50?'var(--good)' : r.rent>=15?'#b45309' : 'var(--danger)';
+      const hint = r.rent<15 ? ' <span class="tag red" style="font-size:10px">mehr nötig</span>' : (r.rent>=50?' <span class="tag green" style="font-size:10px">stark</span>':'');
+      return '<tr><td><b>'+v5Esc(fullName(r.s))+'</b>'+hint+'</td>'+
+        '<td>'+r.std.toFixed(1).replace('.',',')+'</td>'+
+        '<td>'+v5Eur(r.umsatz)+'</td>'+
+        '<td>'+v5Eur(r.lohn)+'</td>'+
+        '<td>'+v5Eur(r.sach)+'</td>'+
+        '<td style="font-weight:700;color:'+(r.gewinn>=0?'var(--good)':'var(--danger)')+'">'+v5Eur(r.gewinn)+'</td>'+
+        '<td style="font-weight:700;color:'+col+'">'+r.rent+' %</td></tr>';
+    }).join('')+
+    '</tbody></table></div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-top:8px">Umsatz = freigegebene Stunden × Kundensatz ('+(typeof STUNDENSATZ!=='undefined'?STUNDENSATZ:40)+' €). Kosten = Stunden × Stundenlohn + Sachkosten aus dem Profil. Deckungsbeitrag = Umsatz − Kosten.</div>'+
+    '</div></div>';
+  return html;
+}
+function fmtMonat(m){ if(!m) return ''; const p=String(m).split('-'); const n=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez']; return p.length===2?(n[(+p[1])-1]+' '+p[0]):m; }
+
+/* ============================================================
+   6) PAUSCHALE LEISTUNGEN JE KUNDE
+   (Betrag je erledigtem Einsatz; Abrechnung bleibt nachsteuerbar)
+   ============================================================ */
+function v5PauschaleEditorHTML(c){
+  const p=(c&&c.pauschale)||{aktiv:false,betrag:'',leistung:''};
+  return '<div class="section-label">Pauschale je Einsatz <span style="font-weight:400;color:var(--muted);font-size:12px">(optional)</span></div>'+
+    '<div class="confirm-box" style="background:#fff;border-color:var(--line);margin-bottom:10px" onclick="var b=document.getElementById(\'v5_pauschAktiv\');b.checked=!b.checked;document.getElementById(\'v5_pauschBox\').style.display=b.checked?\'block\':\'none\'"><input type="checkbox" id="v5_pauschAktiv" '+(p.aktiv?'checked':'')+' onclick="event.stopPropagation();document.getElementById(\'v5_pauschBox\').style.display=this.checked?\'block\':\'none\'"><label>Leistungen pauschal abrechnen (fester Betrag je erledigtem Termin)</label></div>'+
+    '<div id="v5_pauschBox" style="display:'+(p.aktiv?'block':'none')+'">'+
+      '<div class="form-row"><div><label>Pauschalbetrag je Einsatz (€)</label><input id="v5_pauschBetrag" type="number" step="0.01" value="'+v5Esc(p.betrag)+'" placeholder="z. B. 40"></div>'+
+      '<div><label>Leistungsbezeichnung</label><input id="v5_pauschLeistung" value="'+v5Esc(p.leistung)+'" placeholder="z. B. Alltagsbegleitung (Pauschale)"></div></div>'+
+      '<div style="font-size:12px;color:var(--muted)">Bei jedem abgeschlossenen Termin wird dieser Betrag automatisch als abrechenbar hinterlegt. Bei der Rechnungsstellung lassen sich die Leistungen weiterhin einzeln nachsteuern.</div>'+
+    '</div>';
+}
+function v5GatherPauschale(c){
+  if(!c) return;
+  const aktiv=(document.getElementById('v5_pauschAktiv')||{}).checked;
+  if(aktiv){ c.pauschale={aktiv:true, betrag:(document.getElementById('v5_pauschBetrag')||{}).value||'', leistung:cleanInput((document.getElementById('v5_pauschLeistung')||{}).value||'',80)}; }
+  else if(c.pauschale){ c.pauschale.aktiv=false; }
+}
+
+/* ============================================================
+   7) SUPABASE-LOGIN LÖSCHEN (beim Mitarbeiter-Löschen)
+   Ruft die Edge Function „manage-users" mit action:'delete' auf.
+   Erfordert, dass die Edge Function diese Aktion serverseitig
+   unterstützt (siehe MANAGE_USERS_DELETE_HINWEIS.md).
+   ============================================================ */
+async function v5DeleteAuthUser(email){
+  if(!CLOUD||!email||!isValidEmail(email)) return {ok:false, skipped:true};
+  try{ await callManageUsers('delete',{email:email}); return {ok:true}; }
+  catch(e){ return {ok:false, error:(e&&e.message)||String(e)}; }
+}
 </script>
 </body>
 </html>
