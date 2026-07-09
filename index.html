@@ -6375,8 +6375,9 @@ function showAppt(id){
   if(isOfficeRole()&&!cancelled&&(a.problem||a.wunsch)){
     foot+='<button class="btn-ghost" style="width:auto" onclick="apptFeedbackClear('+id+')">✓ Als geklärt markieren</button>';
   }
-  // Büro/Admin: Termin endgültig löschen
+  // Büro/Admin: Termin bearbeiten + löschen
   if((currentRole==='admin'||currentRole==='buero')&&!cancelled){
+    foot+='<button class="btn-primary" style="width:auto;padding:11px 18px" onclick="v5EditAppt('+id+')">✏ Bearbeiten</button>';
     foot+='<button class="btn-danger-ghost" style="width:auto" onclick="calDeleteAppt('+id+')">🗑 Löschen</button>';
     if(serieN>1) foot+='<button class="btn-danger-ghost" style="width:auto" onclick="v5DeleteSeries('+id+')">🗑 Ganze Serie löschen ('+serieN+')</button>';
   }
@@ -12830,6 +12831,66 @@ function v5DeleteSeries(id){
     if(typeof refreshCal==='function') refreshCal();
     if(currentRole==='staff') renderStaff('calendar');
   });
+}
+
+/* Termin bearbeiten (Admin/Büro) – Kunde, Mitarbeiter, Datum, Uhrzeit, Dauer, Notiz;
+   bei Serienterminen optional auf die ganze Serie anwenden (außer Datum). */
+function v5EditAppt(id){
+  if(currentRole!=='admin'&&currentRole!=='buero'){ toast('Keine Berechtigung',true); return; }
+  const a=appointments.find(function(x){return x.id===id;}); if(!a){ toast('Termin nicht gefunden',true); return; }
+  const serieN = a.seriesId ? appointments.filter(function(x){return x.seriesId===a.seriesId;}).length
+                            : appointments.filter(function(x){return v5ApptSig(x)===v5ApptSig(a);}).length;
+  const custOpts=(customers||[]).slice().sort(function(x,y){return fullName(x).localeCompare(fullName(y));})
+    .map(function(c){return '<option value="'+c.id+'" '+(c.id===a.customerId?'selected':'')+'>'+v5Esc(fullName(c))+(c.area?' · '+v5Esc(c.area):'')+'</option>';}).join('');
+  const staffOpts=(staff||[]).slice().sort(function(x,y){return staffName(x.id).localeCompare(staffName(y.id));})
+    .map(function(s){return '<option value="'+s.id+'" '+(s.id===a.staffId?'selected':'')+'>'+v5Esc(staffName(s.id))+'</option>';}).join('');
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Termin bearbeiten';
+  document.getElementById('modalBody').innerHTML=
+    '<div class="content-form">'+
+    '<label>Kunde *</label><select id="ea_cust">'+(custOpts||'<option value="">– keine Kunden –</option>')+'</select>'+
+    '<label>Mitarbeiter *</label><select id="ea_staff">'+(staffOpts||'<option value="">– keine Mitarbeiter –</option>')+'</select>'+
+    '<div class="form-row"><div><label>Datum</label><input id="ea_date" type="date" value="'+(a.date||todayISO())+'"></div>'+
+    '<div><label>Uhrzeit</label><input id="ea_time" type="time" value="'+(a.time||'09:00')+'"></div></div>'+
+    '<label>Dauer (Minuten)</label><input id="ea_dur" type="number" value="'+(a.duration||60)+'">'+
+    '<label>Notiz (optional)</label><input id="ea_note" value="'+v5Esc(a.note||'')+'">'+
+    (serieN>1?'<div class="confirm-box" style="background:#fff;border-color:var(--line);margin-top:12px" onclick="var b=document.getElementById(\'ea_serie\');b.checked=!b.checked"><input type="checkbox" id="ea_serie" onclick="event.stopPropagation()"><label>Änderungen (außer Datum) auf alle '+serieN+' Termine der Serie anwenden</label></div>':'')+
+    '</div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="showAppt('+id+')">← Zurück</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="v5SaveEditAppt('+id+')">Speichern</button>';
+  openModal();
+}
+function v5SaveEditAppt(id){
+  if(currentRole!=='admin'&&currentRole!=='buero'){ toast('Keine Berechtigung',true); return; }
+  const a=appointments.find(function(x){return x.id===id;}); if(!a) return;
+  const cidRaw=val('ea_cust'), sidRaw=val('ea_staff');
+  const cid=cidRaw===''?NaN:+cidRaw, sid=sidRaw===''?NaN:+sidRaw;   // ID 0 ist gültig
+  const date=val('ea_date'), time=val('ea_time'), dur=parseInt(val('ea_dur'))||60, note=val('ea_note');
+  if(isNaN(cid)){ toastHint('Bitte einen Kunden wählen'); return; }
+  if(isNaN(sid)){ toastHint('Bitte einen Mitarbeiter wählen'); return; }
+  if(!date||!time){ toastHint('Bitte Datum und Uhrzeit angeben'); return; }
+  const serieApply = !!(document.getElementById('ea_serie') && document.getElementById('ea_serie').checked);
+  const upd=function(t, withDate){
+    t.customerId=cid; t.staffId=sid; t.time=time; t.duration=dur; t.note=note;
+    if(withDate) t.date=date;
+    if(CLOUD) cloudUpdate('termine', t.id, apptToRow(t));
+  };
+  if(serieApply){
+    // Serien-IDs VOR der Änderung einsammeln (Signatur ändert sich beim Bearbeiten)
+    const serie = a.seriesId ? appointments.filter(function(x){return x.seriesId===a.seriesId;})
+                             : appointments.filter(function(x){return v5ApptSig(x)===v5ApptSig(a);});
+    const ids=serie.map(function(x){return x.id;});
+    ids.forEach(function(tid){ const t=appointments.find(function(x){return x.id===tid;}); if(t) upd(t, tid===id); });
+    logActivity('Terminserie bearbeitet ('+ids.length+')');
+    toast(ids.length+' Termine der Serie aktualisiert');
+  } else {
+    upd(a, true);
+    logActivity('Termin bearbeitet: '+fmtDate(date)+' '+time);
+    toast('Termin gespeichert');
+  }
+  closeModal();
+  if(typeof refreshCal==='function') refreshCal();
 }
 
 /* ============================================================
