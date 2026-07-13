@@ -1341,13 +1341,14 @@ function staffToRow(s){return {
   birth:(s.intern&&s.intern.birth)||null,address:(s.intern&&s.intern.address)||null,tax_id:(s.intern&&s.intern.taxId)||null,
   tax_class:(s.intern&&s.intern.taxClass)||null,kv_nr:(s.intern&&s.intern.kvNr)||null,kasse:(s.intern&&s.intern.kasse)||null,
   employment:(s.intern&&s.intern.employment)||null,citizenship:(s.intern&&s.intern.citizenship)||null,iban:(s.intern&&s.intern.iban)||null,
-  standort_id:currentStandortId
+  standort_id:(s.standortId!=null?s.standortId:currentStandortId)
 };}
 function rowToStaff(r){return {
   id:r.id,first:r.first,last:r.last,role:r.role,status:r.status,skills:r.skills||[],area:r.area,phone:r.phone,email:r.email,gender:r.gender,
   maxHours:r.max_hours,days:r.days||[],window:r.time_window,wage:Number(r.wage),
   bonus:{earned:Number(r.bonus_earned),pending:Number(r.bonus_pending),reason:r.bonus_reason},
   daysWorked:r.days_worked,color:r.color,hasLogin:r.has_login,login:r.login,
+  standortId:r.standort_id,
   contracts:[], // werden separat geladen
   schulungen:r.schulungen||{}, // abgeschlossene Pflichtschulungen {id:{done,datum}}
   avatar:r.avatar||'', // Profilbild (Daten-URL, klein) – Spalte via V4_MIGRATION.sql
@@ -1505,12 +1506,21 @@ function rowToRechnung(r){return {
 };}
 function jobToRow(j){return {customer_id:j.customerId,title:j.title,skills:j.skills||[],status:j.status,assigned_to:j.assignedTo,rejected_by:j.rejectedBy||[],commit_deadline:j.commitDeadline?new Date(j.commitDeadline).toISOString():null, standort_id:currentStandortId};}
 function rowToJob(r){return {id:r.id,customerId:r.customer_id,title:r.title,skills:r.skills||[],status:r.status,assignedTo:r.assigned_to,rejectedBy:r.rejected_by||[],commitDeadline:r.commit_deadline?new Date(r.commit_deadline).getTime():null};}
-function appToRow(a){const q=a.questionnaire||{};return {first:a.first,last:a.last,gender:a.gender||null,email:a.email,phone:a.phone,area:a.area,citizenship:a.citizenship,skills:a.skills||[],motivation:a.motivation,status:a.status,docs:a.docs||{},signatures:a.signatures||{},questionnaire:a.questionnaire||{},declaration:a.declaration||{},id_front:!!a.idFront,id_back:!!a.idBack,selfie:!!a.selfie,agb:!!a.agb,street:q.street||null,house_no:q.houseNo||null,plz:q.plz||null,city:q.city||null,employment:q.employment||null,other_job:q.otherJob||null,is_student:!!a.isStudent,enrollment_file:!!a.enrollmentFile,pets:a.pets||[],doc_images:a.docImages||{},standort_id:hannoverStandortId()};}
+function appToRow(a){const q=a.questionnaire||{};return {first:a.first,last:a.last,gender:a.gender||null,email:a.email,phone:a.phone,area:a.area,citizenship:a.citizenship,skills:a.skills||[],motivation:a.motivation,status:a.status,docs:a.docs||{},signatures:a.signatures||{},questionnaire:a.questionnaire||{},declaration:a.declaration||{},id_front:!!a.idFront,id_back:!!a.idBack,selfie:!!a.selfie,agb:!!a.agb,street:q.street||null,house_no:q.houseNo||null,plz:q.plz||null,city:q.city||null,employment:q.employment||null,other_job:q.otherJob||null,is_student:!!a.isStudent,enrollment_file:!!a.enrollmentFile,pets:a.pets||[],doc_images:a.docImages||{},standort_id:(a.standortId!=null?a.standortId:hannoverStandortId())};}
 function hannoverStandortId(){
   const s=standorte.find(s=>/hannover/i.test(s.name||''));
   return s?s.id:(standorte[0]?standorte[0].id:null);
 }
-function rowToApp(r){return appClean({id:r.id,first:r.first,last:r.last,gender:r.gender,email:r.email,phone:r.phone,area:r.area,citizenship:r.citizenship,skills:r.skills||[],motivation:r.motivation,status:r.status,docs:r.docs||{},signatures:r.signatures||{},questionnaire:r.questionnaire||{},declaration:r.declaration||{},idFront:r.id_front,idBack:r.id_back,selfie:r.selfie,agb:r.agb,isStudent:r.is_student,enrollmentFile:r.enrollment_file,pets:r.pets||[],docImages:r.doc_images||{}});}
+/* Standort-Zuweisung: Name auflösen + Auswahl-Dropdown erzeugen.
+   Ein Mitarbeiter/Bewerber gehört zu genau EINEM Standort (Feld standortId → Spalte standort_id). */
+function standortNameById(id){ const s=standorte.find(x=>String(x.id)===String(id)); return s?(s.name||('Standort '+id)):null; }
+function standortSelectHTML(selectId,selectedId,onChange){
+  if(!standorte.length) return '<span style="font-size:13px;color:var(--muted)">Noch keine Standorte angelegt – zuerst unter „Standorte" anlegen.</span>';
+  const oc=onChange?(' onchange="'+onChange+'"'):'';
+  const opts=standorte.map(s=>'<option value="'+s.id+'"'+(String(s.id)===String(selectedId)?' selected':'')+'>'+s.name+'</option>').join('');
+  return '<select id="'+selectId+'"'+oc+'>'+opts+'</select>';
+}
+function rowToApp(r){return appClean({id:r.id,first:r.first,last:r.last,gender:r.gender,email:r.email,phone:r.phone,area:r.area,citizenship:r.citizenship,skills:r.skills||[],motivation:r.motivation,status:r.status,docs:r.docs||{},signatures:r.signatures||{},questionnaire:r.questionnaire||{},declaration:r.declaration||{},idFront:r.id_front,idBack:r.id_back,selfie:r.selfie,agb:r.agb,isStudent:r.is_student,enrollmentFile:r.enrollment_file,pets:r.pets||[],docImages:r.doc_images||{},standortId:r.standort_id});}
 /* SICHERHEIT: Bewerbungen sind die einzige anonym beschreibbare Tabelle.
    Ein Angreifer könnte dort per direktem API-Aufruf HTML/Script-Code ablegen,
    der beim Ansehen im Büro mit der eingeloggten Session ausgeführt würde
@@ -4022,6 +4032,8 @@ function openStaffModal(id){
       '<div class="checks" id="es_skills">'+SKILLS.map(sk=>'<span class="check '+(skillsSel.includes(sk)?'on':'')+'" onclick="this.classList.toggle(\'on\')">'+sk+'</span>').join('')+'</div>'+
       '<label>Status</label>'+
       '<div class="seg status" id="es_status">'+['aktiv','Urlaub','krank'].map(v=>'<button data-v="'+v+'" class="'+(s.status===v?'on':'')+'" onclick="segPick(this,\'es_status\')">'+v+'</button>').join('')+'</div>'+
+      '<label>Standort</label>'+
+      standortSelectHTML('es_standort',(s.standortId!=null?s.standortId:currentStandortId))+
 
       '<div class="section-label">Interne Daten (nur Büro)</div>'+
       '<div class="form-row-3"><div><label>Steuer-ID</label><input id="es_taxId" value="'+(it.taxId||'')+'"></div>'+
@@ -4067,6 +4079,7 @@ function gatherStaff(s){
   s.phone=val('es_phone');s.email=val('es_email');
   s.skills=[...document.querySelectorAll('#es_skills .check.on')].map(e=>e.textContent);
   const st=document.querySelector('#es_status button.on');if(st)s.status=st.dataset.v;
+  const stdEl=document.getElementById('es_standort');if(stdEl&&stdEl.value!=='')s.standortId=Number(stdEl.value);
   s.intern=s.intern||{};
   s.intern.birth=val('es_birth');s.intern.address=val('es_address');s.intern.taxId=val('es_taxId');
   s.intern.taxClass=document.getElementById('es_taxClass').value;
@@ -4726,6 +4739,9 @@ function showApplication(id){
   const pfbRows=Object.keys(PFB_LABELS).filter(k=>q[k]).map(k=>'<div class="reveal-row"><span class="k">'+PFB_LABELS[k]+'</span><span class="v">'+q[k]+'</span></div>').join('')||'<div style="color:var(--muted);font-size:13px;padding:4px 0">Keine Angaben.</div>';
   document.getElementById('modalBody').innerHTML=
     statusStepper(a.status)+
+    '<div class="section-label" style="margin-top:18px">Standort-Zuordnung</div>'+
+    '<div class="reveal-row"><span class="k">Standort</span><span class="v">'+standortSelectHTML('app_standort',(a.standortId!=null?a.standortId:hannoverStandortId()),'appSetStandort('+a.id+',this.value)')+'</span></div>'+
+    (standorte.length?'<p style="font-size:12.5px;color:var(--muted);margin:6px 0 2px">Dieser Standort wird beim Erstellen der Zugangsdaten als Standort des Mitarbeiters übernommen.</p>':'')+
     '<div class="section-label" style="margin-top:18px">Persönliche Daten</div>'+
     '<div class="reveal-row"><span class="k">Name</span><span class="v">'+fullName(a)+'</span></div>'+
     (a.gender?'<div class="reveal-row"><span class="k">Geschlecht</span><span class="v">'+a.gender+'</span></div>':'')+
@@ -4793,6 +4809,15 @@ async function sendBewerbungAbsage(id){
     toast('Absage an '+a.email+' gesendet'); closeModal(); renderAdmin('applications');
   } else logEmail('bewerbung', subject, a.email, 1, 'fehler', res.error);
 }
+// Bewerber einem Standort zuweisen (Auswahl im Bewerbungs-Detail)
+function appSetStandort(id,value){
+  if(!requireRoleAction('admin','buero')) return;
+  const a=applications.find(x=>x.id===id); if(!a) return;
+  a.standortId=(value===''?null:Number(value));
+  if(CLOUD) cloudUpdate('bewerbungen',id,{standort_id:a.standortId});
+  const nm=standortNameById(a.standortId);
+  toast(nm?('Standort zugewiesen: '+nm):'Standort-Zuordnung entfernt');
+}
 function deleteApplication(id){
   if(!requireRoleAction('admin','buero')) return;
   const a=applications.find(x=>x.id===id); if(!a) return;
@@ -4857,6 +4882,7 @@ function sendAppLogin(id){
   const signedDocs=Object.keys(a.docs||{}).filter(d=>a.docs[d]).map(d=>({name:d,signedDate:todayISO(),signature:(a.signatures&&a.signatures[d])||null}));
   // Bewerber wird zum aktiven Mitarbeiter
   const newStaff={id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,contracts:signedDocs,
+    standortId:(a.standortId!=null?a.standortId:hannoverStandortId()),
     docImages:Object.assign({}, a.docImages||{}), isStudent:!!a.isStudent,
     intern:{birth:(a.questionnaire&&a.questionnaire.birth)||'',address:(a.questionnaire&&a.questionnaire.address)||'',taxId:(a.questionnaire&&a.questionnaire.taxId)||'',taxClass:(a.questionnaire&&a.questionnaire.taxClass)||'I',kvNr:(a.questionnaire&&a.questionnaire.kvNr)||'',kasse:(a.questionnaire&&a.questionnaire.kasse)||'',employment:(a.questionnaire&&a.questionnaire.employment)||'Minijob',citizenship:a.citizenship,iban:(a.questionnaire&&a.questionnaire.iban)||''}};
 
