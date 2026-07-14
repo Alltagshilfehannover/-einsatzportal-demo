@@ -4043,7 +4043,7 @@ function renderAdmin(view){
           ['Als bezahlt markieren','rwMarkBezahlt('+r.id+',null,true)']]
           .concat(ueberfaellig&&r.empfaengerEmail?[['⏰ Zahlungserinnerung senden','mahnRechnung('+r.id+')']]:[])
           .concat(r.gesperrt?[['Korrekturrechnung','rwKorrektur('+r.id+')'],['Stornorechnung','rwStorno('+r.id+')','danger']]
-                           :[['Festschreiben (GoBD)','rwLock('+r.id+')'],['Stornieren / verwerfen','rwStornieren('+r.id+')','danger']]))+'</td>'+
+                           :[['Festschreiben (GoBD)','rwLock('+r.id+')'],['Stornieren','rwStornieren('+r.id+')','danger']]))+'</td>'+
         '</tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">🧾</div><b>Noch keine Rechnungen</b><p style="margin-top:6px">Erstelle oben eine Rechnung aus einem bereiten Stundenzettel.</p></div>')+
     '</div></div>';
@@ -8861,18 +8861,14 @@ function rwGrundQuiet(re){
 }
 function rwKorrektur(id){ rwGrundModal(id,'korrektur'); }
 function rwStorno(id){ rwGrundModal(id,'storno'); }
-// Stornieren aus der Rechnungsliste: festgeschriebene Rechnung -> Stornorechnung (GoBD),
-// Entwurf -> darf verworfen/gelöscht werden (noch keine festgeschriebene Rechnung).
+// Stornieren aus der Rechnungsliste: Die Original-Rechnung bleibt IMMER erhalten
+// (Status -> „storniert"), es wird eine neue, negative Stornorechnung erzeugt.
+// Gilt auch für Entwürfe – nichts wird gelöscht.
 function rwStornieren(id){
   if(!requireRoleAction('admin','buchhaltung')) return;
   const re=rechnungen.find(x=>x.id===id); if(!re){ toast('Rechnung nicht gefunden',true); return; }
-  if(re.gesperrt){ rwStorno(id); return; }
-  confirmDangerDelete('Rechnung verwerfen','Der Rechnungs-Entwurf <b>'+re.nummer+'</b> ('+Number(re.betrag||0).toFixed(2).replace('.',',')+' €) wird gelöscht. Der zugehörige Stundenzettel bleibt erhalten und kann erneut abgerechnet werden.',function(){
-    rechnungen=rechnungen.filter(x=>x.id!==id);
-    if(CLOUD) cloudDelete('rechnungen',id);
-    logActivity('Rechnungs-Entwurf verworfen: '+re.nummer);
-    renderAdmin('rechnungen'); toast('Rechnung '+re.nummer+' verworfen');
-  });
+  if(re.status==='storniert'){ toast('Rechnung ist bereits storniert',true); return; }
+  rwStorno(id);
 }
 function rwGrundModal(id,art){
   if(!requireRoleAction('admin','buchhaltung')) return;
@@ -8918,7 +8914,8 @@ function rwStornoMitGrund(id,grund){
     const re=Object.assign({},alt,{ id:nextRechnungId++, nummer:rwNextNummer(), status:'offen',
       gesperrt:true, lexwareId:null, korrekturZu:'Storno '+alt.nummer, datum:todayISO(),
       betrag:-Math.abs(alt.betrag||0), menge:-Math.abs(alt.menge||0), bezahltAm:null, grund:grund,
-      positionen:(alt.positionen&&alt.positionen.length)?alt.positionen.map(p=>Object.assign({},p,{menge:-Math.abs(Number(p.menge)||0), betrag:-Math.abs(Number(p.betrag)||0)})):null });
+      positionen:(alt.positionen&&alt.positionen.length)?alt.positionen.map(p=>Object.assign({},p,{menge:-Math.abs(Number(p.menge)||0), betrag:-Math.abs(Number(p.betrag)||0)})):null,
+      extra:alt.extra?Object.assign({},alt.extra,{eigenanteil:-Math.abs(Number(alt.extra.eigenanteil)||0)}):null });
     rechnungen.push(re);
     alt.status='storniert'; if(CLOUD) cloudUpdate('rechnungen',alt.id,{status:'storniert'});
     if(CLOUD){ cloudInsertRechnung(re).then(r=>{ if(r){ re.id=r.id; rwSaveExtrasQuiet(re); rwGrundQuiet(re); } }); }
@@ -9186,7 +9183,19 @@ function buildRechnungPdf(re, cu){
   // Titel
   doc.setFont('helvetica','bold');doc.setFontSize(17);
   const art=ex.rechnungsart||rp.rechnungsartDefault||'';
-  doc.text('Rechnung'+(art?' '+art:''),L,y); y+=20;
+  const istStorno=re.korrekturZu&&String(re.korrekturZu).startsWith('Storno');
+  const istKorrektur=re.korrekturZu&&!istStorno;
+  doc.text((istStorno?'Stornorechnung':'Rechnung')+(art?' '+art:''),L,y); y+=20;
+  if(istStorno){
+    doc.setTextColor(200,0,0);doc.setFont('helvetica','bold');doc.setFontSize(12);
+    doc.text('STORNO zur Rechnung '+String(re.korrekturZu).replace(/^Storno /,''),L,y); y+=16;
+    doc.setFont('helvetica','normal');doc.setFontSize(9);
+    doc.text('Diese Rechnung storniert die o. g. Rechnung vollständig.',L,y); y+=15;
+    black();
+  } else if(istKorrektur){
+    doc.setFont('helvetica','bold');doc.setFontSize(10);
+    doc.text('Korrekturrechnung zu '+re.korrekturZu,L,y); y+=15; doc.setFont('helvetica','normal');
+  }
   // Nummer + Ort/Datum
   doc.setFont('helvetica','bold');doc.setFontSize(10);
   doc.text('Rechnungsnummer: '+re.nummer,L,y);
@@ -9249,7 +9258,6 @@ function buildRechnungPdf(re, cu){
   doc.text('Zu zahlender Betrag'+(par?(' {'+par+'}'):'')+':',R-155,y,{align:'right'}); doc.text(euro(zuZahlen),R,y,{align:'right'}); y+=26;
   // Fußtexte
   doc.setFont('helvetica','normal');doc.setFontSize(8.5);gray();
-  if(re.korrekturZu){ black(); doc.setFont('helvetica','bold'); doc.text((String(re.korrekturZu).startsWith('Storno')?'Stornorechnung zu ':'Korrekturrechnung zu ')+String(re.korrekturZu).replace(/^Storno /,''),L,y); y+=13; doc.setFont('helvetica','normal'); gray(); }
   if(rp.ustHinweis){ const w=wrap(rp.ustHinweis); doc.text(w,L,y); y+=w.length*11+6; }
   if(rp.bittText){ const w=wrap(rp.bittText); doc.text(w,L,y); y+=w.length*11+8; }
   if(rp.datenschutzUrl){ black(); doc.setFont('helvetica','bold'); doc.text('Datenschutz:',L,y); y+=11; doc.setFont('helvetica','normal'); gray(); doc.text(String(rp.datenschutzUrl),L,y); y+=13; }
