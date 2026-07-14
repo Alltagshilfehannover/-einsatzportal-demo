@@ -6284,8 +6284,10 @@ function apptStatusFlags(a){
   if(a.problem) flags.push({ic:'⚠️',label:'Problem: '+a.problem,cls:'problem'});
   if(a.wunsch) flags.push({ic:'💡',label:'Wunsch: '+a.wunsch,cls:'wunsch'});
   const ts=timesheets.find(t=>t.staffId===a.staffId&&t.customerId===a.customerId&&t.date===a.date);
-  const ende=new Date(a.date+'T'+(a.time||'09:00')); ende.setMinutes(ende.getMinutes()+(a.duration||60));
-  const vorbei=ende<new Date();
+  // „Verpasst" erst NACH dem Termintag – am selben Tag kann der Einsatz noch
+  // gestartet und die Zeit angepasst werden (z. B. später gekommen). Erst wenn
+  // bis Tagesende kein Stundenzettel erfasst wurde, gilt der Termin als verpasst.
+  const vorbei=String(a.date||'')<todayISO();
   if(ts){
     if(!(ts.signature||ts.proof)) flags.push({ic:'✍️',label:'Unterschrift fehlt',cls:'nosign'});
     if(ts.start&&a.time&&ts.start!==a.time) flags.push({ic:'⏱',label:'Zeiten angepasst: '+ts.start+'–'+(ts.end||'?')+' statt '+a.time,cls:'zeit'});
