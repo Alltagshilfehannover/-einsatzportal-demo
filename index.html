@@ -1504,7 +1504,8 @@ function rowToRechnung(r){return {
   extra:r.extra||null,
   datum:r.datum, stunden:r.stunden, preisProStunde:r.preis_pro_stunde, betrag:r.betrag, status:r.status||'offen',
   lexwareId:r.lexware_id||null,
-  gesperrt:!!r.gesperrt, bezahltAm:r.bezahlt_am||null, korrekturZu:r.korrektur_zu||null
+  gesperrt:!!r.gesperrt, bezahltAm:r.bezahlt_am||null, korrekturZu:r.korrektur_zu||null,
+  mahnungAm:r.mahnung_am||null, mahnungen:Number(r.mahnungen)||0
 };}
 // Wie rechnungToRow, aber inkl. Positions-Array + Rechnungs-Snapshot (jsonb-Spalten 'positionen'/'extra').
 function rechnungToRowFull(r){ const base=rechnungToRow(r); base.positionen=(r.positionen&&r.positionen.length)?r.positionen:null; base.extra=r.extra||null; return base; }
@@ -8587,7 +8588,10 @@ function invoiceCollectPositionen(){
 }
 function invoiceRecalcMulti(){
   const sum=invoiceCollectPositionen().reduce((s,p)=>s+p.betrag,0);
-  const el=document.getElementById('inv_betrag'); if(el) el.innerHTML='<b>'+sum.toFixed(2).replace('.',',')+' €</b>';
+  const eigen=Math.max(0,parseFloat((document.getElementById('inv_eigen')||{}).value)||0);
+  const zahlbar=Math.max(0,sum-eigen);
+  const el=document.getElementById('inv_betrag');
+  if(el) el.innerHTML='<b>'+zahlbar.toFixed(2).replace('.',',')+' €</b>'+(eigen>0?' <span style="font-weight:400;color:var(--muted);font-size:12px">(Positionen '+sum.toFixed(2).replace('.',',')+' € − Eigenanteil '+eigen.toFixed(2).replace('.',',')+' €)</span>':'');
 }
 // Zuletzt verwendete Rechnungsdaten (Rechnungsart, Geburtstag, Status) eines Kunden – zum Vorbelegen
 function lastRechnungExtra(customerId){
@@ -8616,7 +8620,11 @@ function createInvoiceForTimesheet(tsId){
   const cu=custById(t.customerId); if(!cu)return;
   const positionen=invoiceCollectPositionen();
   if(!positionen.length){toastHint('Bitte mindestens eine Position mit Menge auswählen');return;}
-  const betrag=Math.round(positionen.reduce((s,p)=>s+p.betrag,0)*100)/100;
+  const posSumme=Math.round(positionen.reduce((s,p)=>s+p.betrag,0)*100)/100;
+  // Rechnungsbetrag = Positionssumme MINUS Eigenanteil (so steht es auch auf dem PDF
+  // als "Zu zahlender Betrag" – Liste, Umsatz und Bank-Abgleich bleiben konsistent).
+  const eigenAnteil=Math.max(0,parseFloat((document.getElementById('inv_eigen')||{}).value)||0);
+  const betrag=Math.max(0,Math.round((posSumme-eigenAnteil)*100)/100);
   // Wegepauschale-Betrag für den nächsten Dialog merken
   const wegePos=positionen.find(p=>p.einheit==='Pauschale'&&p.name===(rwParams().wegepauschaleText||'Wegepauschale'));
   if(wegePos) rwRememberWege(wegePos.preis);
@@ -8713,13 +8721,24 @@ function rwSaveParams(p){
   }
 }
 /* Fortlaufende Rechnungsnummer aus den Einstellungen (Fallback: bisheriges Schema) */
+function rwNummerExists(nr){ return rechnungen.some(r=>String(r.nummer)===String(nr)); }
 function rwNextNummer(){
   const p=rwParams();
   if(p.naechsteNummer==null||p.naechsteNummer===''){
-    return 'RE-'+new Date().getFullYear()+'-'+String(nextRechnungId++).padStart(4,'0');
+    // Automatik: fortlaufend je Jahr aus den TATSÄCHLICH vorhandenen Rechnungen
+    // (GoBD: einmalig & fortlaufend – ein lokaler Zähler könnte auf zwei Geräten
+    // kollidieren). Höchste RE-JAHR-Nummer suchen und +1.
+    const jahr=new Date().getFullYear();
+    const rx=new RegExp('^RE-'+jahr+'-(\\d+)$');
+    let max=0;
+    rechnungen.forEach(r=>{ const m=rx.exec(String(r.nummer||'')); if(m) max=Math.max(max,parseInt(m[1],10)); });
+    let n=max+1, nummer='RE-'+jahr+'-'+String(n).padStart(4,'0');
+    while(rwNummerExists(nummer)){ n++; nummer='RE-'+jahr+'-'+String(n).padStart(4,'0'); }
+    return nummer;
   }
-  const n=+p.naechsteNummer||1;
-  const nummer=(p.nummerPrefix||'RE-')+n;
+  let n=+p.naechsteNummer||1;
+  let nummer=(p.nummerPrefix||'RE-')+n;
+  while(rwNummerExists(nummer)){ n++; nummer=(p.nummerPrefix||'RE-')+n; }
   p.naechsteNummer=n+1; rwSaveParams(p);
   return nummer;
 }
@@ -8924,7 +8943,9 @@ function rwSaveRechnung(id){
   const pos=rwCollectEditPos();
   if(!pos.length){ toastHint('Bitte mindestens eine Position mit Leistung und Menge angeben'); return; }
   re.positionen=pos;
-  re.betrag=Math.round(pos.reduce((s,p)=>s+p.betrag,0)*100)/100;
+  // Betrag = Positionssumme minus (evtl. gespeicherter) Eigenanteil – wie beim Erstellen
+  const eigenAlt=Math.max(0,Number(re.extra&&re.extra.eigenanteil)||0);
+  re.betrag=Math.max(0,Math.round((pos.reduce((s,p)=>s+p.betrag,0)-eigenAlt)*100)/100);
   const basis=pos[0];
   re.leistungName=pos.map(p=>p.name).join(' + ');
   re.leistungEinheit=basis.einheit; re.menge=basis.menge; re.preisProStunde=basis.preis;
@@ -9422,6 +9443,8 @@ async function mahnRechnung(id, quiet){
   const res=await sendEmail({to:re.empfaengerEmail, subject:subject, text:text, html:textToHtml(text), attachments:atts}, quiet);
   if(res.ok){
     re.mahnungAm=todayISO(); re.mahnungen=(re.mahnungen||0)+1;
+    // Mahnstatus dauerhaft speichern (Spalten via RECHNUNG_POSITIONEN.sql; Fehler still)
+    if(CLOUD&&sb&&re.id){ sb.from('rechnungen').update({mahnung_am:re.mahnungAm, mahnungen:re.mahnungen}).eq('id',re.id).then(()=>{},()=>{}); }
     logEmail('mahnung', subject, re.empfaengerEmail, 1, 'gesendet');
     logActivity('Zahlungserinnerung gesendet: '+re.nummer+' an '+re.empfaengerEmail);
     if(!quiet){ toast('Zahlungserinnerung zu '+re.nummer+' an '+re.empfaengerEmail+' gesendet'); renderAdmin('rechnungen'); }
@@ -9606,13 +9629,27 @@ function lexwareInvoicePayload(re, cu){
   const posArr=(re.positionen&&re.positionen.length)
     ? re.positionen
     : [{name:re.leistungName||'Alltagshilfe', einheit:re.leistungEinheit||'', preis:Number(re.preisProStunde||0), menge:Number(re.menge||re.stunden||1)}];
-  const lineItems=posArr.map(p=>({
-    type:'custom',
-    name:String(p.name||'Leistung')+(p.einheit==='Pauschale'?'':(' – Leistung vom '+fmtDate(re.datum))),
-    quantity:Number(p.menge||1),
-    unitName:lexwareUnitName(p.einheit),
-    unitPrice:{currency:'EUR', netAmount:Number(p.preis||0), taxRatePercentage:0}
-  }));
+  let lineItems;
+  const bh=re.extra&&re.extra.beihilfe;
+  if(bh){
+    // Beihilfe-Aufteilung: In Lexware nur den tatsächlichen Rechnungsbetrag dieser
+    // Teil-Rechnung anlegen (Kassen- bzw. Beihilfeanteil), nicht die volle Summe.
+    lineItems=[{
+      type:'custom',
+      name:(bh.rolle==='beihilfe'?'Beihilfeanteil':'Pflegekassenanteil')+' ('+bh.pct+' % Beihilfe-Aufteilung) – Leistung vom '+fmtDate(re.datum),
+      quantity:1,
+      unitName:'Einheit',
+      unitPrice:{currency:'EUR', netAmount:Number(re.betrag||0), taxRatePercentage:0}
+    }];
+  } else {
+    lineItems=posArr.map(p=>({
+      type:'custom',
+      name:String(p.name||'Leistung')+(p.einheit==='Pauschale'?'':(' – Leistung vom '+fmtDate(re.datum))),
+      quantity:Number(p.menge||1),
+      unitName:lexwareUnitName(p.einheit),
+      unitPrice:{currency:'EUR', netAmount:Number(p.preis||0), taxRatePercentage:0}
+    }));
+  }
   return {
     voucherDate:dat,
     address:{name:re.empfaengerName||'Empfänger', street:street, zip:zip, city:city, countryCode:'DE'},
