@@ -3701,7 +3701,8 @@ function renderAdmin(view){
       '<thead><tr><th>Auftrag</th><th>Gebiet</th><th>Status</th><th>Angenommen von</th><th>Abgelehnt von</th></tr></thead><tbody>'+
       jobs.map(j=>{const cu=custById(j.customerId);return '<tr class="clickable" onclick="showJobSummary('+j.id+')"><td><b>'+j.title+'</b><div style="color:var(--muted);font-size:12.5px">'+(cu?freqText(cu):'')+'</div></td>'+
         '<td>'+(cu?cu.area:'—')+'</td><td>'+jobStatusTag(j)+'</td>'+
-        '<td>'+(j.status==='assigned'?'<b>'+staffName(j.assignedTo)+'</b>':'<span style="color:var(--muted)">noch frei</span>')+'</td>'+
+        '<td>'+(j.status==='assigned'?'<b>'+staffName(j.assignedTo)+'</b>':'<span style="color:var(--muted)">noch frei</span>')+
+          ' <button class="btn-ghost btn-sm" style="width:auto" title="Kunden manuell einem Mitarbeiter zuweisen" onclick="event.stopPropagation();assignCustomerDlg('+j.customerId+')">👤 Zuweisen</button></td>'+
         '<td>'+(j.rejectedBy.length?j.rejectedBy.map(id=>'<span class="reject-chip">✕ '+staffName(id)+'</span>').join(''):'<span style="color:var(--muted)">—</span>')+'</td></tr>';}).join('')+
       '</tbody></table></div></div>';
   }
@@ -3811,7 +3812,8 @@ function renderAdmin(view){
         '<td style="text-align:right">'+rowMenu([
           ['Öffnen / Bearbeiten','editCustomer('+c.id+')'],
           ['Leistungsnachweis','startLeistungsnachweis('+c.id+')']
-        ].concat(canCreateCust?[['SEP',''],['Löschen','deleteCustomer('+c.id+')','danger']]:[]))+'</td>'+
+        ].concat(hasRole('admin','buero')?[['👤 Mitarbeiter zuweisen','assignCustomerDlg('+c.id+')']]:[])
+         .concat(canCreateCust?[['SEP',''],['Löschen','deleteCustomer('+c.id+')','danger']]:[]))+'</td>'+
       '</tr>').join(''):'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Keine Kunden gefunden.</td></tr>')+
       '</tbody></table>'+pagerHTML(custPage,filtered.length,'custPage','customers')+'</div></div>';
   }
@@ -5514,6 +5516,77 @@ function releaseJob(id){
   j.status='available';j.assignedTo=null;j.commitDeadline=null;
   if(CLOUD) cloudUpdate('auftraege',j.id,jobToRow(j));
   toast('Auftrag zurückgegeben – wieder in der Börse',true);renderStaff('mine');
+}
+/* ============================================================
+   MANUELLE ZUWEISUNG (Büro): Kunde X gehört zu Mitarbeiter:in Y –
+   direkt vergeben, ohne Auftragsbörse. Ohne 32-h-Frist (feste
+   Zuweisung durch das Büro). Legt bei Bedarf die Erstberatungs-
+   Aufgabe an und aktiviert den Kunden.
+   ============================================================ */
+function assignCustomerDlg(customerId){
+  if(!requireRoleAction('admin','buero')) return;
+  const cu=custById(customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
+  const team=staff.filter(s=>s.status!=='gekündigt'&&s.status!=='inaktiv');
+  if(!team.length){ toast('Keine aktiven Mitarbeiter vorhanden',true); return; }
+  const j=jobs.find(x=>x.customerId===customerId&&x.status==='assigned');
+  const cur=j?j.assignedTo:null;
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Mitarbeiter zuweisen – '+fullName(cu);
+  document.getElementById('modalBody').innerHTML=
+    '<div class="summary" style="margin-bottom:14px"><div class="sh">Aktuell</div>'+
+      (cur!=null?('Zugewiesen an <b>'+staffName(cur)+'</b>'):'Noch keinem Mitarbeiter zugewiesen'+(jobs.some(x=>x.customerId===customerId&&x.status==='available')?' – Auftrag liegt in der Börse':''))+
+    '</div>'+
+    '<label>Mitarbeiter:in *</label><select id="as_staff">'+
+      team.map(s=>'<option value="'+s.id+'" '+(cur===s.id?'selected':'')+'>'+fullName(s)+(s.area?' · '+s.area:'')+(schulungenKomplett(s)?'':' · ⚠ Schulungen offen')+'</option>').join('')+
+    '</select>'+
+    '<p style="color:var(--muted);font-size:12.5px;margin-top:10px">Die Zuweisung ist fest (keine Melde-Frist). Der Kunde erscheint sofort unter „Meine Kunden" der gewählten Person. Steht die Erstberatung noch aus, wird automatisch die Aufgabe „Erstberatung" angelegt.</p>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    (cur!=null?'<button class="btn-danger-ghost" style="width:auto" onclick="unassignCustomer('+customerId+')">Zuweisung aufheben → Börse</button>':'')+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="assignCustomerTo('+customerId+')">Zuweisen</button>';
+  openModal();
+}
+function assignCustomerTo(customerId){
+  if(!requireRoleAction('admin','buero')) return;
+  const sid=+val('as_staff'); const s=staff.find(x=>x.id===sid);
+  if(!s){ toastHint('Bitte eine:n Mitarbeiter:in wählen'); return; }
+  const cu=custById(customerId); if(!cu) return;
+  // Bestehenden Auftrag des Kunden übernehmen, sonst neuen anlegen
+  let j=jobs.find(x=>x.customerId===customerId&&x.status==='assigned')
+       ||jobs.find(x=>x.customerId===customerId&&x.status==='available')
+       ||jobs.find(x=>x.customerId===customerId);
+  if(j){
+    j.status='assigned'; j.assignedTo=sid; j.commitDeadline=null;
+    if(!j.rejectedBy) j.rejectedBy=[];
+    if(CLOUD) cloudUpdate('auftraege',j.id,jobToRow(j));
+  } else {
+    j={id:nextJobId++, customerId:customerId, title:((cu.need&&cu.need[0])||'Einsatz')+' – '+(cu.last||fullName(cu)), skills:(cu.need||[]).slice(), status:'assigned', assignedTo:sid, rejectedBy:[], commitDeadline:null};
+    jobs.push(j);
+    if(CLOUD){ cloudInsert('auftraege',jobToRow(j)).then(r=>{ if(r) j.id=r.id; }); }
+  }
+  if(cu.status!=='aktiv'){ cu.status='aktiv'; if(CLOUD) cloudUpdate('kunden',cu.id,custToRow(cu)); }
+  // Erstberatung noch offen? Aufgabe für die zugewiesene Person anlegen (wie bei Börsen-Annahme)
+  if(!(cu.beratung&&cu.beratung.signature) && !aufgaben.some(a=>a.customerId===cu.id&&/^Erstberatung/.test(a.title||'')&&a.status!=='erledigt')){
+    const auf={mitarbeiterId:sid, customerId:cu.id, title:'Erstberatung: '+fullName(cu),
+      beschreibung:'Vom Büro zugewiesener Kunde. Beim ersten Termin bitte das Beratungsgespräch nach Leitfaden führen und die Unterschriftsprobe einholen (Knopf „Beratung starten" bei dieser Aufgabe).',
+      status:'offen', faelligAm:new Date(Date.now()+7*86400000).toISOString().slice(0,10)};
+    aufgaben.push(auf);
+    if(CLOUD) cloudInsert('aufgaben',aufgabeToRow(auf)).then(r=>{ if(r) auf.id=r.id; });
+  }
+  logActivity('Kunde manuell zugewiesen: '+fullName(cu)+' → '+fullName(s));
+  closeModal();
+  toast(fullName(cu)+' ist jetzt '+fullName(s)+' zugewiesen');
+  renderAdmin(__lastAdminView==='jobs'?'jobs':'customers');
+}
+function unassignCustomer(customerId){
+  if(!requireRoleAction('admin','buero')) return;
+  const j=jobs.find(x=>x.customerId===customerId&&x.status==='assigned'); if(!j){ closeModal(); return; }
+  const cu=custById(customerId);
+  j.status='available'; j.assignedTo=null; j.commitDeadline=null;
+  if(CLOUD) cloudUpdate('auftraege',j.id,jobToRow(j));
+  logActivity('Zuweisung aufgehoben: '+(cu?fullName(cu):('Kunde '+customerId))+' – Auftrag zurück in die Börse');
+  closeModal(); toast('Zuweisung aufgehoben – Auftrag ist wieder in der Börse');
+  renderAdmin(__lastAdminView==='jobs'?'jobs':'customers');
 }
 /* ============ BEWERBUNGS-WIZARD (öffentlich) ============ */
 let wizStep=0;
