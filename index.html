@@ -1520,23 +1520,55 @@ function isMissingColError(err){
   return /positionen|could not find|schema cache|does not exist/i.test(err.message||'');
 }
 function stripJsonbCols(row){ const b=Object.assign({},row); delete b.positionen; delete b.extra; return b; }
-async function cloudInsertRechnung(re){
+// Insert, der fehlende Spalten automatisch weglässt statt den ganzen Datensatz zu
+// verwerfen. Wichtig für Tabellen, deren Migration (noch) nicht ausgeführt wurde:
+// Supabase meldet z. B. "Could not find the 'billable' column ..." – dann wird ohne
+// diese Spalte erneut eingefügt. So gehen Beratungen/Stundenzettel nie verloren.
+async function cloudInsertAuto(table,row){
+  if(!CLOUD) return null;
+  let payload=Object.assign({},sanitizeDeep(row));
+  for(let i=0;i<8;i++){
+    try{
+      const res=await sb.from(table).insert(payload).select().single();
+      if(!res.error) return res.data;
+      const m=/find the '([^']+)' column/i.exec(res.error.message||'');
+      if(m && Object.prototype.hasOwnProperty.call(payload,m[1])){
+        console.warn('insert '+table+': Spalte "'+m[1]+'" fehlt in der DB – Datensatz wird ohne sie gespeichert (Migration ausführen!)');
+        delete payload[m[1]]; continue;
+      }
+      console.warn('insert',table,res.error.message);
+      toast('Speichern fehlgeschlagen ('+table+'): '+res.error.message,true);
+      return null;
+    }catch(e){ console.warn(e); toast('Speichern fehlgeschlagen ('+table+'): '+(e&&e.message||e),true); return null; }
+  }
+  return null;
+}
+async function cloudInsertRechnung(re, quiet){
   if(!CLOUD) return null;
   __cloudWriteInFlight++;
+  re._pending=true; // bis der Cloud-Insert bestätigt ist -> überlebt den Auto-Sync
   try{
     const withJsonb=__rechnungPositionenCol!==false;
     let payload=sanitizeDeep(rechnungToRowFull(re)); if(!withJsonb) payload=stripJsonbCols(payload);
     let res=await sb.from('rechnungen').insert(payload).select().single();
-    if(res.error && withJsonb && isMissingColError(res.error)){
-      __rechnungPositionenCol=false;
-      res=await sb.from('rechnungen').insert(stripJsonbCols(payload)).select().single();
+    if(res.error && withJsonb){
+      if(isMissingColError(res.error)) __rechnungPositionenCol=false;
+      const r2=await sb.from('rechnungen').insert(stripJsonbCols(payload)).select().single();
+      if(!r2.error) res=r2; // ohne jsonb-Spalten (positionen/extra) hat es geklappt
     } else if(!res.error && withJsonb && __rechnungPositionenCol===null){
       __rechnungPositionenCol=true;
     }
-    if(res.error){ console.warn('insert rechnungen',res.error.message); toast('Speichern fehlgeschlagen (rechnungen): '+res.error.message,true); return null; }
+    if(res.error){ console.warn('insert rechnungen',res.error.message); if(!quiet) toast('Speichern fehlgeschlagen (rechnungen): '+res.error.message+' – wird automatisch erneut versucht',true); return null; }
+    if(res.data){ re.id=res.data.id; delete re._pending; }
     return res.data;
-  }catch(e){ console.warn(e); toast('Speichern fehlgeschlagen (rechnungen): '+(e&&e.message||e),true); return null; }
+  }catch(e){ console.warn(e); if(!quiet) toast('Speichern fehlgeschlagen (rechnungen): '+(e&&e.message||e)+' – wird automatisch erneut versucht',true); return null; }
   finally{ __cloudWriteInFlight=Math.max(0,__cloudWriteInFlight-1); }
+}
+// Noch nicht gespeicherte (pending) Rechnungen im Hintergrund erneut hochladen.
+async function retryPendingRechnungen(){
+  if(!CLOUD) return;
+  const pend=rechnungen.filter(r=>r&&r._pending);
+  for(const r of pend){ await cloudInsertRechnung(r, true); }
 }
 async function cloudUpdateRechnung(re){
   if(!CLOUD) return;
@@ -1729,7 +1761,13 @@ async function loadFromCloud(){
   try{
     const {data,error}=await sb.from('rechnungen').select('*').eq('standort_id',currentStandortId).order('id');
     if(error) throw error;
-    if(data) rechnungen=data.map(rowToRechnung);
+    if(data){
+      const fresh=data.map(rowToRechnung);
+      // Lokal erstellte, noch nicht bestätigte Rechnungen NICHT verlieren:
+      // pending-Rechnungen behalten, die (noch) nicht in der Cloud-Antwort stehen.
+      const pend=rechnungen.filter(r=>r&&r._pending&&!fresh.some(f=>String(f.nummer)===String(r.nummer)));
+      rechnungen=fresh.concat(pend);
+    }
     DIAG.push('rechnungen: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER rechnungen: '+(e.message||e)); console.error('Laden rechnungen fehlgeschlagen:', e.message||e); }
 
@@ -2592,6 +2630,7 @@ async function refreshCloudDataSilently(){
   try{
     const vorher=dataSignature();
     await loadFromCloud();
+    await retryPendingRechnungen(); // noch nicht gespeicherte Rechnungen erneut hochladen
     const nachher=dataSignature();
     // Nur neu zeichnen, wenn sich wirklich etwas geändert hat –
     // und dann mit erhaltener Scroll-Position (unsichtbar im Alltag)
@@ -6917,7 +6956,7 @@ function finishKennenlernen(sig, vertragText){
   const end=String(Math.floor(endMin/60)).padStart(2,'0')+':'+String(endMin%60).padStart(2,'0');
   const ts={id:nextTsId++, staffId:myId, customerId:cu.id, date:date, start:start, end:end, task:'Kennenlerngespräch (Bedarfsanalyse & Vertrag)', status:'offen', proof:true, signature:sig, signedAt:date, hasAbtretung:false, billable:false};
   timesheets.push(ts);
-  if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:cu.id,date:date,start:start,ende:end,task:ts.task,status:'offen',proof:true,signature:sig,signed_at:date,billable:false,standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
+  if(CLOUD){ cloudInsertAuto('stundenzettel',{mitarbeiter_id:myId,customer_id:cu.id,date:date,start:start,ende:end,task:ts.task,status:'offen',proof:true,signature:sig,signed_at:date,billable:false,standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
   // 3) Vertrag als PDF herunterladen
   const doc=buildContractPdf({name:'Dienstleistungsvertrag', text:vertragText, signature:sig, person:fullName(cu), date:date});
   if(doc) doc.save(('Vertrag_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
@@ -7763,7 +7802,7 @@ function saveBeratung(cu, sig){
   // Bestand – ein separater Dienstleistungsvertrag/Kennenlerngespräch entfällt.
   if(cu.status!=='aktiv') cu.status='aktiv';
   if(CLOUD){
-    cloudInsert('beratungen',{customer_id:cu.id, mitarbeiter_id:mid, datum:datum, punkte:ctx.punkte||[], signature:sig, standort_id:currentStandortId});
+    cloudInsertAuto('beratungen',{customer_id:cu.id, mitarbeiter_id:mid, datum:datum, punkte:ctx.punkte||[], signature:sig, standort_id:currentStandortId});
     cloudUpdate('kunden',cu.id,custToRow(cu));
   }
   // Beratungsgespräch eines Mitarbeiters zählt automatisch als TERMIN und als
@@ -7779,12 +7818,12 @@ function saveBeratung(cu, sig){
       // 1) Termin im Kalender
       const appt={id:nextApptId++,staffId:mid,customerId:cu.id,date:datum,time:start,duration:60,note:'Beratungsgespräch',type:'beratung',status:'geplant'};
       appointments.push(appt);
-      if(CLOUD){ cloudInsert('termine',apptToRow(appt)).then(r=>{ if(r&&r.id){ appt.id=r.id; } }); }
+      if(CLOUD){ cloudInsertAuto('termine',apptToRow(appt)).then(r=>{ if(r&&r.id){ appt.id=r.id; } }); }
       // 2) Stundenzettel (Unterschriftsprobe des Kunden zählt als Nachweis).
       //    Beratungsgespräche werden NIE dem Kunden berechnet -> billable:false.
       const ts={id:nextTsId++,staffId:mid,customerId:cu.id,date:datum,start:start,end:end,task:'Beratungsgespräch',status:'offen',proof:true,signature:sig,signedAt:datum,hasAbtretung:false,billable:false};
       timesheets.push(ts);
-      if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:mid,customer_id:cu.id,date:datum,start:start,ende:end,task:'Beratungsgespräch',status:'offen',proof:true,signature:sig,signed_at:datum,billable:false,standort_id:currentStandortId}); }
+      if(CLOUD){ cloudInsertAuto('stundenzettel',{mitarbeiter_id:mid,customer_id:cu.id,date:datum,start:start,ende:end,task:'Beratungsgespräch',status:'offen',proof:true,signature:sig,signed_at:datum,billable:false,standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
     }
   }
   // Der auslösende Ersttermin IST das Beratungsgespräch – ihn (und evtl. weitere
