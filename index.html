@@ -6338,7 +6338,7 @@ function addAppointment(customerId){
   document.getElementById('modalTitle').textContent='Termin vereinbaren';
   document.getElementById('modalBody').innerHTML=
     '<div class="content-form"><p style="color:var(--muted);font-size:14px;margin-bottom:14px">Mit <b>'+fullName(cu)+'</b> · '+cu.area+'</p>'+
-    (braucheBeratung?'<div class="summary" style="margin-bottom:14px"><div class="sh">Erster Termin – Erstberatung</div>Bei diesem Kunden steht noch die Erstberatung aus. Führe sie beim ersten Termin durch („Termin starten" → „Beratung starten"). Danach ist der Kunde aufgenommen – ein separater Vertragstermin ist nicht nötig.</div>'
+    (braucheBeratung?'<div class="summary" style="margin-bottom:14px"><div class="sh">Erster Termin – Erstberatung</div>Dies ist der erste Termin bei diesem Kunden. Beim Öffnen des Termins startest du das <b>Beratungsgespräch</b> (kostenlos, keine Berechnung). Für einen echten Einsatz mit Reinigung legst du danach einen <b>separaten Termin</b> an.</div>'
       :(cu.bedarfsanalyse?'<div class="summary" style="margin-bottom:14px"><div class="sh">Bekannter Bedarf</div>'+(cu.bedarfsanalyse.skills||[]).join(', ')+(cu.bedarfsanalyse.notes?'<br>'+cu.bedarfsanalyse.notes:'')+'</div>':''))+
     '<div class="form-row"><div><label>Datum</label><input id="ap_date" type="date" value="'+todayISO()+'" min="'+todayISO()+'"></div>'+
     '<div><label>Uhrzeit</label><input id="ap_time" type="time" value="09:00"></div></div>'+
@@ -6413,9 +6413,18 @@ function showAppt(id){
     foot+='<button class="btn-ghost" style="width:auto" onclick="apptFeedback('+id+',\'wunsch\')">💡 Wunsch</button>';
     foot+='<button class="btn-danger-ghost" onclick="deleteAppt('+id+')">Absagen</button>';
     if(serieN>1) foot+='<button class="btn-danger-ghost" style="width:auto" onclick="v5DeleteSeries('+id+')">🗑 Ganze Serie löschen ('+serieN+')</button>';
-    foot+= isKennenlernen
-      ? '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="startKennenlernen('+id+')">▶ Kennenlerngespräch starten</button>'
-      : '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="startTermin('+id+')">▶ Termin starten</button>';
+    // Erster Termin eines noch nicht beratenen Kunden = Beratungsgespräch (kostenlos).
+    // Erst danach sind reguläre, berechnete Einsätze möglich (separater Termin).
+    // Ein bereits erfasster Beratungstermin (type 'beratung') lässt sich nicht als
+    // berechneter Einsatz starten – er ist bereits über den Stundenzettel dokumentiert.
+    const brauchtBeratung=!(cu&&cu.beratung&&cu.beratung.signature);
+    if(a.type==='beratung'){
+      foot+='<span style="align-self:center;font-size:12.5px;color:var(--muted);padding:0 6px">📋 Beratungsgespräch – bereits erfasst</span>';
+    } else {
+      foot+= brauchtBeratung
+        ? '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="startBeratungAppt('+id+')">▶ Beratungsgespräch starten</button>'
+        : '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="startTermin('+id+')">▶ Termin starten</button>';
+    }
   }
   // Büro: gemeldetes Problem / Wunsch als geklärt markieren
   if(isOfficeRole()&&!cancelled&&(a.problem||a.wunsch)){
@@ -6510,13 +6519,36 @@ function removeCancelledAppt(id){
 }
 
 /* ---- Termin starten: Kunde + geplante Dauer vorausgefüllt, Zeit bearbeitbar ---- */
+// Liefert die abrechenbaren Leistungen eines Kunden (inkl. aktiver Pauschale) –
+// dieselbe Logik wie im Rechnungsdialog, damit die Preise konsistent sind.
+function custEinsatzLeistungen(cu){
+  const list=(cu.leistungen||[]).slice();
+  const pB=cu.pauschale&&cu.pauschale.aktiv?parseFloat(String(cu.pauschale.betrag).replace(',','.')):0;
+  if(pB>0) list.unshift({name:(cu.pauschale.leistung||'Pauschale je Einsatz'), preis:pB, einheit:'pro Einsatz', pauschal:true});
+  return list;
+}
+// Ersttermin eines Kunden = Beratungsgespräch (kostenlos). Direkt die Beratung
+// starten und den auslösenden Termin mitgeben (wird nach Abschluss geschlossen).
+function startBeratungAppt(id){
+  const a=appointments.find(x=>x.id===id); if(!a){toast('Termin nicht gefunden',true);return;}
+  const cu=custById(a.customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
+  closeModal();
+  openBeratung(cu.id, id);
+}
 function startTermin(id){
   const a=appointments.find(x=>x.id===id);const cu=custById(a.customerId);if(!cu)return;
+  // Sicherheitsnetz: Ist der Kunde noch nicht beraten, ist dies der Ersttermin –
+  // dann IMMER das Beratungsgespräch (kostenlos), niemals ein berechneter Einsatz.
+  if(!(cu.beratung&&cu.beratung.signature)){ closeModal(); openBeratung(cu.id, id); return; }
   // geplante Start-/Endzeit aus Terminzeit + Dauer
   const startT=a.time||'09:00';
   const [sh,sm]=startT.split(':').map(Number);
   const endMin=sh*60+sm+(a.duration||60);
   const endT=String(Math.floor(endMin/60)).padStart(2,'0')+':'+String(endMin%60).padStart(2,'0');
+  const lst=custEinsatzLeistungen(cu);
+  const leistungFeld = lst.length
+    ? '<label>Leistung</label><select id="te_leistung">'+lst.map((l,i)=>'<option value="'+i+'">'+l.name+' – '+Number(l.preis).toFixed(2).replace('.',',')+' € '+(l.einheit||'pro Stunde')+'</option>').join('')+'</select>'
+    : '<label>Tätigkeit / Leistung</label><input id="te_task" value="'+(a.note||(cu.need&&cu.need[0])||'Betreuung')+'"><p style="font-size:12px;color:var(--muted);margin-top:4px">Keine Leistungen beim Kunden hinterlegt – es wird der Standard-Stundensatz ('+STUNDENSATZ.toFixed(2).replace('.',',')+' €) verwendet.</p>';
   document.getElementById('modalBox').classList.remove('wide');
   document.getElementById('modalTitle').textContent='Einsatz bei '+fullName(cu);
   document.getElementById('modalBody').innerHTML=
@@ -6524,16 +6556,13 @@ function startTermin(id){
       '<b>'+fullName(cu)+'</b> · '+addrLinkHtml(cu.address||cu.area||'')+'<br>Geplant: '+a.time+' Uhr · '+(a.duration||60)+' Min.'+
       (cu.bedarfsanalyse?('<br><b>Bedarf:</b> '+(cu.bedarfsanalyse.skills||[]).join(', ')+(cu.bedarfsanalyse.notes?' – '+cu.bedarfsanalyse.notes:'')):'')+
     '</div>'+
-    (!(cu.beratung&&cu.beratung.signature)
-      ? '<div class="example-id" style="background:var(--amber-soft);border-color:#f0dcc2;margin-bottom:12px;display:flex;align-items:center;gap:10px"><div style="font-size:20px">📋</div><div style="flex:1">Erster Besuch: Das <b>Beratungsgespräch</b> ist noch offen. Bitte vor dem Einsatz durchführen und die Unterschriftsprobe einholen.</div><button class="btn-primary btn-sm" style="width:auto" onclick="openBeratung('+cu.id+')">Beratung starten</button></div>'
-      : '')+
     '<p style="color:var(--muted);font-size:13.5px;margin-bottom:10px">Passe die Zeiten an, falls der Einsatz kürzer oder länger war.</p>'+
     '<div class="content-form">'+
       '<input type="hidden" id="te_appt" value="'+id+'"><input type="hidden" id="te_cust" value="'+cu.id+'">'+
       '<label>Datum</label><input id="te_date" type="date" value="'+(a.date||todayISO())+'">'+
       '<div class="form-row"><div><label>Beginn</label><input id="te_start" type="time" value="'+startT+'"></div>'+
       '<div><label>Ende</label><input id="te_end" type="time" value="'+endT+'"></div></div>'+
-      '<label>Tätigkeit / Leistung</label><input id="te_task" value="'+(a.note||(cu.need&&cu.need[0])||'Betreuung')+'">'+
+      leistungFeld+
     '</div>';
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
@@ -6545,10 +6574,22 @@ function startTermin(id){
 function confirmTermin(){
   const apptId=+val('te_appt'); const cid=+val('te_cust');
   const cu=custById(cid); if(!cu)return;
-  const date=val('te_date'), start=val('te_start'), end=val('te_end'), task=val('te_task')||'Betreuung';
+  const date=val('te_date'), start=val('te_start'), end=val('te_end');
   if(!start||!end||end<=start){ toastHint('Bitte gültige Start- und Endzeit angeben'); return; }
   const mins=(()=>{const[a,b]=start.split(':').map(Number);const[c,d]=end.split(':').map(Number);return (c*60+d)-(a*60+b);})();
-  const std=mins/60; const kosten=std*STUNDENSATZ;
+  const std=mins/60;
+  // Preis aus den hinterlegten Kundenleistungen übernehmen (Fallback: Standard-Stundensatz)
+  const selEl=document.getElementById('te_leistung');
+  let task, preis, einheit, menge, kosten;
+  if(selEl){
+    const lst=custEinsatzLeistungen(cu);
+    const l=lst[+selEl.value]||lst[0]||{name:'Betreuung',preis:STUNDENSATZ,einheit:'pro Stunde'};
+    task=l.name; einheit=l.einheit||'pro Stunde'; preis=Number(l.preis)||0;
+    menge=invoiceDefaultMenge(einheit,mins); kosten=preis*menge;
+  } else {
+    task=val('te_task')||'Betreuung'; einheit='pro Stunde'; preis=STUNDENSATZ; menge=std; kosten=std*preis;
+  }
+  const istStunde=(einheit==='pro Stunde');
   document.getElementById('modalBox').classList.add('wide');
   document.getElementById('modalTitle').textContent='Übersicht für '+fullName(cu);
   document.getElementById('modalBody').innerHTML=
@@ -6559,11 +6600,12 @@ function confirmTermin(){
       '<div class="reveal-row"><span class="k">Zeit</span><span class="v">'+start+'–'+end+' Uhr</span></div>'+
       '<div class="reveal-row"><span class="k">Leistung</span><span class="v">'+task+'</span></div>'+
       '<div class="reveal-row"><span class="k">Dauer</span><span class="v">'+std.toFixed(2).replace('.',',')+' Std.</span></div>'+
-      '<div class="reveal-row"><span class="k">Stundensatz</span><span class="v">'+STUNDENSATZ.toFixed(2).replace('.',',')+' €</span></div>'+
+      '<div class="reveal-row"><span class="k">Einzelpreis</span><span class="v">'+preis.toFixed(2).replace('.',',')+' € '+einheit+'</span></div>'+
+      (istStunde?'':'<div class="reveal-row"><span class="k">Menge</span><span class="v">'+String(menge).replace('.',',')+' × '+einheit+'</span></div>')+
       '<div class="reveal-row"><span class="k"><b>Kosten gesamt</b></span><span class="v"><b>'+kosten.toFixed(2).replace('.',',')+' €</b></span></div>'+
     '</div></div>';
   // Daten für den nächsten Schritt zwischenspeichern
-  window.__termin={apptId:apptId, cid:cid, date:date, start:start, end:end, task:task, mins:mins};
+  window.__termin={apptId:apptId, cid:cid, date:date, start:start, end:end, task:task, mins:mins, preis:preis, einheit:einheit, menge:menge, kosten:kosten};
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
     '<button class="btn-primary" style="width:auto;padding:11px 22px" onclick="signTermin()">✍ Jetzt unterschreiben</button>';
@@ -6585,8 +6627,12 @@ function signTermin(){
       const ts={id:nextTsId++, staffId:myId, customerId:t.cid, date:date, start:t.start, end:t.end, task:t.task, status:'offen', proof:true, signature:sig, signedAt:date, hasAbtretung:true};
       timesheets.push(ts);
       if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:t.cid,date:date,start:t.start,ende:t.end,task:t.task,status:'offen',proof:true,signature:sig,signed_at:date,standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
-      // 2) Leistungsnachweis-PDF erzeugen (eine Zeile = dieser Einsatz)
-      const rows=[{date:fmtDate(date), leistung:t.task, stunden:t.mins/60, preis:STUNDENSATZ}];
+      // 2) Leistungsnachweis-PDF erzeugen (eine Zeile = dieser Einsatz).
+      //    Preis stammt aus der beim Kunden hinterlegten Leistung; bei Stundensatz
+      //    zählt die Dauer, sonst die Menge (Std.×€ ergibt in beiden Fällen die Kosten).
+      const lnPreis=(typeof t.preis==='number'?t.preis:STUNDENSATZ);
+      const lnMenge=(t.einheit&&t.einheit!=='pro Stunde')?(t.menge||1):(t.mins/60);
+      const rows=[{date:fmtDate(date), leistung:t.task, stunden:lnMenge, preis:lnPreis}];
       const doc=buildLeistungsnachweisPdf({
         name:fullName(cu),
         versNr:(cu.intern&&cu.intern.kvNr)||cu.kvNr||'',
@@ -7383,10 +7429,10 @@ function beratungVertragText(cu, datum){
   '5. Betroffenenrechte. Der Kunde kann jederzeit Auskunft über die gespeicherten Daten verlangen; die Rechte auf Berichtigung, Löschung, Einschränkung der Verarbeitung sowie das Beschwerderecht bei der Datenschutz-Aufsichtsbehörde bleiben unberührt.';
 }
 // Schritt 1: Leitfaden anzeigen (mit Abhak-Punkten)
-function openBeratung(customerId){
+function openBeratung(customerId, apptId){
   const cu=custById(customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
   if(cu.beratung && cu.beratung.signature){ toast('Für '+fullName(cu)+' liegt bereits eine Beratung mit Unterschriftsprobe vor',true); return; }
-  window.__beratungCtx={customerId:customerId};
+  window.__beratungCtx={customerId:customerId, apptId:(apptId||null)};
   document.getElementById('modalBox').classList.add('wide');
   document.getElementById('modalTitle').textContent='Beratungsgespräch – '+fullName(cu);
   document.getElementById('modalBody').innerHTML=
@@ -7468,6 +7514,13 @@ function saveBeratung(cu, sig){
       if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:mid,customer_id:cu.id,date:datum,start:start,ende:end,task:'Beratungsgespräch',status:'offen',proof:true,signature:sig,signed_at:datum,billable:false,standort_id:currentStandortId}); }
     }
   }
+  // Der auslösende Ersttermin IST das Beratungsgespräch – ihn (und evtl. weitere
+  // offene Onboarding-Termine bis heute) schließen, damit daraus kein separater,
+  // berechneter Einsatz mehr gestartet werden kann. Ein echter Einsatz braucht
+  // danach einen NEUEN Termin. Der frisch erzeugte 'beratung'-Termin bleibt.
+  const heute=todayISO();
+  const wegIds=appointments.filter(a=>a.customerId===cu.id && a.type!=='beratung' && a.status!=='erledigt' && a.status!=='abgesagt' && (a.id===ctx.apptId || (a.date&&a.date<=heute))).map(a=>a.id);
+  if(wegIds.length){ const rm=new Set(wegIds); appointments=appointments.filter(a=>!rm.has(a.id)); if(CLOUD) wegIds.forEach(aid=>cloudDelete('termine',aid)); }
   // Offene Erstberatungs-Aufgabe für diesen Kunden als erledigt markieren
   const auf=aufgaben.find(a=>a.customerId===cu.id&&/^Erstberatung/.test(a.title||'')&&a.status!=='erledigt');
   if(auf){ auf.status='erledigt'; if(CLOUD&&auf.id) cloudUpdate('aufgaben',auf.id,{status:'erledigt'}); }
