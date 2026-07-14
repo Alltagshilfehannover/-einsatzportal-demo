@@ -1507,32 +1507,53 @@ function rowToRechnung(r){return {
 };}
 // Wie rechnungToRow, aber inkl. Positions-Array (jsonb-Spalte 'positionen').
 function rechnungToRowFull(r){ const base=rechnungToRow(r); base.positionen=(r.positionen&&r.positionen.length)?r.positionen:null; return base; }
-// Sicherer Insert/Update: versucht MIT Positionen-Spalte; fehlt sie (keine Migration),
-// wird ohne 'positionen' erneut versucht – so gehen Rechnungen nie verloren.
+// Sicherer Insert/Update mit Positionen (jsonb-Spalte 'positionen').
+// __rechnungPositionenCol: null=unbekannt, true=vorhanden, false=fehlt (keine Migration).
+// Nur bei einem echten Spalten-Fehler wird OHNE 'positionen' erneut versucht – dadurch
+// geht keine Rechnung verloren UND es entstehen keine doppelten Inserts.
+let __rechnungPositionenCol=null;
+let __cloudWriteInFlight=0; // solange >0: automatischer Sync pausiert (Rechnung wird gerade gespeichert)
+function isMissingColError(err){
+  if(!err) return false;
+  if(err.code==='PGRST204'||err.code==='42703') return true;
+  return /positionen|could not find|schema cache|does not exist/i.test(err.message||'');
+}
 async function cloudInsertRechnung(re){
   if(!CLOUD) return null;
-  const full=sanitizeDeep(rechnungToRowFull(re));
+  __cloudWriteInFlight++;
   try{
+    const withPos=__rechnungPositionenCol!==false;
+    const full=sanitizeDeep(rechnungToRowFull(re)); if(!withPos) delete full.positionen;
     let res=await sb.from('rechnungen').insert(full).select().single();
-    if(res.error && /positionen|column|schema cache/i.test(res.error.message||'')){
+    if(res.error && withPos && isMissingColError(res.error)){
+      __rechnungPositionenCol=false;
       const base=Object.assign({},full); delete base.positionen;
       res=await sb.from('rechnungen').insert(base).select().single();
+    } else if(!res.error && withPos && __rechnungPositionenCol===null){
+      __rechnungPositionenCol=true;
     }
     if(res.error){ console.warn('insert rechnungen',res.error.message); toast('Speichern fehlgeschlagen (rechnungen): '+res.error.message,true); return null; }
     return res.data;
   }catch(e){ console.warn(e); toast('Speichern fehlgeschlagen (rechnungen): '+(e&&e.message||e),true); return null; }
+  finally{ __cloudWriteInFlight=Math.max(0,__cloudWriteInFlight-1); }
 }
 async function cloudUpdateRechnung(re){
   if(!CLOUD) return;
-  const full=sanitizeDeep(rechnungToRowFull(re));
+  __cloudWriteInFlight++;
   try{
+    const withPos=__rechnungPositionenCol!==false;
+    const full=sanitizeDeep(rechnungToRowFull(re)); if(!withPos) delete full.positionen;
     let res=await sb.from('rechnungen').update(full).eq('id',re.id);
-    if(res.error && /positionen|column|schema cache/i.test(res.error.message||'')){
+    if(res.error && withPos && isMissingColError(res.error)){
+      __rechnungPositionenCol=false;
       const base=Object.assign({},full); delete base.positionen;
       res=await sb.from('rechnungen').update(base).eq('id',re.id);
+    } else if(!res.error && withPos && __rechnungPositionenCol===null){
+      __rechnungPositionenCol=true;
     }
     if(res.error){ console.warn('update rechnungen',res.error.message); toast('Speichern fehlgeschlagen (rechnungen): '+res.error.message,true); }
   }catch(e){ console.warn(e); toast('Speichern fehlgeschlagen (rechnungen): '+(e&&e.message||e),true); }
+  finally{ __cloudWriteInFlight=Math.max(0,__cloudWriteInFlight-1); }
 }
 function jobToRow(j){return {customer_id:j.customerId,title:j.title,skills:j.skills||[],status:j.status,assigned_to:j.assignedTo,rejected_by:j.rejectedBy||[],commit_deadline:j.commitDeadline?new Date(j.commitDeadline).toISOString():null, standort_id:currentStandortId};}
 function rowToJob(r){return {id:r.id,customerId:r.customer_id,title:r.title,skills:r.skills||[],status:r.status,assignedTo:r.assigned_to,rejectedBy:r.rejected_by||[],commitDeadline:r.commit_deadline?new Date(r.commit_deadline).getTime():null};}
@@ -2566,6 +2587,7 @@ async function refreshCloudDataSilently(){
   const ae=document.activeElement;
   const typing=ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT');
   if(modalOpen || editingForm || typing) return;
+  if(__cloudWriteInFlight>0) return; // gerade wird eine Rechnung gespeichert – nicht überschreiben
   __refreshInFlight=true;
   try{
     const vorher=dataSignature();
@@ -4021,7 +4043,7 @@ function renderAdmin(view){
           ['Als bezahlt markieren','rwMarkBezahlt('+r.id+',null,true)']]
           .concat(ueberfaellig&&r.empfaengerEmail?[['⏰ Zahlungserinnerung senden','mahnRechnung('+r.id+')']]:[])
           .concat(r.gesperrt?[['Korrekturrechnung','rwKorrektur('+r.id+')'],['Stornorechnung','rwStorno('+r.id+')','danger']]
-                           :[['Festschreiben (GoBD)','rwLock('+r.id+')']]))+'</td>'+
+                           :[['Festschreiben (GoBD)','rwLock('+r.id+')'],['Stornieren / verwerfen','rwStornieren('+r.id+')','danger']]))+'</td>'+
         '</tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">🧾</div><b>Noch keine Rechnungen</b><p style="margin-top:6px">Erstelle oben eine Rechnung aus einem bereiten Stundenzettel.</p></div>')+
     '</div></div>';
@@ -8785,6 +8807,19 @@ function rwGrundQuiet(re){
 }
 function rwKorrektur(id){ rwGrundModal(id,'korrektur'); }
 function rwStorno(id){ rwGrundModal(id,'storno'); }
+// Stornieren aus der Rechnungsliste: festgeschriebene Rechnung -> Stornorechnung (GoBD),
+// Entwurf -> darf verworfen/gelöscht werden (noch keine festgeschriebene Rechnung).
+function rwStornieren(id){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const re=rechnungen.find(x=>x.id===id); if(!re){ toast('Rechnung nicht gefunden',true); return; }
+  if(re.gesperrt){ rwStorno(id); return; }
+  confirmDangerDelete('Rechnung verwerfen','Der Rechnungs-Entwurf <b>'+re.nummer+'</b> ('+Number(re.betrag||0).toFixed(2).replace('.',',')+' €) wird gelöscht. Der zugehörige Stundenzettel bleibt erhalten und kann erneut abgerechnet werden.',function(){
+    rechnungen=rechnungen.filter(x=>x.id!==id);
+    if(CLOUD) cloudDelete('rechnungen',id);
+    logActivity('Rechnungs-Entwurf verworfen: '+re.nummer);
+    renderAdmin('rechnungen'); toast('Rechnung '+re.nummer+' verworfen');
+  });
+}
 function rwGrundModal(id,art){
   if(!requireRoleAction('admin','buchhaltung')) return;
   const alt=rechnungen.find(x=>x.id===id); if(!alt) return;
