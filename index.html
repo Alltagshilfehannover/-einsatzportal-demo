@@ -2055,6 +2055,22 @@ const SCHULUNGEN=[
       { h:"Aktivierung & Grenzen", points:["Zu Bewegung und Selbstständigkeit motivieren","Erinnerungen, Spiele, Musik nach Interesse","Tagesstruktur unterstützen","Grenze: keine Pflege, keine Medikamente"] },
       { h:"Einsatz abschließen", points:["Kontrolle: sauber, ordentlich, Fenster zu, Geräte aus","Leistungsnachweis in der App unterschreiben lassen","Freundlich verabschieden, nächsten Termin bestätigen","Besonderheiten dem Büro melden"] },
       { h:"Zusammenfassung", points:["Vorbereiten und von oben nach unten arbeiten","Küche & Bad hygienisch trennen","Sicher und rückenschonend arbeiten","Betreuung heißt Alltag – keine Pflege"] }
+    ] },
+  { id:"erstunterweisung", num:"4", color:"#B45309", requireSign:true,
+    title:"Erstunterweisung & Gesundheitsförderung mit System",
+    subtitle:"Arbeitsschutz-Erstunterweisung und betriebliches Gesundheitsprogramm – am Ende mit deiner Unterschrift zu bestätigen.",
+    slides:[
+      { h:"Erstunterweisung & Gesundheitsförderung mit System", sub:"Pflicht-Unterweisung nach Arbeitsschutzgesetz – bitte aufmerksam lesen und am Ende unterschreiben", points:[] },
+      { h:"Warum diese Unterweisung?", points:["Gesetzliche Pflicht nach § 12 Arbeitsschutzgesetz (ArbSchG) und DGUV Vorschrift 1","Vor der ersten Tätigkeit und danach mindestens einmal jährlich","Sie schützt dich, deine Kolleg:innen und unsere Kunden","Deine Unterschrift bestätigt, dass du die Inhalte verstanden hast"] },
+      { h:"Allgemeine Pflichten im Arbeitsschutz", points:["Anweisungen des Arbeitgebers und Sicherheitszeichen beachten","Arbeitsmittel nur bestimmungsgemäß und in einwandfreiem Zustand nutzen","Mängel, Schäden und Gefahren sofort dem Büro melden","Alkohol, Cannabis und andere Drogen sind im Dienst strikt verboten"] },
+      { h:"Typische Gefährdungen im Einsatz", points:["Sturz und Rutschen: nasse Böden, Teppichkanten, schlechtes Licht","Heben und Tragen: schwere Eimer, Möbel, Getränkekisten","Gefahrstoffe: Reinigungs- und Desinfektionsmittel","Strom und Geräte: defekte Kabel, Steckdosen, Wege im Straßenverkehr"] },
+      { h:"Umgang mit Reinigungs- & Gefahrstoffen", points:["Etiketten und Gefahrensymbole vor Gebrauch lesen","Reiniger NIEMALS mischen (z. B. Chlor + Säure = giftige Gase)","Nur in Originalgebinden aufbewahren, nie in Getränkeflaschen umfüllen","Handschuhe tragen, für Belüftung sorgen, Kontakt mit Augen/Haut vermeiden"] },
+      { h:"Persönliche Schutzausrüstung & Hygiene", points:["Handschuhe bei Reinigung, Desinfektion und Bad/WC tragen","Getrennte Tücher für Küche und Sanitär – Farbsystem beachten","Hände regelmäßig waschen und desinfizieren","Festes, rutschsicheres Schuhwerk tragen"] },
+      { h:"Verhalten bei Unfall & Notfall", points:["Ruhe bewahren, eigene Sicherheit zuerst","Bei medizinischem Notfall: 112 rufen, Erste Hilfe leisten","Jeden Arbeitsunfall sofort dem Büro melden (auch kleine Verletzungen)","Verletzungen ins Verbandbuch eintragen lassen"] },
+      { h:"Gesundheitsförderung mit System", points:["Betriebliches Programm für deine Gesundheit und Arbeitsfähigkeit","Ziel: Belastungen früh erkennen und vermeiden","Bausteine: Ergonomie, Bewegung, Pausen und psychische Entlastung","Deine Rückmeldungen helfen, Arbeitsbedingungen zu verbessern"] },
+      { h:"Ergonomie & Rückengesundheit", points:["Aus den Beinen heben, Rücken gerade, Last nah am Körper","Schwere Lasten teilen oder Hilfsmittel/Rollen nutzen","Arbeitshöhe anpassen, langes Bücken und Überkopfarbeit vermeiden","Zwischendurch die Haltung wechseln und lockern"] },
+      { h:"Pausen, Bewegung & psychische Gesundheit", points:["Vorgesehene Pausen tatsächlich nehmen und kurz durchatmen","Auf Warnzeichen achten: Dauerstress, Schlafprobleme, Erschöpfung","Belastende Situationen früh im Büro ansprechen","Ausreichend trinken, besonders bei körperlicher Arbeit"] },
+      { h:"Deine Bestätigung", sub:"Mit der Unterschrift bestätigst du die Teilnahme und dein Verständnis", points:["Ich habe die Erstunterweisung im Arbeitsschutz erhalten und verstanden","Ich habe die Unterweisung „Gesundheitsförderung mit System“ erhalten und verstanden","Ich halte die dargestellten Regeln und Schutzmaßnahmen ein","Bitte unten unterschreiben, um abzuschließen"] }
     ] }
 ];
 let __schulung={id:null, idx:0};
@@ -2067,21 +2083,33 @@ function schulungenKomplett(m){
   const eigene=eigeneSchulungen.filter(x=>x.pflicht).every(x=>m.schulungen&&m.schulungen['eigene-'+x.id]);
   return eingebaut&&eigene;
 }
-function schulungAbschliessen(id){
+function schulungAbschliessen(id, sig){
   if(currentRole!=='staff'){ closeModal(); return; }
   const m=me(); if(!m){ closeModal(); return; }
   m.schulungen=m.schulungen||{};
   if(!m.schulungen[id]){
     m.schulungen[id]={done:true,datum:todayISO()};
+    if(sig) m.schulungen[id].signature=sig; // unterschriftspflichtige Schulung
     if(CLOUD&&sb){
       sb.from('mitarbeiter').update({schulungen:m.schulungen}).eq('id',m.id)
         .then(({error})=>{ if(error) console.warn('Schulungsstatus speichern: '+error.message+' – V3_MIGRATION.sql ausführen'); });
     }
-    logActivity('Schulung abgeschlossen: '+id+' – '+staffName(m.id));
+    logActivity((sig?'Schulung unterschrieben: ':'Schulung abgeschlossen: ')+id+' – '+staffName(m.id));
   }
   closeModal();
-  toast(schulungenKomplett(m)?'✓ Alle Schulungen bestätigt – du kannst jetzt Aufträge annehmen!':'Schulung bestätigt ✓');
+  toast(schulungenKomplett(m)?'✓ Alle Schulungen abgeschlossen – du kannst jetzt Aufträge annehmen!':(sig?'Schulung unterschrieben ✓':'Schulung bestätigt ✓'));
   renderStaff('schulung');
+}
+// Unterschriftspflichtige Schulung abschließen: erst unterschreiben, dann speichern
+function startSchulungSign(id){
+  if(currentRole!=='staff'){ closeModal(); return; }
+  const t=SCHULUNGEN.find(x=>x.id===id); const m=me(); if(!m) return;
+  if(m.schulungen&&m.schulungen[id]){ toast('Bereits unterschrieben',true); closeModal(); return; }
+  openSignatureModal(
+    'Unterschrift – '+(t?t.title:'Schulung'),
+    'Mit deiner Unterschrift bestätigst du, dass du die Erstunterweisung und die Unterweisung „Gesundheitsförderung mit System" erhalten und verstanden hast und die Regeln einhältst.',
+    function(sig){ schulungAbschliessen(id, sig); }
+  );
 }
 function schulungHTML(){
   const m=(currentRole==='staff')?me():null;
@@ -2099,16 +2127,16 @@ function schulungHTML(){
     '<div class="panel" style="cursor:pointer" onclick="openSchulung(\''+t.id+'\')"><div class="panel-body" style="padding:20px">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start"><div style="width:48px;height:48px;border-radius:13px;background:'+t.color+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">'+t.num+'</div>'+
       (m?(m.schulungen&&m.schulungen[t.id]
-        ?'<span class="tag green">✓ bestätigt am '+fmtDate(m.schulungen[t.id].datum)+'</span>'
-        :'<span class="tag amber">offen</span>'):'')+'</div>'+
+        ?'<span class="tag green">✓ '+(t.requireSign?'unterschrieben':'bestätigt')+' am '+fmtDate(m.schulungen[t.id].datum)+'</span>'
+        :'<span class="tag amber">'+(t.requireSign?'offen · Unterschrift nötig':'offen')+'</span>'):'')+'</div>'+
       '<h3 style="margin:14px 0 5px;font-size:18px">'+t.title+'</h3>'+
       '<div style="color:var(--muted);font-size:13.5px;min-height:40px">'+t.subtitle+'</div>'+
-      '<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">'+t.slides.length+' Folien</div>'+
+      '<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">'+t.slides.length+' Folien'+(t.requireSign?' · ✍ mit Unterschrift':'')+'</div>'+
       '<div style="margin-top:14px;display:flex;gap:8px">'+
         '<button class="btn-primary btn-sm" style="width:auto" onclick="event.stopPropagation();openSchulung(\''+t.id+'\')">▶ Ansehen</button>'+
-        '<a class="btn-ghost btn-sm" style="width:auto;text-decoration:none" href="'+t.file+'" download onclick="event.stopPropagation()">⬇ PPTX</a>'+
+        (t.file?'<a class="btn-ghost btn-sm" style="width:auto;text-decoration:none" href="'+t.file+'" download onclick="event.stopPropagation()">⬇ PPTX</a>':'')+
       '</div>'+
-    '</div></div>').join('')+'</div>'+eigeneSchulungenHTML(m);
+    '</div></div>').join('')+'</div>'+eigeneSchulungenHTML(m)+schulungNachweisHTML();
 }
 /* ---- Eigene Schulungen: vom Büro hochgeladen, für alle Mitarbeiter sichtbar ---- */
 function eigeneSchulungenHTML(m){
@@ -2227,6 +2255,70 @@ function deleteEigeneSchulung(id){
     (currentRole==='staff'?renderStaff:renderAdmin)('schulung');
   });
 }
+/* ---- Admin/Büro: Nachweis, welche Mitarbeiter die unterschriftspflichtigen
+       Schulungen (z. B. Erstunterweisung) unterschrieben haben ---- */
+function staffFullName(id){ const s=staff.find(x=>x.id===id); return s?((s.first||'')+' '+(s.last||'')).trim():'—'; }
+function schulungNachweisHTML(){
+  if(!hasRole('admin','buero')) return '';
+  const signTs=SCHULUNGEN.filter(t=>t.requireSign);
+  if(!signTs.length) return '';
+  const team=staff.filter(s=>s.status!=='inaktiv');
+  let html='<div class="section-label" style="margin-top:26px">Unterschriften-Nachweis</div>'+
+    '<p style="color:var(--muted);font-size:13.5px;margin:0 0 12px">Diese Schulungen müssen die Mitarbeiter:innen unterschreiben. „✍ Unterschrift“ zeigt die Original-Unterschrift und erlaubt den PDF-Download des Nachweises.</p>';
+  if(!team.length) return html+'<p style="color:var(--muted);font-size:13.5px">Noch keine aktiven Mitarbeiter.</p>';
+  html+='<div class="panel"><div class="panel-body" style="padding-top:12px;overflow-x:auto"><table><thead><tr><th>Mitarbeiter:in</th>'+
+    signTs.map(t=>'<th>'+t.title+'</th>').join('')+'</tr></thead><tbody>'+
+    team.map(s=>'<tr><td><b>'+staffFullName(s.id)+'</b></td>'+
+      signTs.map(t=>{
+        const rec=s.schulungen&&s.schulungen[t.id];
+        if(rec&&rec.done){
+          return '<td><span class="tag green">✓ unterschrieben am '+fmtDate(rec.datum)+'</span>'+
+            (rec.signature?' <button class="btn-ghost btn-sm" style="width:auto" onclick="viewSchulungSignatur('+s.id+',\''+t.id+'\')">✍ Unterschrift</button>':' <span class="tag grey" style="font-size:11px">ohne Bild</span>')+'</td>';
+        }
+        return '<td><span class="tag amber">offen</span></td>';
+      }).join('')+
+    '</tr>').join('')+
+    '</tbody></table></div></div>';
+  return html;
+}
+function viewSchulungSignatur(staffId, id){
+  const s=staff.find(x=>x.id===staffId); const t=SCHULUNGEN.find(x=>x.id===id);
+  const rec=s&&s.schulungen&&s.schulungen[id];
+  if(!rec||!rec.signature){ toast('Keine Unterschrift hinterlegt',true); return; }
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Unterschrift – '+staffFullName(staffId);
+  document.getElementById('modalBody').innerHTML=
+    '<div class="summary" style="margin-bottom:12px"><div class="sh">'+(t?t.title:'Schulung')+'</div>Unterschrieben am '+fmtDate(rec.datum)+'</div>'+
+    '<img src="'+rec.signature+'" style="max-width:100%;border:1px solid var(--line);border-radius:10px;background:#fff">';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="downloadSchulungNachweis('+staffId+',\''+id+'\')">⬇ Nachweis (PDF)</button>';
+  openModal();
+}
+function downloadSchulungNachweis(staffId, id){
+  const t=SCHULUNGEN.find(x=>x.id===id); const s=staff.find(x=>x.id===staffId);
+  const rec=s&&s.schulungen&&s.schulungen[id];
+  if(!rec){ toast('Kein Nachweis vorhanden',true); return; }
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return; }
+  const { jsPDF }=window.jspdf; const doc=new jsPDF({unit:'pt',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(); const margin=52; let y=margin;
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text(firmaName(),margin,y); y+=14;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(80);doc.text('Bahnhofstraße 85 · 31515 Wunstorf',margin,y); y+=28;
+  doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(15);doc.text('Teilnahme- & Unterweisungsnachweis',margin,y); y+=26;
+  doc.setFont('helvetica','normal');doc.setFontSize(11);
+  [['Mitarbeiter/in:',staffFullName(staffId)],['Unterweisung:',(t?t.title:'Schulung')],['Datum:',fmtDate(rec.datum)]].forEach(function(r){
+    doc.setFont('helvetica','bold');doc.text(r[0],margin,y); const lw=doc.getTextWidth(r[0]+'  ');
+    doc.setFont('helvetica','normal');doc.text(String(r[1]||''),margin+lw+4,y); y+=19;
+  });
+  y+=8; doc.setFontSize(10.5);
+  const body=doc.splitTextToSize('Hiermit wird bestätigt, dass die oben genannte Person an der Erstunterweisung im Arbeitsschutz sowie an der Unterweisung im Rahmen des betrieblichen Programms „Gesundheitsförderung mit System" teilgenommen, deren Inhalte verstanden hat und die dargestellten Regeln und Schutzmaßnahmen einhält.',pageW-margin*2);
+  doc.text(body,margin,y); y+=body.length*14+28;
+  doc.text('Wunstorf, den '+fmtDate(rec.datum),margin,y); y+=6;
+  if(rec.signature) pdfSafeSignature(doc,rec.signature,margin,y,180,60);
+  y+=70; doc.setDrawColor(120);doc.line(margin,y,margin+230,y); y+=12;
+  doc.setFontSize(9);doc.setTextColor(90);doc.text('Unterschrift der/des Mitarbeiter/in',margin,y);
+  doc.save(('Unterweisungsnachweis_'+staffFullName(staffId)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+}
 function openSchulung(id){ __schulung={id:id, idx:0}; renderSchulungSlide(); }
 function schulungNav(delta){
   const t=SCHULUNGEN.find(x=>x.id===__schulung.id); if(!t) return;
@@ -2259,14 +2351,26 @@ function renderSchulungSlide(){
       (sl.sub?'<div style="opacity:.92;margin-top:6px;font-size:16px">'+sl.sub+'</div>':'')+
       (sl.points&&sl.points.length?'<ul style="margin:16px 0 0;padding-left:20px;line-height:1.75;font-size:16px">'+sl.points.map(p=>'<li style="margin-bottom:7px">'+p+'</li>').join('')+'</ul>':'')+
     '</div>';
+  const mSch=(currentRole==='staff')?me():null;
+  const schonErledigt=mSch&&mSch.schulungen&&mSch.schulungen[t.id];
+  let abschlussBtn;
+  if(i<t.slides.length-1){
+    abschlussBtn='<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="schulungNav(1)">Weiter →</button>';
+  } else if(currentRole==='staff'){
+    if(schonErledigt){
+      abschlussBtn='<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="closeModal()">'+(t.requireSign?'✓ bereits unterschrieben':'✓ bereits bestätigt')+'</button>';
+    } else if(t.requireSign){
+      abschlussBtn='<button class="btn-primary" style="width:auto;padding:10px 18px;background:var(--good)" onclick="startSchulungSign(\''+t.id+'\')">✍ Unterschreiben &amp; abschließen</button>';
+    } else {
+      abschlussBtn='<button class="btn-primary" style="width:auto;padding:10px 18px;background:var(--good)" onclick="schulungAbschliessen(\''+t.id+'\')">Schulung abschließen &amp; bestätigen ✓</button>';
+    }
+  } else {
+    abschlussBtn='<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="closeModal()">Fertig ✓</button>';
+  }
   document.getElementById('modalFoot').innerHTML=
-    '<a class="btn-ghost" style="width:auto;text-decoration:none" href="'+t.file+'" download>⬇ PPTX</a>'+
+    (t.file?'<a class="btn-ghost" style="width:auto;text-decoration:none" href="'+t.file+'" download>⬇ PPTX</a>':'')+
     '<button class="btn-ghost" style="width:auto'+(i===0?';opacity:.4':'')+'" '+(i===0?'disabled':'')+' onclick="schulungNav(-1)">← Zurück</button>'+
-    (i<t.slides.length-1
-      ? '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="schulungNav(1)">Weiter →</button>'
-      : (currentRole==='staff'
-          ? '<button class="btn-primary" style="width:auto;padding:10px 18px;background:var(--good)" onclick="schulungAbschliessen(\''+t.id+'\')">Schulung abschließen &amp; bestätigen ✓</button>'
-          : '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="closeModal()">Fertig ✓</button>'));
+    abschlussBtn;
   openModal();
 }
 
