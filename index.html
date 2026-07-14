@@ -12532,6 +12532,14 @@ function v4ModalSnapshot(){
   };
 })();
 function v4CloseGuard(){
+  // Unterschriften-Schutz: Solange im Fenster ein Unterschriftsfeld offen ist,
+  // schließt ein (versehentlicher) Klick/Touch NEBEN das Fenster es NICHT –
+  // sonst wäre die begonnene Unterschrift sofort verloren. Schließen geht dann
+  // nur bewusst über die Knöpfe („Abbrechen" / „Unterschrift bestätigen").
+  if(document.querySelector('#modalBody .sign-pad')){
+    toastHint('Unterschrift offen – bitte „Abbrechen" oder „Bestätigen" verwenden');
+    return;
+  }
   if(__v4ModalSnap!==null && v4ModalSnapshot()!==__v4ModalSnap){
     appConfirm('Du hast Eingaben gemacht, die noch nicht gespeichert sind.\nWirklich schließen? Die Eingaben werden verworfen.',
       ()=>closeModal(), {title:'Ungespeicherte Eingaben', okLabel:'Verwerfen & schließen', danger:true});
