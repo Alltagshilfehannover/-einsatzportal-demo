@@ -8078,13 +8078,28 @@ function saveKt(id){
 }
 function deleteKt(id){
   if(!requireAdminAction()) return;
-  const inUse=customers.some(c=>c.kostentraegerId===id);
-  if(inUse){ toast('Kann nicht gelöscht werden – ist noch bei mindestens einem Kunden hinterlegt',true); return; }
   const k=kostentraeger.find(x=>x.id===id); if(!k) return;
-  confirmDangerDelete('Kostenträger löschen','Soll <b>'+k.name+'</b> wirklich endgültig gelöscht werden?',function(){
+  // Referenzen ermitteln – die Datenbank verbietet das Löschen, solange die Kasse
+  // noch bei Kunden oder in Rechnungen verknüpft ist (Fremdschlüssel). Wir lösen
+  // die Verknüpfungen vorher auf: Rechnungen behalten ihren Empfänger-Snapshot,
+  // betroffene Kunden verlieren nur die Kostenträger-Zuordnung.
+  const custRefs=customers.filter(c=>c.kostentraegerId===id);
+  const reRefs=rechnungen.filter(r=>r.kostentraegerId===id);
+  const warn=(custRefs.length||reRefs.length)
+    ? '<div style="margin-top:10px;background:var(--amber-soft);border:1px solid #f0dcc2;border-radius:8px;padding:10px 12px;font-size:13px"><b>Hinweis:</b> Die Kasse ist noch verknüpft mit <b>'+custRefs.length+' Kunde(n)</b> und <b>'+reRefs.length+' Rechnung(en)</b>. Beim Löschen wird sie dort entfernt. Bereits erstellte Rechnungen bleiben inhaltlich unverändert (Empfänger ist gespeichert); bei betroffenen Kunden bitte anschließend einen neuen Kostenträger hinterlegen.</div>'
+    : '';
+  confirmDangerDelete('Kostenträger löschen','Soll <b>'+k.name+'</b> wirklich endgültig gelöscht werden?'+warn, async function(){
+    // 1) Verknüpfungen lösen (sonst blockiert der Fremdschlüssel das Löschen)
+    custRefs.forEach(c=>{ c.kostentraegerId=null; });
+    reRefs.forEach(r=>{ r.kostentraegerId=null; });
+    if(CLOUD){
+      for(const c of custRefs){ await cloudUpdate('kunden', c.id, {kostentraeger_id:null}); }
+      for(const r of reRefs){ await cloudUpdate('rechnungen', r.id, {kostentraeger_id:null}); }
+    }
+    // 2) Kostenträger löschen
     kostentraeger=kostentraeger.filter(x=>x.id!==id);
-    if(CLOUD) cloudDelete('kostentraeger',id);
-    logActivity('Kostenträger gelöscht: '+k.name);
+    if(CLOUD) await cloudDelete('kostentraeger',id);
+    logActivity('Kostenträger gelöscht: '+k.name+((custRefs.length||reRefs.length)?(' (Verknüpfungen gelöst: '+custRefs.length+' Kunden, '+reRefs.length+' Rechnungen)'):''));
     toast('Kostenträger gelöscht');renderAdmin('kostentraeger');
   });
 }
@@ -8463,14 +8478,18 @@ function openInvoiceModal(tsId){
   const invRecipientEmail = (invKt && invKt.email && isValidEmail(invKt.email)) ? invKt.email : '';
   const payerInfo = cu.insuranceType==='gesetzlich'
     ? '<div class="summary" style="margin-bottom:14px"><div class="sh">Gesetzlich versichert</div>Rechnung geht an den hinterlegten Kostenträger: <b>'+(kostentraeger.find(k=>k.id===cu.kostentraegerId)||{}).name+'</b></div>'
-    : '<div class="summary" style="margin-bottom:14px"><div class="sh">'+(cu.insuranceType==='beihilfe'?'Beihilfeberechtigt':'Privat versichert')+'</div>Rechnung geht direkt an den Kunden (Privatrechnung).</div>';
+    : (cu.insuranceType==='beihilfe'
+        ? '<div class="summary" style="margin-bottom:14px"><div class="sh">Beihilfeberechtigt · '+(parseFloat(cu.beihilfePct)||parseFloat(rwParams().beihilfeProzent)||50)+' % Beihilfe</div>Es werden <b>zwei Rechnungen</b> erstellt: (1) an die Pflegekasse'+(cu.kostentraegerId?(' <b>'+((kostentraeger.find(k=>k.id===cu.kostentraegerId)||{}).name||'')+'</b>'):'')+' über den Kassenanteil, (2) eine <b>Beihilfe-Rechnung</b> an '+fullName(cu)+' über den Beihilfeanteil.</div>'
+        : '<div class="summary" style="margin-bottom:14px"><div class="sh">Privat versichert</div>Rechnung geht direkt an den Kunden (Privatrechnung).</div>');
   const wegeDefault=parseFloat(String(rwParams().wegepauschale||0).toString().replace(',','.'))||0;
   const wegeText=rwParams().wegepauschaleText||'Wegepauschale';
   const tsDate=(t&&t.date)||todayISO();
   const lastEx=lastRechnungExtra(cu.id)||{};
   const reArtDef=lastEx.rechnungsart||rwParams().rechnungsartDefault||'';
-  const gebDef=lastEx.geburtstag||'';
+  // Geburtstag & Versichertennummer werden automatisch aus dem Kunden übernommen
+  const gebDef=cu.birth||lastEx.geburtstag||'';
   const statusDef=lastEx.status||'';
+  const beihPct=(cu.insuranceType==='beihilfe')?(parseFloat(cu.beihilfePct)|| parseFloat(rwParams().beihilfeProzent)||50):0;
   document.getElementById('modalBody').innerHTML=
     payerInfo+
     '<div class="section-label" style="margin-top:0">Rechnungsdaten</div>'+
@@ -8565,32 +8584,56 @@ function createInvoiceForTimesheet(tsId){
   const basis=positionen[0]; // erste Position = Basisleistung (für Alt-Felder/Listenanzeige)
   const extra=invoiceCollectExtra(cu, (t&&t.date)||todayISO());
 
+  const eur=n=>Number(n||0).toFixed(2).replace('.',',')+' €';
+  const isBeihilfe=cu.insuranceType==='beihilfe';
   const isGesetzlich=cu.insuranceType==='gesetzlich';
-  const kt=isGesetzlich?kostentraeger.find(k=>k.id===cu.kostentraegerId):null;
+  const kt=(isGesetzlich||isBeihilfe)?kostentraeger.find(k=>k.id===cu.kostentraegerId):null;
   if(isGesetzlich && !kt){toast('Kostenträger nicht gefunden',true);return;}
-  const empfaengerName=kt?kt.name:fullName(cu);
-  const empfaengerAdresse=kt?((kt.strasse||'')+', '+(kt.plz||'')+' '+(kt.ort||'')):(cu.address||'');
-  const empfaengerEmail=kt?(kt.email||''):'';
-
-  const nummer=rwNextNummer();
-  const re={
-    id:nextRechnungId++, nummer:nummer, stundenzettelId:t.id, customerId:cu.id, kostentraegerId:kt?kt.id:null,
-    empfaengerName:empfaengerName, empfaengerAdresse:empfaengerAdresse, empfaengerEmail:empfaengerEmail,
-    positionen:positionen, extra:extra,
-    leistungName:positionen.map(p=>p.name).join(' + '), leistungEinheit:basis.einheit, menge:basis.menge,
-    datum:todayISO(), stunden:tsMinutes(t)/60, preisProStunde:basis.preis, betrag:betrag, status:'offen'
-  };
   const wantMail=!!(document.getElementById('inv_sendmail')&&document.getElementById('inv_sendmail').checked);
   const wantLexware=!!(document.getElementById('inv_lexware')&&document.getElementById('inv_lexware').checked);
-  rechnungen.push(re);
-  if(CLOUD){ cloudInsertRechnung(re).then(r=>{ if(r) re.id=r.id; if(wantMail && re.empfaengerEmail){ mailRechnung(re.id); } if(wantLexware){ lexwareCreateInvoice(re.id); } }); }
-  else { if(wantMail && re.empfaengerEmail){ mailRechnung(re.id); } if(wantLexware){ lexwareCreateInvoice(re.id); } }
-  downloadRechnung(re.id);
-  downloadTsLN(t.id);
-  closeModal();
+  const ktAdr=kt?((kt.strasse||'')+', '+(kt.plz||'')+' '+(kt.ort||'')):'';
+  // Eine Rechnung anlegen (gemeinsame Positionen, individueller Empfänger/Betrag/Extra)
+  function mkRe(opts){
+    const nummer=rwNextNummer();
+    const re={
+      id:nextRechnungId++, nummer:nummer, stundenzettelId:t.id, customerId:cu.id, kostentraegerId:opts.kostentraegerId||null,
+      empfaengerName:opts.empfaengerName, empfaengerAdresse:opts.empfaengerAdresse||'', empfaengerEmail:opts.empfaengerEmail||'',
+      positionen:positionen, extra:Object.assign({},extra,opts.extra||{}),
+      leistungName:positionen.map(p=>p.name).join(' + '), leistungEinheit:basis.einheit, menge:basis.menge,
+      datum:todayISO(), stunden:tsMinutes(t)/60, preisProStunde:basis.preis, betrag:opts.betrag, status:'offen'
+    };
+    rechnungen.push(re);
+    if(CLOUD){ cloudInsertRechnung(re).then(r=>{ if(r) re.id=r.id; if(opts.mail && re.empfaengerEmail){ mailRechnung(re.id); } if(opts.lexware){ lexwareCreateInvoice(re.id); } }); }
+    else { if(opts.mail && re.empfaengerEmail){ mailRechnung(re.id); } if(opts.lexware){ lexwareCreateInvoice(re.id); } }
+    downloadRechnung(re.id);
+    return re;
+  }
+  if(isBeihilfe){
+    const pct=Math.min(100,Math.max(0, parseFloat(cu.beihilfePct)||parseFloat(rwParams().beihilfeProzent)||50));
+    const beihilfeBetrag=Math.round(betrag*pct/100*100)/100;
+    const kasseBetrag=Math.round((betrag-beihilfeBetrag)*100)/100;
+    const bInfo={pct:pct, gesamt:betrag, beihilfeBetrag:beihilfeBetrag, kasseBetrag:kasseBetrag};
+    // 1) Pflegekasse (Kassenanteil)
+    const re1=mkRe({ kostentraegerId:kt?kt.id:null,
+      empfaengerName:kt?kt.name:fullName(cu), empfaengerAdresse:kt?ktAdr:(cu.address||''), empfaengerEmail:kt?(kt.email||''):'',
+      betrag:kasseBetrag, extra:{ beihilfe:Object.assign({rolle:'kasse'},bInfo) }, mail:wantMail, lexware:wantLexware });
+    // 2) Beihilfe-Rechnung an die Privatperson (Beihilfeanteil)
+    const re2=mkRe({ kostentraegerId:null,
+      empfaengerName:fullName(cu), empfaengerAdresse:cu.address||'', empfaengerEmail:cu.email||'',
+      betrag:beihilfeBetrag,
+      extra:{ rechnungsart:((extra.rechnungsart||'')+' – Beihilfe-Rechnung').trim(), beihilfe:Object.assign({rolle:'beihilfe'},bInfo) }, mail:false, lexware:false });
+    downloadTsLN(t.id); closeModal();
+    toast('Beihilfe – 2 Rechnungen: Pflegekasse '+re1.nummer+' ('+eur(kasseBetrag)+') · Beihilfe '+re2.nummer+' ('+eur(beihilfeBetrag)+')');
+    renderAdmin('rechnungen'); return;
+  }
+  // Normalfall: eine Rechnung (gesetzlich -> Kostenträger, privat -> Kunde)
+  const re=mkRe({ kostentraegerId:kt?kt.id:null,
+    empfaengerName:kt?kt.name:fullName(cu), empfaengerAdresse:kt?ktAdr:(cu.address||''), empfaengerEmail:kt?(kt.email||''):'',
+    betrag:betrag, mail:wantMail, lexware:wantLexware });
+  downloadTsLN(t.id); closeModal();
   toast(wantMail && re.empfaengerEmail
-    ? ('Rechnung '+nummer+' erstellt – wird per E-Mail versendet')
-    : ('Rechnung '+nummer+' erstellt – Rechnung & Leistungsnachweis werden heruntergeladen'));
+    ? ('Rechnung '+re.nummer+' erstellt – wird per E-Mail versendet')
+    : ('Rechnung '+re.nummer+' erstellt – Rechnung & Leistungsnachweis werden heruntergeladen'));
   renderAdmin('rechnungen');
 }
 /* ============================================================
@@ -8915,7 +8958,8 @@ function rwStornoMitGrund(id,grund){
       gesperrt:true, lexwareId:null, korrekturZu:'Storno '+alt.nummer, datum:todayISO(),
       betrag:-Math.abs(alt.betrag||0), menge:-Math.abs(alt.menge||0), bezahltAm:null, grund:grund,
       positionen:(alt.positionen&&alt.positionen.length)?alt.positionen.map(p=>Object.assign({},p,{menge:-Math.abs(Number(p.menge)||0), betrag:-Math.abs(Number(p.betrag)||0)})):null,
-      extra:alt.extra?Object.assign({},alt.extra,{eigenanteil:-Math.abs(Number(alt.extra.eigenanteil)||0)}):null });
+      extra:alt.extra?Object.assign({},alt.extra,{eigenanteil:-Math.abs(Number(alt.extra.eigenanteil)||0),
+        beihilfe:alt.extra.beihilfe?Object.assign({},alt.extra.beihilfe,{gesamt:-Math.abs(Number(alt.extra.beihilfe.gesamt)||0),beihilfeBetrag:-Math.abs(Number(alt.extra.beihilfe.beihilfeBetrag)||0),kasseBetrag:-Math.abs(Number(alt.extra.beihilfe.kasseBetrag)||0)}):undefined}):null });
     rechnungen.push(re);
     alt.status='storniert'; if(CLOUD) cloudUpdate('rechnungen',alt.id,{status:'storniert'});
     if(CLOUD){ cloudInsertRechnung(re).then(r=>{ if(r){ re.id=r.id; rwSaveExtrasQuiet(re); rwGrundQuiet(re); } }); }
@@ -9248,14 +9292,25 @@ function buildRechnungPdf(re, cu){
   });
   doc.setDrawColor(150); doc.line(L,y,R,y); y+=16;
   // Summen rechts
-  const eigen=Number(ex.eigenanteil||0);
-  const zuZahlen=Math.round((sum-eigen)*100)/100;
-  doc.setFont('helvetica','normal');doc.setFontSize(9.5);black();
-  doc.text('VersichertenSumme:',R-135,y,{align:'right'}); doc.text(euro(sum),R,y,{align:'right'}); y+=14;
-  doc.text('Eigenanteil:',R-135,y,{align:'right'}); doc.text(euro(eigen),R,y,{align:'right'}); y+=17;
-  doc.setFont('helvetica','bold');doc.setFontSize(11);
   const par=(art.match(/§\s?\d+[a-z]?/i)||[''])[0].replace(/\s/g,'');
-  doc.text('Zu zahlender Betrag'+(par?(' {'+par+'}'):'')+':',R-155,y,{align:'right'}); doc.text(euro(zuZahlen),R,y,{align:'right'}); y+=26;
+  const bh=ex.beihilfe;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);black();
+  if(bh){
+    doc.text('VersichertenSumme:',R-155,y,{align:'right'}); doc.text(euro(bh.gesamt),R,y,{align:'right'}); y+=14;
+    doc.text('Beihilfe-Anteil ('+bh.pct+' %):',R-155,y,{align:'right'}); doc.text(euro(bh.beihilfeBetrag),R,y,{align:'right'}); y+=14;
+    doc.text('Pflegekassen-Anteil:',R-155,y,{align:'right'}); doc.text(euro(bh.kasseBetrag),R,y,{align:'right'}); y+=17;
+    doc.setFont('helvetica','bold');doc.setFontSize(11);
+    const payable=(bh.rolle==='beihilfe')?bh.beihilfeBetrag:bh.kasseBetrag;
+    const label=(bh.rolle==='beihilfe')?'Beihilfe-Betrag (an Sie)':'Zu zahlender Betrag (Pflegekasse)';
+    doc.text(label+(par?(' {'+par+'}'):'')+':',R-185,y,{align:'right'}); doc.text(euro(payable),R,y,{align:'right'}); y+=26;
+  } else {
+    const eigen=Number(ex.eigenanteil||0);
+    const zuZahlen=Math.round((sum-eigen)*100)/100;
+    doc.text('VersichertenSumme:',R-135,y,{align:'right'}); doc.text(euro(sum),R,y,{align:'right'}); y+=14;
+    doc.text('Eigenanteil:',R-135,y,{align:'right'}); doc.text(euro(eigen),R,y,{align:'right'}); y+=17;
+    doc.setFont('helvetica','bold');doc.setFontSize(11);
+    doc.text('Zu zahlender Betrag'+(par?(' {'+par+'}'):'')+':',R-155,y,{align:'right'}); doc.text(euro(zuZahlen),R,y,{align:'right'}); y+=26;
+  }
   // Fußtexte
   doc.setFont('helvetica','normal');doc.setFontSize(8.5);gray();
   if(rp.ustHinweis){ const w=wrap(rp.ustHinweis); doc.text(w,L,y); y+=w.length*11+6; }
