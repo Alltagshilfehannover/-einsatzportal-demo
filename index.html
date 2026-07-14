@@ -5130,18 +5130,35 @@ function renderStaff(view){
   if(view==='calendar'){ c.innerHTML=head('Meine Termine','Deine vereinbarten Einsätze. Termine entstehen, wenn du bei „Meine Kunden” einen Termin vereinbarst.')+
     calendarHTML(myId); }
   if(view==='hours'){
-    const mine=timesheets.filter(t=>t.staffId===myId);
-    c.innerHTML=head('Stundenzettel','Deine Einsätze. Vom Kunden unterschriebene Einsätze kannst du als Leistungsnachweis-PDF herunterladen.')+
-    '<div class="panel"><div class="panel-head"><h3>Meine Zeiten</h3><button class="btn-primary btn-sm" style="width:auto" onclick="addTimesheet()">+ Zeit erfassen</button></div>'+
+    const mine=timesheets.filter(t=>t.staffId===myId)
+      .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+    // Monate mit freigegebenen Einsätzen -> Sammelübersicht zum Download
+    const monate=[...new Set(mine.filter(t=>t.status==='freigegeben').map(t=>String(t.date||'').slice(0,7)))]
+      .sort((a,b)=>b.localeCompare(a));
+    const monatsBox = monate.length
+      ? '<div class="panel" style="margin-bottom:14px"><div class="panel-body" style="padding:16px 18px">'+
+          '<div class="section-label" style="margin-top:0">Monatsübersicht herunterladen</div>'+
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+            '<select id="hoursMonth" style="width:auto;min-width:170px">'+monate.map(mm=>'<option value="'+mm+'">'+monatLabelDe(mm)+'</option>').join('')+'</select>'+
+            '<button class="btn-primary btn-sm" style="width:auto" onclick="downloadMonatsStundenzettel(document.getElementById(\'hoursMonth\').value)">⬇ Als PDF</button>'+
+          '</div>'+
+          '<p style="font-size:12px;color:var(--muted);margin:8px 0 0">Alle freigegebenen Einsätze des Monats gesammelt auf einem Stundenzettel.</p>'+
+        '</div></div>'
+      : '';
+    c.innerHTML=head('Stundenzettel','Deine Einsätze: bei welchem Kunden, wann und was gemacht wurde. Freigegebene Einsätze kannst du einsehen und am Monatsende gesammelt als PDF herunterladen.')+
+    monatsBox+
+    '<div class="panel"><div class="panel-head"><h3>Meine Einsätze</h3><button class="btn-primary btn-sm" style="width:auto" onclick="addTimesheet()">+ Zeit erfassen</button></div>'+
     '<div class="panel-body" style="padding-top:8px">'+
-    (mine.length?'<table><thead><tr><th>Datum</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Status</th><th>Leistungsnachweis</th></tr></thead><tbody>'+
+    (mine.length?'<table><thead><tr><th>Datum</th><th>Kunde</th><th>Zeit</th><th>Tätigkeit</th><th>Status</th><th>Stundenzettel</th></tr></thead><tbody>'+
       mine.map(t=>{const cu=custById(t.customerId);
         const st = t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
                  : t.status==='abgelehnt'?'<span class="tag red">abgelehnt</span>'+(t.rejectGrund?'<div style="font-size:11px;color:var(--danger);max-width:180px;margin-top:3px">Grund: '+t.rejectGrund+'</div>':'')
                  : '<span class="tag amber">wartet auf Freigabe</span>';
-        return '<tr><td>'+fmtDate(t.date)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+tsDuration(t)+'</td><td>'+st+'</td><td>'+
-        (t.signature?'<img src="'+t.signature+'" style="height:30px;border:1px solid var(--line);border-radius:5px;background:#fff;vertical-align:middle"> <button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ PDF</button>':'<span style="color:var(--muted);font-size:12.5px">—</span>')+
-      '</td></tr>';}).join('')+
+        const einsicht = t.status==='freigegeben'
+          ? '<button class="btn-ghost btn-sm" onclick="viewStaffTs('+t.id+')">👁 Ansehen</button>'
+          : '<span style="color:var(--muted);font-size:12px">nach Freigabe einsehbar</span>';
+        return '<tr><td>'+fmtDate(t.date)+'</td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+(t.task||'—')+'</td><td>'+st+'</td><td>'+einsicht+'</td></tr>';
+      }).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">⏱</div><b>Noch keine Zeiten erfasst</b><p style="margin-top:6px">Starte einen Termin unter „Meine Termine“ oder tippe auf „Zeit erfassen“.</p></div>')+
     '</div></div>';
   }
@@ -6872,6 +6889,106 @@ function downloadTsLN(tsId){
     ort:(cu.city||cu.area||''), date:t.date
   });
   if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+t.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+}
+/* ============================================================
+   MITARBEITER-STUNDENZETTEL (vereinfacht, OHNE Preise/Abrechnung)
+   Zeigt nur: Kunde, Datum/Zeit, Tätigkeit und Kundenunterschrift.
+   Einsehbar erst nach Freigabe durch das Büro. Der vollständige
+   Leistungsnachweis (mit Kosten/Abtretung) bleibt dem Admin vorbehalten.
+   ============================================================ */
+function monatLabelDe(ym){
+  const M=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+  const p=String(ym||'').split('-'); const mi=parseInt(p[1],10);
+  return (mi>=1&&mi<=12?M[mi-1]:'?')+' '+(p[0]||'');
+}
+// Einzelnen (freigegebenen) Stundenzettel für den Mitarbeiter ansehen
+function viewStaffTs(tsId){
+  const t=timesheets.find(x=>x.id===tsId); if(!t){ toast('Stundenzettel nicht gefunden',true); return; }
+  if(currentRole==='staff'&&t.staffId!==myId){ toast('Kein Zugriff',true); return; }
+  if(t.status!=='freigegeben'){ toast('Erst nach Freigabe durch das Büro einsehbar',true); return; }
+  const cu=custById(t.customerId);
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Stundenzettel – '+(cu?fullName(cu):'Einsatz');
+  document.getElementById('modalBody').innerHTML=
+    '<div class="panel"><div class="panel-body" style="padding:18px">'+
+      '<div class="reveal-row"><span class="k">Kunde</span><span class="v">'+(cu?fullName(cu):'—')+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Ort</span><span class="v">'+(cu?(cu.address||cu.area||'—'):'—')+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Datum</span><span class="v">'+fmtDate(t.date)+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Zeit</span><span class="v">'+t.start+'–'+t.end+' Uhr</span></div>'+
+      '<div class="reveal-row"><span class="k">Dauer</span><span class="v">'+tsDuration(t)+'</span></div>'+
+      '<div class="reveal-row"><span class="k">Tätigkeit</span><span class="v">'+(t.task||'—')+'</span></div>'+
+    '</div></div>'+
+    (t.signature
+      ? '<div style="margin-top:14px"><div class="section-label" style="margin-top:0">Unterschrift des Kunden</div><img src="'+t.signature+'" style="max-width:100%;height:80px;border:1px solid var(--line);border-radius:8px;background:#fff"></div>'
+      : '<p style="color:var(--muted);margin-top:12px">Für diesen Einsatz ist keine Unterschrift hinterlegt.</p>');
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="downloadStaffTs('+t.id+')">⬇ Diesen Stundenzettel (PDF)</button>';
+  openModal();
+}
+function downloadStaffTs(tsId){
+  const t=timesheets.find(x=>x.id===tsId); if(!t)return;
+  if(currentRole==='staff'&&t.staffId!==myId){ toast('Kein Zugriff',true); return; }
+  if(t.status!=='freigegeben'){ toast('Erst nach Freigabe herunterladbar',true); return; }
+  const doc=buildStaffStundenzettelPdf([t],{staffId:t.staffId, titel:'Stundenzettel'});
+  if(doc){ const cu=custById(t.customerId); doc.save(('Stundenzettel_'+(cu?fullName(cu):'Einsatz')+'_'+t.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf'); }
+}
+function downloadMonatsStundenzettel(monat){
+  const sid=(currentRole==='staff')?myId:null;
+  const list=timesheets.filter(t=>(sid==null||t.staffId===sid)&&t.status==='freigegeben'&&String(t.date||'').slice(0,7)===monat)
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  if(!list.length){ toast('Für '+monatLabelDe(monat)+' sind keine freigegebenen Einsätze vorhanden',true); return; }
+  const doc=buildStaffStundenzettelPdf(list,{staffId:sid!=null?sid:list[0].staffId, titel:'Monatsübersicht '+monatLabelDe(monat), monat:monat});
+  if(doc) doc.save(('Stundenzettel_'+staffFullName(sid!=null?sid:list[0].staffId)+'_'+monat).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+}
+// Einfaches Stundenzettel-PDF (ohne Kosten): Tabelle Datum/Kunde/Zeit/Dauer/Tätigkeit + Kundenunterschrift je Zeile
+function buildStaffStundenzettelPdf(entries, opts){
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
+  opts=opts||{};
+  const { jsPDF }=window.jspdf; const doc=new jsPDF({unit:'pt',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(); const pageH=doc.internal.pageSize.getHeight();
+  const margin=42; let y=margin;
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text(firmaName(),margin,y); y+=14;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(80);doc.text('Bahnhofstraße 85 · 31515 Wunstorf',margin,y); y+=24;
+  doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(15);doc.text(opts.titel||'Stundenzettel',margin,y); y+=20;
+  doc.setFont('helvetica','normal');doc.setFontSize(10.5);
+  doc.text('Mitarbeiter/in: '+staffFullName(opts.staffId),margin,y); y+=22;
+  // Spalten
+  const cX=[margin, margin+62, margin+180, margin+256, margin+298, margin+300]; // letzte = Tätigkeit-Start
+  const taetX=margin+300; const sigX=pageW-margin-92; const sigW=88;
+  const drawHead=()=>{
+    doc.setFillColor(240,236,250);doc.rect(margin,y-11,pageW-margin*2,18,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(9);
+    doc.text('Datum',cX[0]+2,y); doc.text('Kunde',cX[1]+2,y); doc.text('Zeit',cX[2]+2,y); doc.text('Dauer',cX[3]+2,y); doc.text('Tätigkeit',taetX+2,y); doc.text('Unterschrift',sigX+2,y);
+    y+=8; doc.setFont('helvetica','normal');
+  };
+  drawHead();
+  let sumMin=0;
+  entries.forEach(t=>{
+    const cu=custById(t.customerId); const mins=tsMinutes(t); sumMin+=mins;
+    const rowH=26;
+    if(y+rowH>pageH-90){ doc.addPage(); y=margin; drawHead(); }
+    doc.setDrawColor(215);doc.line(margin,y+rowH-8,pageW-margin,y+rowH-8);
+    doc.setFontSize(8.5);
+    const yy=y+4;
+    doc.text(String(fmtDate(t.date)),cX[0]+2,yy);
+    doc.text(doc.splitTextToSize(cu?fullName(cu):'—',cX[2]-cX[1]-6),cX[1]+2,yy);
+    doc.text((t.start||'')+'–'+(t.end||''),cX[2]+2,yy);
+    doc.text(((mins/60).toFixed(2)).replace('.',','),cX[3]+2,yy);
+    doc.text(doc.splitTextToSize(String(t.task||'—'),sigX-taetX-8),taetX+2,yy);
+    if(t.signature){ try{ pdfSafeSignature(doc,t.signature,sigX+2,y-2,sigW,rowH-8); }catch(e){} }
+    y+=rowH;
+  });
+  y+=6; doc.setDrawColor(120);doc.line(margin,y,pageW-margin,y); y+=16;
+  doc.setFont('helvetica','bold');doc.setFontSize(10.5);
+  doc.text('Einsätze gesamt: '+entries.length,margin,y);
+  doc.text('Stunden gesamt: '+((sumMin/60).toFixed(2)).replace('.',',')+' h',pageW-margin-170,y);
+  y+=30;
+  if(y>pageH-70){ doc.addPage(); y=margin; }
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(110);
+  const hinweis=doc.splitTextToSize('Übersicht der geleisteten und vom Kunden bestätigten Einsätze. Die Einzelunterschriften wurden bei den jeweiligen Einsätzen in der App erfasst.',pageW-margin*2);
+  doc.text(hinweis,margin,y);
+  return doc;
 }
 function deleteAppt(id){
   // Absage-Dialog mit Grund-Auswahl öffnen
