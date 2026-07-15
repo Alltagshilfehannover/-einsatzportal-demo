@@ -4990,9 +4990,17 @@ async function sendBewerbungZusage(id){
   if(res.ok){ toast('Zusage an '+a.email+' gesendet'); logEmail('bewerbung', subject, a.email, 1, 'gesendet'); }
   else logEmail('bewerbung', subject, a.email, 1, 'fehler', res.error);
 }
-// Absage per E-Mail an den Bewerber (setzt Status auf "abgelehnt")
-async function sendBewerbungAbsage(id){
+// Absage per E-Mail an den Bewerber (setzt Status auf "abgelehnt").
+// Mit Sicherheitsabfrage: Ein einzelner (Fehl-)Klick darf keine echte
+// Absage-Mail auslösen – die Bewerbung verschwindet danach aus der Liste.
+function sendBewerbungAbsage(id){
   if(!requireRoleAction('admin','buero')) return;
+  const a0=applications.find(x=>x.id===id); if(!a0){toast('Bewerbung nicht gefunden',true);return;}
+  appConfirm('Absage wirklich senden?\n\n'+((a0.first||'')+' '+(a0.last||'')).trim()+' erhält sofort eine Absage-E-Mail an '+(a0.email||'—')+' und die Bewerbung wird auf „abgelehnt" gesetzt (verschwindet aus der offenen Liste).',
+    ()=>sendBewerbungAbsageJetzt(id),
+    {title:'Bewerbung absagen', okLabel:'Absage senden', danger:true});
+}
+async function sendBewerbungAbsageJetzt(id){
   const a=applications.find(x=>x.id===id); if(!a){toast('Bewerbung nicht gefunden',true);return;}
   if(!a.email||!isValidEmail(a.email)){toast('Keine gültige E-Mail hinterlegt',true);return;}
   const tpl=getTemplate('bewerbung_absage');
@@ -5074,8 +5082,33 @@ function approveApp(id){
   closeModal();document.getElementById('modalBox').classList.remove('wide');
   toast('Bewerbung genehmigt – wartet auf Zugangsdaten');renderAdmin('applications');
 }
+/* Schritt 1: E-Mail-Adresse prüfen/anpassen, BEVOR das Login-Konto erstellt
+   und die Einladung versendet wird. Die Adresse aus der Bewerbung ist
+   vorausgefüllt; bei Tippfehlern o. Ä. kann das Büro hier eine andere
+   Adresse eintragen – sie wird dann auch in der Bewerbung korrigiert. */
 function sendAppLogin(id){
-  const a=applications.find(x=>x.id===id);
+  const a=applications.find(x=>x.id===id); if(!a){toast('Bewerbung nicht gefunden',true);return;}
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent='Zugangsdaten senden – '+((a.first||'')+' '+(a.last||'')).trim();
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin-bottom:12px">An diese Adresse wird die <b>Einladung mit den Zugangsdaten</b> geschickt – sie wird zugleich der <b>Login</b> des neuen Mitarbeiters. Bitte prüfen und bei Bedarf anpassen.</p>'+
+    '<label>E-Mail-Adresse *</label><input id="sal_email" type="email" value="'+String(a.email||'').replace(/"/g,'&quot;')+'" placeholder="name@beispiel.de">'+
+    '<p style="color:var(--muted);font-size:12px;margin-top:8px">Wird die Adresse geändert, wird sie auch in der Bewerbung korrigiert.</p>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="showApplication('+id+')">← Zurück zur Bewerbung</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="sendAppLoginJetzt('+id+')">🔑 Konto erstellen & Einladung senden</button>';
+  openModal();
+  setTimeout(()=>{const e=document.getElementById('sal_email');if(e){e.focus();e.select();}},60);
+}
+function sendAppLoginJetzt(id){
+  const a=applications.find(x=>x.id===id); if(!a){toast('Bewerbung nicht gefunden',true);return;}
+  const mail=(val('sal_email')||'').trim();
+  if(!isValidEmail(mail)){ toastHint('Bitte eine gültige E-Mail-Adresse eingeben'); return; }
+  if(mail.toLowerCase()!==(a.email||'').toLowerCase()){
+    a.email=mail;
+    if(CLOUD) cloudUpdate('bewerbungen',id,{email:mail});
+    logActivity('Bewerbung: E-Mail für Zugangsversand angepasst auf '+mail+' ('+((a.first||'')+' '+(a.last||'')).trim()+')');
+  }
   // Signierte Verträge für die Mitarbeiter-Akte aufbereiten
   const signedDocs=Object.keys(a.docs||{}).filter(d=>a.docs[d]).map(d=>({name:d,signedDate:todayISO(),signature:(a.signatures&&a.signatures[d])||null}));
   // Bewerber wird zum aktiven Mitarbeiter
@@ -7348,7 +7381,7 @@ function deleteNote(id){
 }
 
 /* ============ DATUM-HELPERS ============ */
-function fmtDate(iso){if(!iso)return '';const[y,m,d]=iso.split('-');return d+'.'+m+'.'+y;}
+function fmtDate(iso){if(!iso)return '';const p=String(iso).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:String(iso);}
 function fmtDateLong(iso){if(!iso)return '';const[y,m,d]=iso.split('-');const days=['So','Mo','Di','Mi','Do','Fr','Sa'];const months=['Jan','Feb','März','Apr','Mai','Juni','Juli','Aug','Sep','Okt','Nov','Dez'];const dt=new Date(+y,+m-1,+d);return days[dt.getDay()]+', '+(+d)+'. '+months[+m-1]+' '+y;}
 
 /* ============ MODAL / HELPERS ============ */
