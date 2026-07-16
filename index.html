@@ -2900,7 +2900,33 @@ async function enterApp(role, user){
     let found=null;
     if(USE_REAL_AUTH){
       const mail=(user&&user.email||'').toLowerCase();
-      found=staff.find(s=>(s.login||'').toLowerCase()===mail || (s.email||'').toLowerCase()===mail);
+      const matchMail=s=>(s.login||'').toLowerCase()===mail || (s.email||'').toLowerCase()===mail;
+      found=staff.find(matchMail);
+      if(!found && sb && mail){
+        // Nicht im aktuell aktiven Standort gefunden -> über ALLE Standorte suchen.
+        // Mitarbeiter können den Standort nicht selbst umschalten; ein im Browser
+        // gemerkter (oder Standard-)Standort darf den Login deshalb nicht blockieren.
+        try{
+          const {data:hits}=await sb.from('mitarbeiter').select('id,standort_id,email,login')
+            .or('email.ilike.'+mail+',login.ilike.'+mail).limit(1);
+          const hit=hits&&hits[0];
+          if(hit){
+            let ziel=hit.standort_id;
+            if(ziel==null){
+              // Profil ohne Standort (Altbestand): dem Standard-Standort zuordnen,
+              // sonst bleibt es überall unsichtbar.
+              ziel=hannoverStandortId()||currentStandortId||(standorte[0]&&standorte[0].id);
+              if(ziel!=null){ try{ await sb.from('mitarbeiter').update({standort_id:ziel}).eq('id',hit.id); }catch(e){} }
+            }
+            if(ziel!=null && ziel!==currentStandortId){
+              currentStandortId=+ziel;
+              try{ localStorage.setItem('dailydo-standort', String(ziel)); }catch(e){}
+            }
+            await loadFromCloud();  // Daten des richtigen Standorts laden
+            found=staff.find(matchMail);
+          }
+        }catch(e){ console.warn('Standortübergreifende Profilsuche:', e&&(e.message||e)); }
+      }
       if(!found){
         // Kein eigenes Profil hinterlegt -> nicht in fremdes Profil lassen
         document.getElementById('appScreen').classList.remove('active');
