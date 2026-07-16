@@ -2816,6 +2816,26 @@ async function inviteOfficeUser(){
   const email=val('zg_email');
   if(!isValidEmail(email)){ toastHint('Bitte eine gültige E-Mail-Adresse eingeben'); return; }
   const role=document.getElementById('zg_role').value;
+  // Rolle "Mitarbeiter": Ohne passendes Mitarbeiterprofil (gleiche E-Mail) würde
+  // die Anmeldung später mit "kein Mitarbeiterprofil hinterlegt" scheitern.
+  // Deshalb vorab standortübergreifend prüfen und ggf. warnen.
+  if(role==='staff' && CLOUD && sb){
+    let hit=null;
+    try{
+      const {data}=await sb.from('mitarbeiter').select('id,first,last,standort_id')
+        .or('email.ilike.'+email+',login.ilike.'+email).limit(1);
+      hit=data&&data[0];
+    }catch(e){}
+    if(!hit){
+      appConfirm('Zu dieser E-Mail gibt es noch KEIN Mitarbeiterprofil.\n\nDie Person könnte sich zwar anmelden, würde aber mit „kein Mitarbeiterprofil hinterlegt" abgewiesen.\n\nBesser: Zuerst unter „Mitarbeiter" das Profil mit genau dieser E-Mail anlegen – oder trotzdem einladen und das Profil danach anlegen.',
+        ()=>inviteOfficeUserJetzt(email,role),
+        {title:'Kein Mitarbeiterprofil gefunden', okLabel:'Trotzdem einladen', danger:true});
+      return;
+    }
+  }
+  inviteOfficeUserJetzt(email,role);
+}
+async function inviteOfficeUserJetzt(email,role){
   toast('Sende Einladung an '+email+' …');
   try{
     await callManageUsers('invite',{email:email, role:role});
@@ -3869,15 +3889,16 @@ function renderAdmin(view){
 
   if(view==='zugaenge'){
     if(!requireAdminAction()){ /* nav blendet das eh aus, doppelte Absicherung */ }
-    c.innerHTML=head('Zugänge & Rollen','Login-Konten und ihre Rollen verwalten – Büro, CallCenter, Buchhaltung und Admin. Mitarbeiter-Logins entstehen weiterhin automatisch über genehmigte Bewerbungen.')+
+    c.innerHTML=head('Zugänge & Rollen','Login-Konten und ihre Rollen verwalten – Büro, CallCenter, Buchhaltung, Admin und Mitarbeiter. Mitarbeiter-Logins entstehen bei Bewerbungen automatisch; manuell angelegte Mitarbeiter lädst du hier mit der Rolle „Mitarbeiter" ein.')+
     '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Neuen Zugang einladen</h3></div>'+
     '<div class="panel-body content-form" style="padding-top:16px"><div class="form-row">'+
       '<div><label>E-Mail *</label><input id="zg_email" type="email" placeholder="name@firma.de"></div>'+
       '<div><label>Rolle *</label><select id="zg_role">'+
-        Object.keys(ROLE_LABELS).filter(r=>r!=='staff').map(r=>'<option value="'+r+'">'+ROLE_LABELS[r]+' ('+r+')</option>').join('')+
+        Object.keys(ROLE_LABELS).map(r=>'<option value="'+r+'">'+ROLE_LABELS[r]+' ('+r+')</option>').join('')+
       '</select></div></div>'+
       '<button class="btn-primary btn-sm" style="width:auto;margin-top:10px" onclick="inviteOfficeUser()">＋ Einladung senden</button>'+
       '<p style="color:var(--muted);font-size:12.5px;margin-top:8px">Die Person erhält eine E-Mail mit Link zum Passwort setzen und kann sich danach direkt mit der zugewiesenen Rolle anmelden.</p>'+
+      '<p style="color:var(--muted);font-size:12.5px;margin-top:4px"><b>Rolle „Mitarbeiter":</b> Es muss ein Mitarbeiterprofil mit <b>exakt dieser E-Mail</b> existieren (Menü „Mitarbeiter" → Profil → Feld E-Mail), sonst wird die Anmeldung mit „kein Mitarbeiterprofil hinterlegt" abgewiesen.</p>'+
     '</div></div>'+
     '<div class="panel"><div class="panel-head"><h3>Bestehende Zugänge</h3><button class="btn-ghost btn-sm" onclick="loadUserList()">↻ Aktualisieren</button></div>'+
     '<div class="panel-body" style="padding-top:10px" id="zugaengeListBody"><p style="color:var(--muted);padding:8px 0">Lade Zugänge…</p></div></div>';
