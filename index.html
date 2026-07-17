@@ -4750,7 +4750,7 @@ function editCustomer(id){
   // Abtretung: kein eigenes Dokument mehr – der Abtretungstext steht auf dem Leistungsnachweis (04.07.2026)
   // Beratungsvereinbarung mit Unterschriftsprobe – NUR für Admin sichtbar
   if(hasRole('admin') && c.beratung && c.beratung.signature){
-    docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📋 Beratungsvereinbarung + Unterschriftsprobe</b><div class="li-sub">Beratung am '+fmtDate(c.beratung.date)+(c.beratung.mitarbeiterId?' · geführt von '+staffName(c.beratung.mitarbeiterId):'')+' · Referenz für den Leistungsnachweis-Abgleich</div></div><div style="display:flex;gap:7px;align-items:center"><img src="'+c.beratung.signature+'" title="Unterschriftsprobe" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-ghost btn-sm" style="width:auto" onclick="v5ShowBeratungsprotokoll('+c.id+')">📋 Protokoll</button><button class="btn-primary btn-sm" style="width:auto" onclick="downloadBeratungsvertrag('+c.id+')">⬇ PDF</button></div></div>';
+    docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📋 Beratungsvereinbarung + Unterschriftsprobe</b><div class="li-sub">Beratung am '+fmtDate(c.beratung.date)+(c.beratung.mitarbeiterId?' · geführt von '+staffName(c.beratung.mitarbeiterId):'')+' · Referenz für den Leistungsnachweis-Abgleich</div></div><div style="display:flex;gap:7px;align-items:center"><img src="'+c.beratung.signature+'" title="Unterschriftsprobe" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-ghost btn-sm" style="width:auto" onclick="v5ShowBeratungsprotokoll('+c.id+')">📋 Protokoll</button><button class="btn-ghost btn-sm" style="width:auto" onclick="downloadBeratungsprotokoll('+c.id+')">⬇ Protokoll</button><button class="btn-primary btn-sm" style="width:auto" onclick="downloadBeratungsvertrag('+c.id+')">⬇ Vereinbarung</button></div></div>';
   }
   if(hasRole('admin') && !(c.beratung&&c.beratung.signature) && c.status==='aktiv'){
     docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📋 Beratungsvereinbarung</b><div class="li-sub">Noch keine Erstberatung / Unterschriftsprobe vorhanden</div></div><button class="btn-ghost btn-sm" style="width:auto" onclick="openBeratung('+c.id+')">Jetzt durchführen</button></div>';
@@ -8031,6 +8031,9 @@ function saveBeratung(cu, sig){
   logActivity('Erstberatung mit Unterschriftsprobe: '+fullName(cu));
   const doc=buildBeratungsvertragPdf(cu, sig, datum);
   if(doc) doc.save(('Beratungsvereinbarung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+  // Beratungsprotokoll (alle Punkte + Antworten) als eigenes PDF mit ausgeben
+  const proto=buildBeratungsprotokollPdf(cu);
+  if(proto) proto.save(('Beratungsprotokoll_'+fullName(cu)+'_'+datum).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
   window.__beratungCtx=null;
   toast(mid?'Beratung abgeschlossen – als Termin & Stundenzettel erfasst, PDF wird heruntergeladen':'Beratung abgeschlossen – Vereinbarung gespeichert, PDF wird heruntergeladen');
   if(currentRole==='staff') renderStaff('aufgaben');
@@ -8070,6 +8073,60 @@ function downloadBeratungsvertrag(customerId){
   const cu=custById(customerId); if(!cu||!cu.beratung||!cu.beratung.signature){toast('Keine Beratungsvereinbarung vorhanden',true);return;}
   const doc=buildBeratungsvertragPdf(cu, cu.beratung.signature, cu.beratung.date);
   if(doc) doc.save(('Beratungsvereinbarung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+}
+/* Beratungsprotokoll als PDF: hält ALLE im Gespräch abgehakten Punkte und die
+   notierten Antworten/Wünsche des Kunden fest. Wird aus den dauerhaft
+   gespeicherten Beratungsdaten erzeugt (Tabelle beratungen) und ist in der
+   Kundenakte sowie beim Mitarbeiter (Protokoll-Ansicht) abrufbar. */
+function buildBeratungsprotokollPdf(cu){
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
+  const b=cu.beratung||{};
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
+  const margin=68; let y=70;
+  y=pdfLogoZentriert(doc,pageW,y)+28;
+  doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(0);
+  doc.text('Beratungsprotokoll – Erstberatung',pageW/2,y,{align:'center'}); y+=34;
+  y=pdfKundenFelder(doc,cu,margin,y)+8;
+  doc.setFontSize(10);doc.setTextColor(90);
+  doc.text('Beratung am '+fmtDate(b.date||'')+(b.mitarbeiterId!=null?' · geführt von '+staffName(b.mitarbeiterId):''),margin,y); y+=26;
+  doc.setTextColor(0);
+  const punkte=(b.punkte||[]);
+  const antworten=punkte.filter(p=>/^💬/.test(p));
+  const besprochen=punkte.filter(p=>!/^💬/.test(p));
+  const abschnitt=(titel)=>{ if(y>pageH-90){doc.addPage();y=70;} doc.setFont('helvetica','bold');doc.setFontSize(10.5); doc.text(titel,margin,y); y+=6; doc.setDrawColor(0);doc.line(margin,y,pageW-margin,y); y+=16; doc.setFont('helvetica','normal');doc.setFontSize(9.5); };
+  const zeile=(txt,einzug)=>{ const w=doc.splitTextToSize(txt,pageW-margin*2-(einzug||0)); if(y+w.length*12>pageH-70){doc.addPage();y=70;} doc.text(w,margin+(einzug||0),y); y+=w.length*12+5; };
+  if(besprochen.length){
+    abschnitt('Besprochene Punkte');
+    besprochen.forEach(p=>zeile('✓  '+p));
+    y+=8;
+  }
+  if(antworten.length){
+    abschnitt('Antworten / Wünsche des Kunden');
+    antworten.forEach(p=>{
+      const roh=p.replace(/^💬\s*Antwort\s*\(?/,'').replace(/^des Kunden\s*\(/,'');
+      const idx=roh.indexOf('): ');
+      if(idx>-1){ doc.setFont('helvetica','bold'); zeile(roh.slice(0,idx)); doc.setFont('helvetica','normal'); zeile('„'+roh.slice(idx+3)+'"',14); }
+      else zeile(p.replace(/^💬\s*/,''));
+    });
+    y+=8;
+  }
+  if(!besprochen.length&&!antworten.length){ zeile('Es wurden keine Punkte dokumentiert.'); }
+  if(b.signature){
+    if(y>pageH-130){doc.addPage();y=70;}
+    doc.setFont('helvetica','bold');doc.setFontSize(10.5);doc.text('Unterschrift des Kunden (Unterschriftsprobe)',margin,y); y+=10;
+    try{ pdfSafeSignature(doc,b.signature,margin,y,150,50); }catch(e){}
+    y+=56; doc.setDrawColor(0); doc.line(margin,y,margin+260,y); y+=13;
+    doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(90);
+    doc.text(fullName(cu)+' · '+fmtDate(b.date||''),margin,y);
+  }
+  return doc;
+}
+function downloadBeratungsprotokoll(customerId){
+  const cu=custById(customerId); if(!cu||!cu.beratung){toast('Kein Beratungsprotokoll vorhanden',true);return;}
+  const doc=buildBeratungsprotokollPdf(cu);
+  if(doc) doc.save(('Beratungsprotokoll_'+fullName(cu)+'_'+(cu.beratung.date||'')).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
 }
 
 /* ---- Leistungsnachweis: sammelt automatisch die Einsätze des Kunden ---- */
@@ -14286,6 +14343,7 @@ function v5ShowBeratungsprotokoll(custId){
       (b.signature?'<div class="section-label">Unterschriftsprobe</div><img src="'+b.signature+'" style="height:56px;border:1px solid var(--line);border-radius:7px;background:#fff">':'');
   }
   let foot='<button class="btn-ghost" onclick="closeModal()">Schließen</button>';
+  if(cu.beratung&&(cu.beratung.punkte&&cu.beratung.punkte.length||cu.beratung.signature)) foot+='<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="downloadBeratungsprotokoll('+cu.id+')">⬇ Protokoll (PDF)</button>';
   if(hasRole('admin')&&cu.beratung&&cu.beratung.signature) foot+='<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="downloadBeratungsvertrag('+cu.id+')">⬇ Vereinbarung (PDF)</button>';
   document.getElementById('modalFoot').innerHTML=foot;
   openModal();
