@@ -1792,7 +1792,20 @@ async function loadFromCloud(){
     if(error) throw error;
     if(data){
       customers.forEach(c=>{ c.leistungsnachweise=[]; });
-      data.forEach(l=>{ const cu=customers.find(c=>c.id===l.customer_id); if(cu){ (cu.leistungsnachweise=cu.leistungsnachweise||[]).push({date:l.datum, task:l.task, mins:Number(l.mins)||0, von:l.von||'', bis:l.bis||'', signature:l.signature, staffId:l.mitarbeiter_id}); } });
+      data.forEach(l=>{ const cu=customers.find(c=>c.id===l.customer_id); if(cu){ (cu.leistungsnachweise=cu.leistungsnachweise||[]).push({id:l.id, date:l.datum, task:l.task, mins:Number(l.mins)||0, von:l.von||'', bis:l.bis||'', signature:l.signature||'', staffId:l.mitarbeiter_id}); } });
+      // Selbstheilung: LN ohne Unterschrift bekommt sie aus dem passenden
+      // Stundenzettel (gleicher Kunde + Tag, ggf. gleiche Startzeit) – dort ist
+      // die Original-Unterschrift sicher gespeichert. Die DB-Zeile wird still
+      // mitrepariert, damit es dauerhaft stimmt.
+      customers.forEach(c=>{ (c.leistungsnachweise||[]).forEach(ln=>{
+        if(ln.signature) return;
+        const ts=timesheets.find(t=>t.customerId===c.id&&t.date===ln.date&&t.signature&&(!ln.von||t.start===ln.von));
+        if(ts){
+          ln.signature=ts.signature;
+          if(!ln.von){ ln.von=ts.start; ln.bis=ts.end; }
+          if(CLOUD&&sb&&ln.id){ sb.from('leistungsnachweise').update({signature:ts.signature, von:ln.von, bis:ln.bis}).eq('id',ln.id).then(()=>{},()=>{}); }
+        }
+      }); });
     }
     DIAG.push('leistungsnachweise: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER leistungsnachweise (DOKUMENTE_MIGRATION.sql ausgeführt?): '+(e.message||e)); }
@@ -4763,7 +4776,7 @@ function editCustomer(id){
   const lns=c.leistungsnachweise||[];
   if(lns.length){
     lns.forEach((ln,i)=>{
-      docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📄 Leistungsnachweis</b><div class="li-sub">'+fmtDate(ln.date)+' · '+ln.task+' · '+(ln.mins/60).toFixed(2).replace('.',',')+' Std.</div></div><div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><img src="'+ln.signature+'" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-primary btn-sm" style="width:auto" onclick="downloadCustLN('+c.id+','+i+')">⬇ LN</button>'+(c.insuranceType==='gesetzlich'?'<button class="btn-ghost btn-sm" style="width:auto" onclick="downloadCustAbtretung('+c.id+','+i+')" title="Abtretungserklärung zu diesem Einsatz">⬇ Abtretung</button>':'')+'</div></div>';
+      docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📄 Leistungsnachweis</b><div class="li-sub">'+fmtDate(ln.date)+' · '+ln.task+' · '+(ln.mins/60).toFixed(2).replace('.',',')+' Std.</div></div><div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">'+(ln.signature?'<img src="'+ln.signature+'" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff">':'<span class="tag amber" style="font-size:10px" title="Keine Unterschrift gespeichert – wird beim nächsten Laden automatisch aus dem Stundenzettel ergänzt, sofern vorhanden">ohne Unterschrift</span>')+'<button class="btn-primary btn-sm" style="width:auto" onclick="downloadCustLN('+c.id+','+i+')">⬇ LN</button>'+(c.insuranceType==='gesetzlich'?'<button class="btn-ghost btn-sm" style="width:auto" onclick="downloadCustAbtretung('+c.id+','+i+')" title="Abtretungserklärung zu diesem Einsatz">⬇ Abtretung</button>':'')+'</div></div>';
     });
   }
   if(!c.abtretung && !lns.length){ docsHtml+='<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine erstellten Dokumente. Abtretung oder Leistungsnachweis entstehen über den Einsatz-Abschluss.</p>'; }
