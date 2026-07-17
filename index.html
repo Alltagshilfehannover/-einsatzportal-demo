@@ -3963,8 +3963,8 @@ function renderAdmin(view){
       '<select style="width:auto" onchange="hoursJahr=this.value;hoursPage=0;renderAdmin(\'hours\')"><option value="">Alle Jahre</option>'+jahre.map(j=>'<option '+(hoursJahr===j?'selected':'')+'>'+j+'</option>').join('')+'</select>'+
       '<div class="filter-chips">'+[['offen','Offen'+(offenAnz?' ('+offenAnz+')':'')],['archiv','🗄 Archiv'],['alle','Alle']].map(([v,l])=>'<span class="chip '+(hoursTab===v?'on':'')+'" onclick="hoursTab=\''+v+'\';hoursPage=0;renderAdmin(\'hours\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
-    '<div class="panel"><div class="panel-head"><h3>'+tsList.length+' Einträge'+(hoursTab==='offen'?' zu prüfen':hoursTab==='archiv'?' im Archiv':'')+'</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportStundenzettel()">⬇ CSV Export</button><button class="btn-ghost btn-sm" onclick="manualRefreshHours()">↻ Aktualisieren</button></div></div><div class="panel-body" style="padding-top:16px">'+
-    (tsList.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Leistungsnachweis</th><th>Rechnung</th><th class="ts-act"></th></tr></thead><tbody>'+
+    '<div class="panel"><div class="panel-head"><h3>'+tsList.length+' Einträge'+(hoursTab==='offen'?' zu prüfen':hoursTab==='archiv'?' im Archiv':'')+'</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-primary btn-sm" style="width:auto" onclick="hoursBulkLN()" title="Alle angehakten Stundenzettel als EIN PDF herunterladen">⬇ LN (Auswahl)</button><button class="btn-primary btn-sm" style="width:auto" onclick="hoursBulkAbtretung()" title="Abtretungserklärungen der angehakten Zeilen als EIN PDF (nur gesetzlich Versicherte)">⬇ Abtretungen (Auswahl)</button><button class="btn-ghost btn-sm" onclick="exportStundenzettel()">⬇ CSV Export</button><button class="btn-ghost btn-sm" onclick="manualRefreshHours()">↻ Aktualisieren</button></div></div><div class="panel-body" style="padding-top:16px">'+
+    (tsList.length?'<table><thead><tr><th style="width:34px"><input type="checkbox" title="Alle (sichtbaren) auswählen" onclick="hoursSelAll(this.checked)"></th><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Dokumente</th><th>Rechnung</th><th class="ts-act"></th></tr></thead><tbody>'+
       pageSlice(tsList,hoursPage).map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);
         const sigOk=signatureLooksValid(t.signature);
         const anom=tsAnomalie(t); // Anomalie-Wächter: Ausreißer & Doppelbuchungen
@@ -3981,10 +3981,10 @@ function renderAdmin(view){
             (probe?'<span style="text-align:center"><img src="'+probe+'" title="Unterschriftsprobe aus der Erstberatung" style="height:30px;border:1px dashed var(--petrol,#0f5b63);border-radius:5px;background:#fff;vertical-align:middle"><div style="font-size:9px;color:var(--muted)">Probe</div></span>':'<span class="tag grey" style="font-size:9px" title="Keine Unterschriftsprobe hinterlegt – Erstberatung durchführen">keine Probe</span>')+
             (sigOk?'<span class="tag green" style="font-size:10px">vorhanden</span>':'<span class="tag amber" style="font-size:10px">prüfen</span>')+'</div>'
           : '<span style="color:var(--muted);font-size:12px">keine</span>';
-        return '<tr><td>'+fmtDate(t.date)+'</td><td><b>'+staffName(t.staffId)+'</b></td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+dur+'</td>'+
+        return '<tr><td><input type="checkbox" class="ts-sel" value="'+t.id+'" onclick="event.stopPropagation()"></td><td>'+fmtDate(t.date)+'</td><td><b>'+staffName(t.staffId)+'</b></td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+dur+'</td>'+
         '<td>'+sigCell+'</td>'+
         '<td>'+statusTag+'</td>'+
-        '<td>'+(t.signature?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')">⬇ LN</button>':'<span style="color:var(--muted);font-size:12px">—</span>')+'</td>'+
+        '<td>'+(t.signature?'<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')" title="Leistungsnachweis">⬇ LN</button>'+(cu&&cu.insuranceType==='gesetzlich'?'<button class="btn-ghost btn-sm" onclick="downloadTsAbtretung('+t.id+')" title="Abtretungserklärung">⬇ AB</button>':'')+'</div>':'<span style="color:var(--muted);font-size:12px">—</span>')+'</td>'+
         '<td>'+(()=>{ const re=rechnungen.find(r=>r.stundenzettelId===t.id);
           if(t.billable===false) return '<span class="tag grey" style="font-size:11px">kostenlos / nicht abrechenbar</span>';
           if(re) return '<span class="tag green" style="font-size:11px">'+re.nummer+'</span>';
@@ -4760,7 +4760,7 @@ function editCustomer(id){
   const lns=c.leistungsnachweise||[];
   if(lns.length){
     lns.forEach((ln,i)=>{
-      docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📄 Leistungsnachweis</b><div class="li-sub">'+fmtDate(ln.date)+' · '+ln.task+' · '+(ln.mins/60).toFixed(2).replace('.',',')+' Std.</div></div><div style="display:flex;gap:7px;align-items:center"><img src="'+ln.signature+'" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-primary btn-sm" style="width:auto" onclick="downloadCustLN('+c.id+','+i+')">⬇ PDF</button></div></div>';
+      docsHtml+='<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📄 Leistungsnachweis</b><div class="li-sub">'+fmtDate(ln.date)+' · '+ln.task+' · '+(ln.mins/60).toFixed(2).replace('.',',')+' Std.</div></div><div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><img src="'+ln.signature+'" style="height:34px;border:1px solid var(--line);border-radius:6px;background:#fff"><button class="btn-primary btn-sm" style="width:auto" onclick="downloadCustLN('+c.id+','+i+')">⬇ LN</button>'+(c.insuranceType==='gesetzlich'?'<button class="btn-ghost btn-sm" style="width:auto" onclick="downloadCustAbtretung('+c.id+','+i+')" title="Abtretungserklärung zu diesem Einsatz">⬇ Abtretung</button>':'')+'</div></div>';
     });
   }
   if(!c.abtretung && !lns.length){ docsHtml+='<p style="color:var(--muted);font-size:13px;padding:4px 0">Noch keine erstellten Dokumente. Abtretung oder Leistungsnachweis entstehen über den Einsatz-Abschluss.</p>'; }
@@ -7167,6 +7167,62 @@ function downloadTsLN(tsId){
   });
   if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+t.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
 }
+// Abtretungserklärung zu einem einzelnen Stundenzettel (nur gesetzlich Versicherte)
+function downloadTsAbtretung(tsId){
+  const t=timesheets.find(x=>x.id===tsId); if(!t)return;
+  const cu=custById(t.customerId); if(!cu)return;
+  if(cu.insuranceType!=='gesetzlich'){ toast('Keine Abtretung: '+fullName(cu)+' ist nicht gesetzlich versichert',true); return; }
+  if(!t.signature){ toast('Keine Kundenunterschrift vorhanden',true); return; }
+  const doc=buildAbtretungPdf(cu, t.signature, t.date);
+  if(doc) doc.save(('Abtretungserklaerung_'+fullName(cu)+'_'+t.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+}
+// Abtretungserklärung zu einem gespeicherten Leistungsnachweis (Kundenakte)
+function downloadCustAbtretung(custId, idx){
+  const cu=custById(custId); if(!cu||!cu.leistungsnachweise||!cu.leistungsnachweise[idx])return;
+  if(cu.insuranceType!=='gesetzlich'){ toast('Keine Abtretung: Kunde ist nicht gesetzlich versichert',true); return; }
+  const ln=cu.leistungsnachweise[idx];
+  const doc=buildAbtretungPdf(cu, ln.signature, ln.date);
+  if(doc) doc.save(('Abtretungserklaerung_'+fullName(cu)+'_'+ln.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+}
+/* ---- Sammel-Download im Stundenzettel-Bereich: alle AUSGEWÄHLTEN Zeilen
+   als EIN PDF (je Stundenzettel eine Seite). Ein Download = keine Browser-
+   Blockade. Abtretungen analog (nur gesetzlich Versicherte mit Unterschrift). */
+function hoursSelIds(){ return [...document.querySelectorAll('.ts-sel:checked')].map(b=>+b.value); }
+function hoursSelAll(chk){ document.querySelectorAll('.ts-sel').forEach(b=>{ b.checked=chk; }); }
+function hoursBulkLN(){
+  const ids=hoursSelIds();
+  if(!ids.length){ toastHint('Bitte Stundenzettel anhaken (Kästchen links)'); return; }
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return; }
+  const doc=new window.jspdf.jsPDF({unit:'pt',format:'a4'});
+  let n=0;
+  ids.forEach(id=>{
+    const t=timesheets.find(x=>x.id===id); if(!t) return;
+    const cu=custById(t.customerId); if(!cu) return;
+    renderLeistungsnachweisInto(doc,{cu:cu, monat:String(t.date||'').slice(0,7),
+      rows:[{date:t.date, von:t.start, bis:t.end, mins:tsMinutes(t), signature:t.signature}]}, n>0);
+    n++;
+  });
+  if(!n){ toast('Keine passenden Stundenzettel in der Auswahl',true); return; }
+  doc.save(('Leistungsnachweise_'+todayISO()).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+  toast(n+' Leistungsnachweis(e) in einem PDF heruntergeladen');
+}
+function hoursBulkAbtretung(){
+  const ids=hoursSelIds();
+  if(!ids.length){ toastHint('Bitte Stundenzettel anhaken (Kästchen links)'); return; }
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return; }
+  const doc=new window.jspdf.jsPDF({unit:'pt',format:'a4'});
+  let n=0, uebersprungen=0;
+  ids.forEach(id=>{
+    const t=timesheets.find(x=>x.id===id); if(!t) return;
+    const cu=custById(t.customerId);
+    if(!cu||cu.insuranceType!=='gesetzlich'||!t.signature){ uebersprungen++; return; }
+    renderAbtretungInto(doc, cu, t.signature, t.date, n>0);
+    n++;
+  });
+  if(!n){ toast('In der Auswahl ist keine Abtretung möglich (nur gesetzlich Versicherte mit Unterschrift)',true); return; }
+  doc.save(('Abtretungserklaerungen_'+todayISO()).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+  toast(n+' Abtretungserklärung(en) in einem PDF'+(uebersprungen?' · '+uebersprungen+' übersprungen (privat/ohne Unterschrift)':''));
+}
 /* ============================================================
    MITARBEITER-STUNDENZETTEL (vereinfacht, OHNE Preise/Abrechnung)
    Zeigt nur: Kunde, Datum/Zeit, Tätigkeit und Kundenunterschrift.
@@ -7652,6 +7708,12 @@ function buildAbtretungPdf(cu, signature, date){
   if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
   const { jsPDF } = window.jspdf;
   const doc=new jsPDF({unit:'pt',format:'a4'});
+  renderAbtretungInto(doc, cu, signature, date, false);
+  return doc;
+}
+// Rendert die Abtretungserklärung in ein (Sammel-)Dokument – für Einzel- und Massen-Download
+function renderAbtretungInto(doc, cu, signature, date, neueSeite){
+  if(neueSeite) doc.addPage();
   const pageW=doc.internal.pageSize.getWidth();
   const margin=68; let y=88;
   y=pdfLogoZentriert(doc,pageW,y)+40;
@@ -7704,6 +7766,12 @@ function buildLeistungsnachweisPdf(opts){
   if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
   const { jsPDF } = window.jspdf;
   const doc=new jsPDF({unit:'pt',format:'a4'});
+  renderLeistungsnachweisInto(doc, opts, false);
+  return doc;
+}
+// Rendert einen Leistungsnachweis in ein (Sammel-)Dokument – für Einzel- und Massen-Download
+function renderLeistungsnachweisInto(doc, opts, neueSeite){
+  if(neueSeite) doc.addPage();
   const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
   const margin=68; let y=88;
   const cu=opts.cu||{};
