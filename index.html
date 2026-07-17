@@ -1084,8 +1084,8 @@ let staffBulkSel=new Set();  // Sammelauswahl in der Mitarbeiterliste (Mitarbeit
    LIST_PAGE_SIZE Zeilen gerendert) */
 const LIST_PAGE_SIZE=100;
 let custPage=0, staffPage=0, hoursPage=0;
-// Stundenzettel-Bereich: Suche (Kunde/Mitarbeiter), Monats-/Jahresfilter, Offen/Archiv
-let hoursSearch='', hoursMonat='', hoursJahr='', hoursTab='offen';
+// Stundenzettel-Bereich: Suche (Kunde/Mitarbeiter), Monats-/Jahresfilter, Offen/Archiv, Abrechenbar/Kostenlos
+let hoursSearch='', hoursMonat='', hoursJahr='', hoursTab='offen', hoursArt='';
 function pagerHTML(page,total,varName,view){
   const pages=Math.max(1,Math.ceil(total/LIST_PAGE_SIZE));
   if(pages<=1) return '';
@@ -3952,6 +3952,8 @@ function renderAdmin(view){
       const d=String(t.date||'');
       if(hoursJahr&&d.slice(0,4)!==hoursJahr)return false;
       if(hoursMonat&&d.slice(5,7)!==hoursMonat)return false;
+      if(hoursArt==='abrechenbar'&&t.billable===false)return false;
+      if(hoursArt==='kostenlos'&&t.billable!==false)return false;
       if(hq){const cu=custById(t.customerId);const s=((cu?fullName(cu):'')+' '+staffName(t.staffId)).toLowerCase();if(!s.includes(hq))return false;}
       return true;
     }).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
@@ -3961,6 +3963,7 @@ function renderAdmin(view){
       '<input class="search-input" id="hoursSearchInput" style="flex:1;min-width:220px;max-width:340px" placeholder="🔍 Kunde oder Mitarbeiter suchen …" value="'+hoursSearch.replace(/"/g,'&quot;')+'" oninput="hoursSearch=this.value;hoursPage=0;renderAdmin(\'hours\');setTimeout(()=>{const e=document.getElementById(\'hoursSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
       '<select style="width:auto" onchange="hoursMonat=this.value;hoursPage=0;renderAdmin(\'hours\')"><option value="">Alle Monate</option>'+MONATE.map(([v,l])=>'<option value="'+v+'" '+(hoursMonat===v?'selected':'')+'>'+l+'</option>').join('')+'</select>'+
       '<select style="width:auto" onchange="hoursJahr=this.value;hoursPage=0;renderAdmin(\'hours\')"><option value="">Alle Jahre</option>'+jahre.map(j=>'<option '+(hoursJahr===j?'selected':'')+'>'+j+'</option>').join('')+'</select>'+
+      '<select style="width:auto" onchange="hoursArt=this.value;hoursPage=0;renderAdmin(\'hours\')" title="Nach Abrechnungsart filtern"><option value="">Alle Arten</option><option value="abrechenbar" '+(hoursArt==='abrechenbar'?'selected':'')+'>💶 Abrechenbar</option><option value="kostenlos" '+(hoursArt==='kostenlos'?'selected':'')+'>🎁 Kostenlos</option></select>'+
       '<div class="filter-chips">'+[['offen','Offen'+(offenAnz?' ('+offenAnz+')':'')],['archiv','🗄 Archiv'],['alle','Alle']].map(([v,l])=>'<span class="chip '+(hoursTab===v?'on':'')+'" onclick="hoursTab=\''+v+'\';hoursPage=0;renderAdmin(\'hours\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
     '<div class="panel"><div class="panel-head"><h3>'+tsList.length+' Einträge'+(hoursTab==='offen'?' zu prüfen':hoursTab==='archiv'?' im Archiv':'')+'</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-primary btn-sm" style="width:auto" onclick="hoursBulkLN()" title="Alle angehakten Stundenzettel als EIN PDF herunterladen">⬇ LN (Auswahl)</button><button class="btn-primary btn-sm" style="width:auto" onclick="hoursBulkAbtretung()" title="Abtretungserklärungen der angehakten Zeilen als EIN PDF (nur gesetzlich Versicherte)">⬇ Abtretungen (Auswahl)</button><button class="btn-ghost btn-sm" onclick="exportStundenzettel()">⬇ CSV Export</button><button class="btn-ghost btn-sm" onclick="manualRefreshHours()">↻ Aktualisieren</button></div></div><div class="panel-body" style="padding-top:16px">'+
@@ -3996,7 +3999,7 @@ function renderAdmin(view){
         '<td class="ts-act">'+(t.status==='offen'
             ? '<div class="ts-actions"><button class="btn-primary btn-sm" style="width:100%;background:var(--good);font-weight:700" onclick="approveTimesheet('+t.id+')">✓ Freigeben</button><button class="btn-danger-ghost btn-sm" onclick="rejectTimesheet('+t.id+')">✕ Ablehnen</button></div>'
             : (t.status==='freigegeben'?'<span style="color:var(--good)">✓ freigegeben</span>':'<span style="color:#c0392b">✕ abgelehnt</span>'+(t.rejectGrund?'<div style="font-size:11px;color:var(--muted);max-width:160px">Grund: '+t.rejectGrund+'</div>':'')))+'</td></tr>';}).join('')+
-      '</tbody></table>'+pagerHTML(hoursPage,tsList.length,'hoursPage','hours'):'<div class="empty"><div class="big">⏱</div><b>'+(hq||hoursMonat||hoursJahr?'Keine Einträge für diese Filter':(hoursTab==='offen'?'Nichts zu prüfen':'Noch keine Stundenzettel'))+'</b><p style="margin-top:6px">'+(hq||hoursMonat||hoursJahr?'Suche oder Filter anpassen.':(hoursTab==='offen'?'Neue Einsätze erscheinen hier zur Freigabe – Erledigtes liegt im Archiv.':'Sobald Mitarbeiter Einsätze abschließen, erscheinen sie hier.'))+'</p></div>')+
+      '</tbody></table>'+pagerHTML(hoursPage,tsList.length,'hoursPage','hours'):'<div class="empty"><div class="big">⏱</div><b>'+(hq||hoursMonat||hoursJahr||hoursArt?'Keine Einträge für diese Filter':(hoursTab==='offen'?'Nichts zu prüfen':'Noch keine Stundenzettel'))+'</b><p style="margin-top:6px">'+(hq||hoursMonat||hoursJahr||hoursArt?'Suche oder Filter anpassen.':(hoursTab==='offen'?'Neue Einsätze erscheinen hier zur Freigabe – Erledigtes liegt im Archiv.':'Sobald Mitarbeiter Einsätze abschließen, erscheinen sie hier.'))+'</p></div>')+
     '</div></div>';
   }
   if(view==='payroll'){
