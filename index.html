@@ -1084,6 +1084,8 @@ let staffBulkSel=new Set();  // Sammelauswahl in der Mitarbeiterliste (Mitarbeit
    LIST_PAGE_SIZE Zeilen gerendert) */
 const LIST_PAGE_SIZE=100;
 let custPage=0, staffPage=0, hoursPage=0;
+// Stundenzettel-Bereich: Suche (Kunde/Mitarbeiter), Monats-/Jahresfilter, Offen/Archiv
+let hoursSearch='', hoursMonat='', hoursJahr='', hoursTab='offen';
 function pagerHTML(page,total,varName,view){
   const pages=Math.max(1,Math.ceil(total/LIST_PAGE_SIZE));
   if(pages<=1) return '';
@@ -1780,6 +1782,19 @@ async function loadFromCloud(){
     if(data){ data.forEach(a=>{ const cu=customers.find(c=>c.id===a.customer_id); if(cu) cu.abtretung={date:a.signed_date, signature:a.signature}; }); }
     DIAG.push('abtretungen: '+(data?data.length:0)+' geladen');
   }catch(e){ DIAG.push('FEHLER abtretungen: '+(e.message||e)); console.error('Laden abtretungen fehlgeschlagen:', e.message||e); }
+
+  // Leistungsnachweise den Kunden zuordnen (dauerhaft gespeichert, Tabelle
+  // leistungsnachweise – DOKUMENTE_MIGRATION.sql). Vorher zurücksetzen,
+  // damit der 25s-Sync keine Duplikate anhäuft.
+  try{
+    const {data,error}=await sb.from('leistungsnachweise').select('*').order('id');
+    if(error) throw error;
+    if(data){
+      customers.forEach(c=>{ c.leistungsnachweise=[]; });
+      data.forEach(l=>{ const cu=customers.find(c=>c.id===l.customer_id); if(cu){ (cu.leistungsnachweise=cu.leistungsnachweise||[]).push({date:l.datum, task:l.task, mins:Number(l.mins)||0, von:l.von||'', bis:l.bis||'', signature:l.signature, staffId:l.mitarbeiter_id}); } });
+    }
+    DIAG.push('leistungsnachweise: '+(data?data.length:0)+' geladen');
+  }catch(e){ DIAG.push('FEHLER leistungsnachweise (DOKUMENTE_MIGRATION.sql ausgeführt?): '+(e.message||e)); }
 
   // Beratungen (inkl. Unterschriftsprobe) den Kunden zuordnen
   try{
@@ -3925,10 +3940,31 @@ function renderAdmin(view){
   }
 
   if(view==='hours'){
-    c.innerHTML=head('Stundenzettel','Alle von Mitarbeitern erfassten Einsatzzeiten. Vom Kunden unterschriebene Einsätze enthalten einen Leistungsnachweis.')+
-    '<div class="panel"><div class="panel-head"><h3>'+timesheets.length+' Einträge</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportStundenzettel()">⬇ CSV Export</button><button class="btn-ghost btn-sm" onclick="manualRefreshHours()">↻ Aktualisieren</button></div></div><div class="panel-body" style="padding-top:16px">'+
-    (timesheets.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Leistungsnachweis</th><th>Rechnung</th><th class="ts-act"></th></tr></thead><tbody>'+
-      pageSlice(timesheets,hoursPage).map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);
+    // Filter: Offen (zu prüfen) / Archiv (freigegeben & abgelehnt) / Alle,
+    // dazu Monats-/Jahresfilter und Suche nach Kunde oder Mitarbeiter.
+    const hq=(hoursSearch||'').trim().toLowerCase();
+    const jahre=[...new Set(timesheets.map(t=>String(t.date||'').slice(0,4)).filter(Boolean))].sort((a,b)=>b.localeCompare(a));
+    const MONATE=[['01','Januar'],['02','Februar'],['03','März'],['04','April'],['05','Mai'],['06','Juni'],['07','Juli'],['08','August'],['09','September'],['10','Oktober'],['11','November'],['12','Dezember']];
+    const tsList=timesheets.filter(t=>{
+      if(hoursTab==='offen'&&t.status!=='offen')return false;
+      if(hoursTab==='archiv'&&t.status==='offen')return false;
+      const d=String(t.date||'');
+      if(hoursJahr&&d.slice(0,4)!==hoursJahr)return false;
+      if(hoursMonat&&d.slice(5,7)!==hoursMonat)return false;
+      if(hq){const cu=custById(t.customerId);const s=((cu?fullName(cu):'')+' '+staffName(t.staffId)).toLowerCase();if(!s.includes(hq))return false;}
+      return true;
+    }).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+    const offenAnz=timesheets.filter(t=>t.status==='offen').length;
+    c.innerHTML=head('Stundenzettel','Alle von Mitarbeitern erfassten Einsatzzeiten. Vom Kunden unterschriebene Einsätze enthalten einen Leistungsnachweis. Bestätigte (freigegebene) und abgelehnte Einträge liegen dauerhaft im Archiv.')+
+    '<div class="list-toolbar" style="margin-bottom:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'+
+      '<input class="search-input" id="hoursSearchInput" style="flex:1;min-width:220px;max-width:340px" placeholder="🔍 Kunde oder Mitarbeiter suchen …" value="'+hoursSearch.replace(/"/g,'&quot;')+'" oninput="hoursSearch=this.value;hoursPage=0;renderAdmin(\'hours\');setTimeout(()=>{const e=document.getElementById(\'hoursSearchInput\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0)">'+
+      '<select style="width:auto" onchange="hoursMonat=this.value;hoursPage=0;renderAdmin(\'hours\')"><option value="">Alle Monate</option>'+MONATE.map(([v,l])=>'<option value="'+v+'" '+(hoursMonat===v?'selected':'')+'>'+l+'</option>').join('')+'</select>'+
+      '<select style="width:auto" onchange="hoursJahr=this.value;hoursPage=0;renderAdmin(\'hours\')"><option value="">Alle Jahre</option>'+jahre.map(j=>'<option '+(hoursJahr===j?'selected':'')+'>'+j+'</option>').join('')+'</select>'+
+      '<div class="filter-chips">'+[['offen','Offen'+(offenAnz?' ('+offenAnz+')':'')],['archiv','🗄 Archiv'],['alle','Alle']].map(([v,l])=>'<span class="chip '+(hoursTab===v?'on':'')+'" onclick="hoursTab=\''+v+'\';hoursPage=0;renderAdmin(\'hours\')">'+l+'</span>').join('')+'</div>'+
+    '</div>'+
+    '<div class="panel"><div class="panel-head"><h3>'+tsList.length+' Einträge'+(hoursTab==='offen'?' zu prüfen':hoursTab==='archiv'?' im Archiv':'')+'</h3><div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="exportStundenzettel()">⬇ CSV Export</button><button class="btn-ghost btn-sm" onclick="manualRefreshHours()">↻ Aktualisieren</button></div></div><div class="panel-body" style="padding-top:16px">'+
+    (tsList.length?'<table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Leistungsnachweis</th><th>Rechnung</th><th class="ts-act"></th></tr></thead><tbody>'+
+      pageSlice(tsList,hoursPage).map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);
         const sigOk=signatureLooksValid(t.signature);
         const anom=tsAnomalie(t); // Anomalie-Wächter: Ausreißer & Doppelbuchungen
         const statusTag = (t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
@@ -3959,7 +3995,7 @@ function renderAdmin(view){
         '<td class="ts-act">'+(t.status==='offen'
             ? '<div class="ts-actions"><button class="btn-primary btn-sm" style="width:100%;background:var(--good);font-weight:700" onclick="approveTimesheet('+t.id+')">✓ Freigeben</button><button class="btn-danger-ghost btn-sm" onclick="rejectTimesheet('+t.id+')">✕ Ablehnen</button></div>'
             : (t.status==='freigegeben'?'<span style="color:var(--good)">✓ freigegeben</span>':'<span style="color:#c0392b">✕ abgelehnt</span>'+(t.rejectGrund?'<div style="font-size:11px;color:var(--muted);max-width:160px">Grund: '+t.rejectGrund+'</div>':'')))+'</td></tr>';}).join('')+
-      '</tbody></table>'+pagerHTML(hoursPage,timesheets.length,'hoursPage','hours'):'<div class="empty"><div class="big">⏱</div><b>Noch keine Stundenzettel</b><p style="margin-top:6px">Sobald Mitarbeiter Einsätze abschließen, erscheinen sie hier.</p></div>')+
+      '</tbody></table>'+pagerHTML(hoursPage,tsList.length,'hoursPage','hours'):'<div class="empty"><div class="big">⏱</div><b>'+(hq||hoursMonat||hoursJahr?'Keine Einträge für diese Filter':(hoursTab==='offen'?'Nichts zu prüfen':'Noch keine Stundenzettel'))+'</b><p style="margin-top:6px">'+(hq||hoursMonat||hoursJahr?'Suche oder Filter anpassen.':(hoursTab==='offen'?'Neue Einsätze erscheinen hier zur Freigabe – Erledigtes liegt im Archiv.':'Sobald Mitarbeiter Einsätze abschließen, erscheinen sie hier.'))+'</p></div>')+
     '</div></div>';
   }
   if(view==='payroll'){
@@ -4759,9 +4795,8 @@ function downloadCustLN(custId, idx){
   const cu=custById(custId); if(!cu||!cu.leistungsnachweise||!cu.leistungsnachweise[idx])return;
   const ln=cu.leistungsnachweise[idx];
   const doc=buildLeistungsnachweisPdf({
-    name:fullName(cu), versNr:(cu.intern&&cu.intern.kvNr)||cu.kvNr||'',
-    rows:[{date:fmtDate(ln.date), leistung:ln.task, stunden:ln.mins/60, preis:STUNDENSATZ}],
-    signature:ln.signature, ort:(cu.city||cu.area||''), date:ln.date
+    cu:cu, monat:String(ln.date||'').slice(0,7),
+    rows:[{date:ln.date, von:ln.von||'', bis:ln.bis||'', mins:ln.mins, signature:ln.signature}]
   });
   if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+ln.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
 }
@@ -6995,26 +7030,25 @@ function signTermin(){
       const ts={id:nextTsId++, staffId:myId, customerId:t.cid, date:date, start:t.start, end:t.end, task:t.task, status:'offen', proof:true, signature:sig, signedAt:date, hasAbtretung:true};
       timesheets.push(ts);
       if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:t.cid,date:date,start:t.start,ende:t.end,task:t.task,status:'offen',proof:true,signature:sig,signed_at:date,standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
-      // 2) Leistungsnachweis-PDF erzeugen (eine Zeile = dieser Einsatz).
-      //    Preis stammt aus der beim Kunden hinterlegten Leistung; bei Stundensatz
-      //    zählt die Dauer, sonst die Menge (Std.×€ ergibt in beiden Fällen die Kosten).
-      const lnPreis=(typeof t.preis==='number'?t.preis:STUNDENSATZ);
-      const lnMenge=(t.einheit&&t.einheit!=='pro Stunde')?(t.menge||1):(t.mins/60);
-      const rows=[{date:fmtDate(date), leistung:t.task, stunden:lnMenge, preis:lnPreis}];
+      // 2) Leistungsnachweis-PDF erzeugen (Monatsblatt, eine Zeile = dieser Einsatz)
       const doc=buildLeistungsnachweisPdf({
-        name:fullName(cu),
-        versNr:(cu.intern&&cu.intern.kvNr)||cu.kvNr||'',
-        rows:rows, signature:sig,
-        ort:(cu.city||cu.area||''), date:date
+        cu:cu, monat:String(date).slice(0,7),
+        rows:[{date:date, von:t.start, bis:t.end, mins:t.mins, signature:sig}]
       });
       // 3) Leistungsnachweis am Kunden hinterlegen (Kunden-Ordner)
       cu.leistungsnachweise=cu.leistungsnachweise||[];
-      cu.leistungsnachweise.push({date:date, task:t.task, mins:t.mins, signature:sig, staffId:myId});
-      // Hinweis: Eine separate Abtretungserklärung wird NICHT mehr erzeugt –
-      // der Abtretungstext steht direkt auf dem Leistungsnachweis (Entscheidung 04.07.2026).
-      // Die Unterschrift bleibt am Kunden hinterlegt (Bestandsdaten unangetastet).
-      cu.abtretung={date:date, signature:sig};
-      if(CLOUD){ cloudInsert('abtretungen',{customer_id:cu.id, signed_date:date, signature:sig}); }
+      cu.leistungsnachweise.push({date:date, task:t.task, mins:t.mins, von:t.start, bis:t.end, signature:sig, staffId:myId});
+      // Leistungsnachweis DAUERHAFT speichern (Tabelle leistungsnachweise,
+      // DOKUMENTE_MIGRATION.sql) – bleibt für immer in der Kundenakte einsehbar.
+      if(CLOUD){ cloudInsertAuto('leistungsnachweise',{customer_id:cu.id, mitarbeiter_id:myId, datum:date, task:t.task, mins:t.mins, von:t.start, bis:t.end, signature:sig, standort_id:currentStandortId}); }
+      // Abtretungserklärung NUR bei gesetzlich Versicherten (Abrechnung über die
+      // Pflegekasse). Privat/Beihilfe bzw. private Termine: KEINE Abtretung.
+      if(cu.insuranceType==='gesetzlich'){
+        cu.abtretung={date:date, signature:sig};
+        if(CLOUD){ cloudInsertAuto('abtretungen',{customer_id:cu.id, signed_date:date, signature:sig, standort_id:currentStandortId}); }
+        const abDoc=buildAbtretungPdf(cu, sig, date);
+        if(abDoc) abDoc.save(('Abtretungserklaerung_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+      }
       // 4) Leistungsnachweis-PDF zum Download anbieten
       if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
       // 5) Termin als erledigt entfernen (lokal + Datenbank)
@@ -7127,13 +7161,9 @@ function downloadTsLN(tsId){
 
   const t=timesheets.find(x=>x.id===tsId); if(!t)return;
   const cu=custById(t.customerId); if(!cu)return;
-  const mins=tsMinutes(t);
   const doc=buildLeistungsnachweisPdf({
-    name:fullName(cu),
-    versNr:(cu.intern&&cu.intern.kvNr)||cu.kvNr||'',
-    rows:[{date:fmtDate(t.date), leistung:t.task||'Betreuung', stunden:mins/60, preis:STUNDENSATZ}],
-    signature:t.signature,
-    ort:(cu.city||cu.area||''), date:t.date
+    cu:cu, monat:String(t.date||'').slice(0,7),
+    rows:[{date:t.date, von:t.start, bis:t.end, mins:tsMinutes(t), signature:t.signature}]
   });
   if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+t.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
 }
@@ -7564,65 +7594,75 @@ function downloadContractPdf(name, text, signature, person, date){
    PDF: ABTRETUNGSERKLÄRUNG (§45b SGB XI) – nach Vorlage
    Wird automatisch mit den Daten des gewählten Kunden gefüllt.
    ============================================================ */
+/* Logo für Dokumente: liegt neben der index.html eine Datei img/logo.png,
+   wird sie automatisch zentriert auf Abtretung & Leistungsnachweis gedruckt
+   (wie in der Vorlage). Fehlt die Datei, bleibt der Platz einfach frei. */
+let __pdfLogo=null;
+(function(){ try{ const im=new Image(); im.onload=function(){ try{ const c=document.createElement('canvas'); c.width=im.naturalWidth; c.height=im.naturalHeight; c.getContext('2d').drawImage(im,0,0); __pdfLogo={data:c.toDataURL('image/png'), w:im.naturalWidth, h:im.naturalHeight}; }catch(e){} }; im.onerror=function(){}; im.src='img/logo.png'; }catch(e){} })();
+function pdfLogoZentriert(doc,pageW,y){
+  if(!__pdfLogo) return y+8;
+  try{ const w=40, h=Math.max(12,Math.round(w*__pdfLogo.h/__pdfLogo.w)); doc.addImage(__pdfLogo.data,'PNG',(pageW-w)/2,y,w,h); return y+h+14; }catch(e){ return y+8; }
+}
+// Gemeinsamer Kundendaten-Block (Vorlage S.2/S.3): Label-Spalte + Werte
+function pdfKundenFelder(doc, cu, margin, y){
+  const it=cu.intern||{};
+  const kt=cu.kostentraegerId?(kostentraeger.find(k=>k.id===cu.kostentraegerId)||{}).name:'';
+  const felder=[
+    ['Vor-/ Nachname:', fullName(cu)],
+    ['Adresse:', cu.address||(((cu.street||'')+' '+(cu.houseNo||'')).trim()+', '+((cu.plz||'')+' '+(cu.city||'')).trim())],
+    ['Geb. Datum:', cu.birth?fmtDate(cu.birth):'-'],
+    ['KV-Nummer:', (it.kvNr||cu.kvNr||'-')],
+    ['Kostenträger:', kt||it.kasse||'-']
+  ];
+  doc.setFontSize(10);
+  felder.forEach(([l,v])=>{
+    doc.setFont('helvetica','normal');doc.text(l,margin,y);
+    doc.text(String(v||'-'),margin+130,y);
+    y+=21;
+  });
+  return y;
+}
+/* Abtretungserklärung – 1:1 nach Vorlage (Seite 2):
+   zentrierter Titel, Kundendaten, Dienst-Anschrift, Einverständnistext,
+   Unterschrift Leistungsempfänger + Annahme durch den Leistungserbringer. */
 function buildAbtretungPdf(cu, signature, date){
   if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
   const { jsPDF } = window.jspdf;
   const doc=new jsPDF({unit:'pt',format:'a4'});
   const pageW=doc.internal.pageSize.getWidth();
-  const margin=52; let y=margin;
-  // Briefkopf
-  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(110);
-  doc.text('www.hannoverhilfe.de',margin,y); y+=16;
-  doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(10.5);
-  doc.text('Alltagshilfe Hannover UG (haftungsbeschränkt)',margin,y); y+=14;
-  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(80);
-  doc.text('Bahnhofstraße 85 · 31515 Wunstorf',margin,y); y+=12;
-  doc.text('Tel: 05031 5165899 · email: info@hannoverhilfe.de',margin,y); y+=26;
-  doc.setTextColor(0);
-  // Titel
-  doc.setFont('helvetica','bold');doc.setFontSize(14);
-  doc.text('Abtretungserklärung',pageW/2,y,{align:'center'}); y+=18;
+  const margin=68; let y=88;
+  y=pdfLogoZentriert(doc,pageW,y)+40;
+  const st=standorte.find(s=>s.id===currentStandortId)||{};
+  const firma=st.firma||st.name||'Alltagshilfe Hannover UG (haftungsbeschränkt)';
+  const strasse=st.strasse||'Bahnhofstraße 85';
+  const plzOrt=((st.plz||'31515')+' '+(st.ort||'Wunstorf')).trim();
+  // Titel (zweizeilig, zentriert)
+  doc.setFont('helvetica','normal');doc.setFontSize(11.5);doc.setTextColor(0);
+  doc.text('Abtretungserklärung für zusätzlichen',pageW/2,y,{align:'center'}); y+=19;
+  doc.text('Betreuungs- und Entlastungsbetrag (45b SGB XI)',pageW/2,y,{align:'center'}); y+=44;
+  // Kundendaten
+  y=pdfKundenFelder(doc,cu,margin,y)+22;
+  // Dienst
   doc.setFont('helvetica','normal');doc.setFontSize(10);
-  doc.text('für zusätzliche Betreuungsleistungen (§ 45b SGB XI)',pageW/2,y,{align:'center'}); y+=30;
-  // Datenzeilen (mit Kundendaten gefüllt)
-  const line=(label,value)=>{
-    doc.setFont('helvetica','bold');doc.setFontSize(10.5);
-    doc.text(label,margin,y);
-    const lw=doc.getTextWidth(label+' ');
-    doc.setFont('helvetica','normal');
-    doc.text(String(value||''),margin+lw+4,y);
-    doc.setDrawColor(170);doc.line(margin+lw+4,y+2,pageW-margin,y+2);
-    y+=22;
-  };
-  const it=cu.intern||{};
-  line('Name','  '+fullName(cu));
-  line('Straße','  '+(cu.street?cu.street+' '+(cu.houseNo||''):(cu.address||'')));
-  line('Ort','  '+((cu.plz||'')+' '+(cu.city||cu.area||'')).trim());
-  line('Versicherungsnummer:',(it.kvNr||cu.kvNr||''));
-  line('Kranken/Pflegekasse:',(it.kasse||cu.kasse||''));
-  line('Anschrift:',(cu.address||((cu.street||'')+' '+(cu.houseNo||'')+', '+(cu.plz||'')+' '+(cu.city||'')).trim()));
-  // Pflegegrad / Budget / Geburtstag in einer Zeile
-  doc.setFont('helvetica','bold');doc.setFontSize(10.5);
-  doc.text('Pflegegrad:',margin,y); doc.setFont('helvetica','normal'); doc.text(String(cu.pgrad||''),margin+62,y);
-  doc.setFont('helvetica','bold'); doc.text('Budget:',margin+150,y); doc.setFont('helvetica','normal'); doc.text(String(it.budget||cu.budget||''),margin+196,y);
-  doc.setFont('helvetica','bold'); doc.text('Geburtstag:',margin+300,y); doc.setFont('helvetica','normal'); doc.text(String(cu.birth||it.birth||''),margin+360,y);
-  y+=30;
-  // Abtretungstext
-  doc.setFont('helvetica','normal');doc.setFontSize(10.5);
-  doc.text('Hiermit erteile ich eine Abtretungserklärung an',margin,y); y+=18;
-  doc.setFont('helvetica','bold');
-  doc.text('Alltagshilfe Hannover UG',margin,y); y+=14;
-  doc.setFont('helvetica','normal');doc.setFontSize(10);
-  doc.text('Bahnhofstraße 85, 31515 Wunstorf',margin,y); y+=14;
-  doc.text('Institutionskennzeichen (IK) 460 353 369',margin,y); y+=22;
-  const t2=doc.splitTextToSize('Alltagshilfe Hannover UG hat mein Einverständnis, erbrachte Leistungen gemäß § 45b SGB XI direkt mit meiner oben genannten Krankenkasse abzurechnen.',pageW-margin*2);
-  doc.text(t2,margin,y); y+=t2.length*14+26;
-  // Datum + Unterschrift
-  doc.text('Datum: '+(date||todayISO()),margin,y); y+=40;
-  if(signature){ pdfSafeSignature(doc,signature,margin,y-30,170,60); }
-  doc.setDrawColor(120);doc.line(margin,y+34,margin+230,y+34);
-  doc.setFontSize(9.5);doc.setTextColor(90);
-  doc.text('Unterschrift',margin,y+48);
+  doc.text('Hiermit erteile ich eine Abtretungserklärung an den Dienst:',margin,y); y+=22;
+  doc.text(firma,margin,y); y+=15;
+  doc.text(strasse,margin,y); y+=15;
+  doc.text(plzOrt,margin,y); y+=30;
+  // Einverständnistext (Wortlaut der Vorlage)
+  const txt=doc.splitTextToSize('Der Dienst hat mein Einverständnis, Leistungen gemäß §45b SGB XI direkt mit meiner Pflegekasse abzurechnen. Im Falle der Unwirksamkeit der Abtretung oder Nichtleistung der Pflegekasse bleibe ich als Versicherter gegenüber dem Leistungserbringer weiterhin zahlungspflichtig für die erbrachte Leistungen.',pageW-margin*2);
+  doc.text(txt,margin,y); y+=txt.length*13+40;
+  // Unterschrift Leistungsempfänger
+  if(signature){ try{ pdfSafeSignature(doc,signature,margin+120,y-26,110,34); }catch(e){} }
+  doc.setDrawColor(0);doc.line(margin,y+12,margin+310,y+12);
+  doc.setFontSize(10);doc.text('Unterschrift (Leistungsempfänger)',margin,y+27); y+=70;
+  // Annahme durch den Leistungserbringer
+  doc.text('Hiermit nehme ich die Abtretung an:',margin,y); y+=64;
+  doc.text(st.ort||'Wunstorf',margin,y);
+  if(st.unterschrift){ try{ pdfSafeSignature(doc,st.unterschrift,margin+130,y-26,120,40); }catch(e){} }
+  y+=15;
+  doc.text(fmtDate(date||todayISO()),margin,y); y+=8;
+  doc.setDrawColor(0);doc.line(margin,y+4,margin+310,y+4);
+  doc.setFontSize(10);doc.text('Ort, Datum, Unterschrift (Leistungserbringer)',margin,y+19);
   return doc;
 }
 
@@ -7630,64 +7670,60 @@ function buildAbtretungPdf(cu, signature, date){
    PDF: LEISTUNGSNACHWEIS (§45b Abs.1 S.3 Nr.4 SGB XI) – nach Vorlage
    Name + Versichertennummer + automatisch befüllte Leistungstabelle.
    ============================================================ */
+function minsToHHMM(mins){ mins=Math.max(0,Math.round(Number(mins)||0)); return String(Math.floor(mins/60)).padStart(2,'0')+':'+String(mins%60).padStart(2,'0'); }
+/* Leistungsnachweis – 1:1 nach Vorlage (Seite 3):
+   Monatsblatt je Kunde. Kopf: zentrierter Titel + Leistungsempfänger-Daten,
+   rechts der Monat. Tabelle: Datum | Von | Bis | Dauer | Unterschrift Kunde
+   (jede Zeile trägt die beim Einsatz geleistete Original-Unterschrift),
+   darunter die Gesamtzeit in Stunden:Minuten.
+   opts: { cu, monat:'YYYY-MM', rows:[{date,von,bis,mins,signature}] } */
 function buildLeistungsnachweisPdf(opts){
-  // opts: {name, versNr, rows:[{date,leistung,stunden,preis}], signature, ort, date}
   if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
   const { jsPDF } = window.jspdf;
   const doc=new jsPDF({unit:'pt',format:'a4'});
-  const pageW=doc.internal.pageSize.getWidth(); const margin=46; let y=margin;
-  doc.setFont('helvetica','bold');doc.setFontSize(11);
-  const head=doc.splitTextToSize('Nachweis von Leistungen der Angebote zur Unterstützung im Alltag nach § 45b Abs. 1 Satz 3 Nr. 4 SGB XI zur Abrechnung des Entlastungsbetrages',pageW-margin*2);
-  doc.text(head,margin,y); y+=head.length*15+14;
-  // Name + Versichertennummer
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
+  const margin=68; let y=88;
+  const cu=opts.cu||{};
+  y=pdfLogoZentriert(doc,pageW,y)+34;
+  // Titel zentriert
+  doc.setFont('helvetica','normal');doc.setFontSize(11.5);doc.setTextColor(0);
+  doc.text('Leistungsnachweis § 45b SGB XI Entlastungsbetrag',pageW/2,y,{align:'center'}); y+=42;
+  // Leistungsempfänger
   doc.setFont('helvetica','normal');doc.setFontSize(10.5);
-  const fld=(label,val)=>{ doc.setFont('helvetica','bold');doc.text(label,margin,y); const lw=doc.getTextWidth(label+' '); doc.setFont('helvetica','normal'); doc.text(String(val||''),margin+lw+4,y); doc.setDrawColor(170); doc.line(margin+lw+4,y+2,pageW-margin,y+2); y+=22; };
-  fld('Name / Vorname des Versicherten:',opts.name);
-  fld('Versichertennummer:',opts.versNr);
-  y+=6;
-  doc.setFont('helvetica','bold');doc.text('Folgende Leistungen wurden erbracht:',margin,y); y+=18;
-  // Tabelle
-  const cols=[margin, margin+70, margin+320, margin+390, margin+460, pageW-margin];
-  const headers=['Datum','Leistung','Std.','€/Std.','Kosten €'];
-  doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setFillColor(240,236,250);
-  doc.rect(margin,y-11,pageW-margin*2,18,'F');
-  doc.text(headers[0],cols[0]+2,y); doc.text(headers[1],cols[1]+2,y); doc.text(headers[2],cols[2]+2,y); doc.text(headers[3],cols[3]+2,y); doc.text(headers[4],cols[4]+2,y);
-  y+=10; doc.setFont('helvetica','normal');
-  let sumStd=0,sumKost=0;
+  doc.text('Leistungsempfänger:',margin,y); y+=26;
+  y=pdfKundenFelder(doc,cu,margin,y)+26;
+  // Zeile: "Leistungsnachweis" links · "Monat: Juni 2026" rechts
+  doc.setFontSize(10);
+  doc.text('Leistungsnachweis',margin,y);
+  doc.text('Monat: '+monatLabelDe(opts.monat||todayISO().slice(0,7)),pageW-margin,y,{align:'right'}); y+=32;
+  // Zentrierte Zwischenüberschrift + Linie
+  doc.setFontSize(10);
+  doc.text('Leistungsnachweis § 45b SGB XI Entlastungsbetrag',pageW/2,y,{align:'center'}); y+=10;
+  doc.setDrawColor(0);doc.line(margin,y,pageW-margin,y); y+=22;
+  // Tabellenkopf
+  const cX={datum:margin, von:margin+112, bis:margin+205, dauer:margin+298, sig:margin+405};
+  const kopf=()=>{
+    doc.setFont('helvetica','normal');doc.setFontSize(10);
+    doc.text('Datum',cX.datum,y); doc.text('Von',cX.von,y); doc.text('Bis',cX.bis,y); doc.text('Dauer',cX.dauer,y); doc.text('Unterschrift Kunde',cX.sig,y);
+    y+=6; doc.setDrawColor(0); doc.line(margin,y,pageW-margin,y); y+=20;
+  };
+  kopf();
+  let gesamt=0;
   (opts.rows||[]).forEach(r=>{
-    const kost=(r.stunden||0)*(r.preis||0); sumStd+=r.stunden||0; sumKost+=kost;
-    doc.setDrawColor(210);doc.line(margin,y+4,pageW-margin,y+4);
-    doc.text(String(r.date||''),cols[0]+2,y);
-    const lz=doc.splitTextToSize(String(r.leistung||''),cols[2]-cols[1]-6);
-    doc.text(lz,cols[1]+2,y);
-    doc.text(String((r.stunden||0).toFixed(2)).replace('.',','),cols[2]+2,y);
-    doc.text(String((r.preis||0).toFixed(2)).replace('.',','),cols[3]+2,y);
-    doc.text(String(kost.toFixed(2)).replace('.',','),cols[4]+2,y);
-    y+=Math.max(16,lz.length*12);
+    if(y>pageH-110){ doc.addPage(); y=88; kopf(); }
+    const mins=Number(r.mins)||0; gesamt+=mins;
+    doc.setFont('helvetica','normal');doc.setFontSize(10);
+    doc.text(fmtDate(r.date||''),cX.datum,y);
+    doc.text(String(r.von||'-'),cX.von,y);
+    doc.text(String(r.bis||'-'),cX.bis,y);
+    doc.text(minsToHHMM(mins),cX.dauer,y);
+    if(r.signature){ try{ pdfSafeSignature(doc,r.signature,cX.sig,y-11,72,16); }catch(e){} }
+    y+=8; doc.setDrawColor(0); doc.line(margin,y,pageW-margin,y); y+=20;
   });
-  // Summen
-  doc.setDrawColor(120);doc.line(margin,y+2,pageW-margin,y+2); y+=16;
-  doc.setFont('helvetica','bold');
-  doc.text('Anzahl Stunden GESAMT:',cols[1]+2,y); doc.text(String(sumStd.toFixed(2)).replace('.',','),cols[2]+2,y);
-  doc.text('Kosten GESAMT:',cols[3]-40,y); doc.text(String(sumKost.toFixed(2)).replace('.',',')+' €',cols[4]+2,y);
-  y+=28;
-  // Bestätigungstext
-  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('Bestätigung und ggf. Abtretungserklärung:',margin,y); y+=16;
-  doc.setFont('helvetica','normal');doc.setFontSize(9.5);
-  const bt=doc.splitTextToSize('Ich habe die dokumentierten Leistungen in Anspruch genommen und bestätige die Art und die Menge der erbrachten Leistungen. Ich trete die Ansprüche gegen meine Pflegekasse an den genannten Angebotsträger ab und beauftrage die Pflegekasse, die mir zustehenden Leistungen nach § 45b SGB XI für den o. g. Zeitraum an den im Leistungsnachweis genannten Angebotsträger auszuzahlen.',pageW-margin*2);
-  doc.text(bt,margin,y); y+=bt.length*12+24;
-  // Ort/Datum + Unterschrift
-  doc.text((opts.ort||'')+', '+(opts.date||todayISO()),margin,y);
-  if(opts.signature){ pdfSafeSignature(doc,opts.signature,pageW-margin-180,y-30,170,55); }
-  doc.setDrawColor(120);
-  doc.line(margin,y+8,margin+200,y+8);
-  doc.line(pageW-margin-200,y+8,pageW-margin,y+8);
-  doc.setFontSize(9);doc.setTextColor(90);
-  doc.text('Ort, Datum',margin,y+20);
-  doc.text('Unterschrift der/des Versicherten',pageW-margin-200,y+20);
-  y+=40; doc.setTextColor(0);doc.setFontSize(8.5);
-  const hint=doc.splitTextToSize('Hinweis: Eine Abrechnungseinheit (1 E) entspricht einer Leistungsdauer von 45 Minuten; die Abrechnung erfolgt ausschließlich auf Basis dieser Einheiten. Angefangene Einheiten werden entsprechend der tatsächlich erbrachten Leistungszeit berücksichtigt.',pageW-margin*2);
-  doc.setTextColor(110);doc.text(hint,margin,y);
+  y+=14;
+  doc.setFontSize(10);
+  doc.text('Gesamtzeit:',margin,y);
+  doc.text(minsToHHMM(gesamt),cX.von,y);
   return doc;
 }
 
@@ -8045,27 +8081,24 @@ function buildLNRowsForCustomer(customerId){
   });
   return rows;
 }
+/* Monats-Leistungsnachweis (Vorlage S.3): sammelt alle unterschriebenen
+   Einsätze eines Monats auf EINEM Blatt – jede Zeile trägt die beim Einsatz
+   geleistete Original-Unterschrift des Kunden. Genommen wird der neueste
+   Monat mit Einträgen (typisch: der laufende Abrechnungsmonat). */
 function startLeistungsnachweis(customerId){
   const cu=custById(customerId); if(!cu){toast('Kunde nicht gefunden',true);return;}
-  const rows=buildLNRowsForCustomer(customerId);
-  if(!rows.length){ toast('Für diesen Kunden sind noch keine Einsätze erfasst',true); return; }
-  openSignatureModal(
-    'Leistungsnachweis – '+fullName(cu),
-    'Name und Versichertennummer werden übernommen, die Einsätze sind automatisch eingetragen. Bitte vom Kunden unterschreiben lassen.',
-    function(sig){
-      const date=todayISO();
-      const doc=buildLeistungsnachweisPdf({
-        name:fullName(cu),
-        versNr:(cu.intern&&cu.intern.kvNr)||cu.kvNr||'',
-        rows:rows, signature:sig,
-        ort:(cu.city||cu.area||''), date:date
-      });
-      if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
-      cu.lnLast={date:date, signature:sig};
-      toast('Leistungsnachweis erstellt & unterschrieben');
-      if(currentRole==='admin') renderAdmin('customers');
-    }
-  );
+  const alle=(cu.leistungsnachweise||[]).slice();
+  // Fallback: auch unterschriebene Stundenzettel zählen (Altbestand vor der Umstellung)
+  timesheets.filter(t=>t.customerId===customerId&&t.signature&&!alle.some(l=>l.date===t.date&&(l.von||'')===(t.start||'')))
+    .forEach(t=>alle.push({date:t.date, von:t.start, bis:t.end, mins:tsMinutes(t), signature:t.signature}));
+  if(!alle.length){ toast('Für diesen Kunden sind noch keine unterschriebenen Einsätze erfasst',true); return; }
+  const monat=alle.map(l=>String(l.date||'').slice(0,7)).sort().pop();
+  const rows=alle.filter(l=>String(l.date||'').slice(0,7)===monat)
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
+    .map(l=>({date:l.date, von:l.von||'', bis:l.bis||'', mins:l.mins, signature:l.signature}));
+  const doc=buildLeistungsnachweisPdf({cu:cu, monat:monat, rows:rows});
+  if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+monat).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+  toast('Leistungsnachweis '+monatLabelDe(monat)+' erstellt ('+rows.length+' Einsätze)');
 }
 
 /* ============================================================
@@ -9633,7 +9666,7 @@ function buildRechnungAttachments(re, cu){
     const t=re.stundenzettelId?timesheets.find(x=>x.id===re.stundenzettelId):null;
     if(t&&cu){
       const mins=tsMinutes(t);
-      const ln=buildLeistungsnachweisPdf({name:fullName(cu), versNr:(cu.intern&&cu.intern.kvNr)||cu.kvNr||'', rows:[{date:fmtDate(t.date), leistung:t.task||'Betreuung', stunden:mins/60, preis:STUNDENSATZ}], signature:t.signature, ort:(cu.city||cu.area||''), date:t.date});
+      const ln=buildLeistungsnachweisPdf({cu:cu, monat:String(t.date||'').slice(0,7), rows:[{date:t.date, von:t.start, bis:t.end, mins:mins, signature:t.signature}]});
       const b=ln&&pdfToBase64(ln); if(b) atts.push({filename:('Leistungsnachweis_'+re.nummer).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf', content:b});
     }
   }catch(e){ console.warn('LN-PDF',e); }
