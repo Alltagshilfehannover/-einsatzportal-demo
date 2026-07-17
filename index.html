@@ -1276,8 +1276,9 @@ function pdfSafeSignature(doc, dataUrl, x, y, w, h){
     const s=String(dataUrl||'');
     if(!/^data:image\/(png|jpeg|webp);base64,/.test(s)) return false;
     const body=s.split(',')[1]||'';
-    if(body.length<400) return false; // zu klein → potenziell degeneriert, überspringen
-    doc.addImage(s,'PNG',x,y,w,h);
+    if(body.length<150) return false; // nur wirklich leere Daten überspringen – auch kurze Unterschriften einbetten
+    const fmt=/^data:image\/jpeg/.test(s)?'JPEG':/^data:image\/webp/.test(s)?'WEBP':'PNG';
+    doc.addImage(s,fmt,x,y,w,h);
     return true;
   }catch(e){ return false; }
 }
@@ -7030,11 +7031,8 @@ function signTermin(){
       const ts={id:nextTsId++, staffId:myId, customerId:t.cid, date:date, start:t.start, end:t.end, task:t.task, status:'offen', proof:true, signature:sig, signedAt:date, hasAbtretung:true};
       timesheets.push(ts);
       if(CLOUD){ cloudInsert('stundenzettel',{mitarbeiter_id:myId,customer_id:t.cid,date:date,start:t.start,ende:t.end,task:t.task,status:'offen',proof:true,signature:sig,signed_at:date,standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
-      // 2) Leistungsnachweis-PDF erzeugen (Monatsblatt, eine Zeile = dieser Einsatz)
-      const doc=buildLeistungsnachweisPdf({
-        cu:cu, monat:String(date).slice(0,7),
-        rows:[{date:date, von:t.start, bis:t.end, mins:t.mins, signature:sig}]
-      });
+      // 2) Zeile für das Leistungsnachweis-PDF (Monatsblatt, eine Zeile = dieser Einsatz)
+      const lnRows=[{date:date, von:t.start, bis:t.end, mins:t.mins, signature:sig}];
       // 3) Leistungsnachweis am Kunden hinterlegen (Kunden-Ordner)
       cu.leistungsnachweise=cu.leistungsnachweise||[];
       cu.leistungsnachweise.push({date:date, task:t.task, mins:t.mins, von:t.start, bis:t.end, signature:sig, staffId:myId});
@@ -7043,19 +7041,21 @@ function signTermin(){
       if(CLOUD){ cloudInsertAuto('leistungsnachweise',{customer_id:cu.id, mitarbeiter_id:myId, datum:date, task:t.task, mins:t.mins, von:t.start, bis:t.end, signature:sig, standort_id:currentStandortId}); }
       // Abtretungserklärung NUR bei gesetzlich Versicherten (Abrechnung über die
       // Pflegekasse). Privat/Beihilfe bzw. private Termine: KEINE Abtretung.
-      if(cu.insuranceType==='gesetzlich'){
+      const istGesetzlich=(cu.insuranceType==='gesetzlich');
+      if(istGesetzlich){
         cu.abtretung={date:date, signature:sig};
         if(CLOUD){ cloudInsertAuto('abtretungen',{customer_id:cu.id, signed_date:date, signature:sig, standort_id:currentStandortId}); }
-        const abDoc=buildAbtretungPdf(cu, sig, date);
-        if(abDoc) abDoc.save(('Abtretungserklaerung_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
       }
-      // 4) Leistungsnachweis-PDF zum Download anbieten
-      if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
-      // 5) Termin als erledigt entfernen (lokal + Datenbank)
+      // 4) Termin als erledigt entfernen (lokal + Datenbank)
       if(t.apptId){ appointments=appointments.filter(a=>a.id!==t.apptId); if(CLOUD) cloudDelete('termine',t.apptId); }
       window.__termin=null;
-      toast('Einsatz abgeschlossen – Leistungsnachweis erstellt');
+      toast('Einsatz abgeschlossen'+(istGesetzlich?' – Leistungsnachweis & Abtretung erstellt':' – Leistungsnachweis erstellt'));
       renderStaff('hours');
+      // 5) Dokumente zum Download anbieten (je Knopf ein Download – Browser
+      //    blockieren mehrere automatische Downloads hintereinander)
+      const dlItems=[{label:'⬇ Leistungsnachweis (PDF)', make:()=>({doc:buildLeistungsnachweisPdf({cu:cu, monat:String(date).slice(0,7), rows:lnRows}), name:('Leistungsnachweis_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf'})}];
+      if(istGesetzlich) dlItems.push({label:'⬇ Abtretungserklärung (PDF)', make:()=>({doc:buildAbtretungPdf(cu, sig, date), name:('Abtretungserklaerung_'+fullName(cu)+'_'+date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf'})});
+      dokumenteDialog('Einsatz abgeschlossen – Dokumente','Der Einsatz ist erfasst. Bitte die Dokumente einzeln herunterladen:',dlItems);
     }
   );
 }
@@ -7603,6 +7603,29 @@ function pdfLogoZentriert(doc,pageW,y){
   if(!__pdfLogo) return y+8;
   try{ const w=40, h=Math.max(12,Math.round(w*__pdfLogo.h/__pdfLogo.w)); doc.addImage(__pdfLogo.data,'PNG',(pageW-w)/2,y,w,h); return y+h+14; }catch(e){ return y+8; }
 }
+/* Dokumenten-Dialog nach einem Abschluss (Einsatz/Beratung): Browser blockieren
+   mehrere automatische Downloads hintereinander (nur der erste kommt an).
+   Deshalb bekommt jedes Dokument einen eigenen Knopf – jeder Klick zählt als
+   Nutzeraktion und lädt zuverlässig. items: [{label, make:()=>({doc,name})}] */
+let __docDlItems=null;
+function dokumenteDialog(titel, hinweis, items){
+  __docDlItems=items||[];
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent=titel;
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin-bottom:14px">'+(hinweis||'Folgende Dokumente wurden erstellt – bitte einzeln herunterladen:')+'</p>'+
+    __docDlItems.map((it,i)=>'<button class="btn-primary" style="width:100%;margin-bottom:9px;padding:12px" onclick="docDlRun('+i+',this)">'+it.label+'</button>').join('');
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="__docDlItems=null;closeModal()">Fertig</button>';
+  openModal();
+}
+function docDlRun(i,btn){
+  const it=__docDlItems&&__docDlItems[i]; if(!it) return;
+  try{
+    const r=it.make();
+    if(r&&r.doc){ r.doc.save(r.name); if(btn){ btn.textContent='✓ '+it.label.replace(/^⬇\s*/,'')+' – heruntergeladen'; btn.style.background='var(--good)'; } }
+    else toast('Dokument konnte nicht erstellt werden',true);
+  }catch(e){ toast('Fehler beim Erstellen: '+(e&&e.message||e),true); }
+}
 // Gemeinsamer Kundendaten-Block (Vorlage S.2/S.3): Label-Spalte + Werte
 function pdfKundenFelder(doc, cu, margin, y){
   const it=cu.intern||{};
@@ -8029,14 +8052,15 @@ function saveBeratung(cu, sig){
   const auf=aufgaben.find(a=>a.customerId===cu.id&&/^Erstberatung/.test(a.title||'')&&a.status!=='erledigt');
   if(auf){ auf.status='erledigt'; if(CLOUD&&auf.id) cloudUpdate('aufgaben',auf.id,{status:'erledigt'}); }
   logActivity('Erstberatung mit Unterschriftsprobe: '+fullName(cu));
-  const doc=buildBeratungsvertragPdf(cu, sig, datum);
-  if(doc) doc.save(('Beratungsvereinbarung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
-  // Beratungsprotokoll (alle Punkte + Antworten) als eigenes PDF mit ausgeben
-  const proto=buildBeratungsprotokollPdf(cu);
-  if(proto) proto.save(('Beratungsprotokoll_'+fullName(cu)+'_'+datum).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
   window.__beratungCtx=null;
-  toast(mid?'Beratung abgeschlossen – als Termin & Stundenzettel erfasst, PDF wird heruntergeladen':'Beratung abgeschlossen – Vereinbarung gespeichert, PDF wird heruntergeladen');
+  toast(mid?'Beratung abgeschlossen – als Termin & Stundenzettel erfasst':'Beratung abgeschlossen – Vereinbarung gespeichert');
   if(currentRole==='staff') renderStaff('aufgaben');
+  // Dokumente über den Download-Dialog anbieten (je Knopf ein Download –
+  // Browser blockieren mehrere automatische Downloads hintereinander)
+  dokumenteDialog('Beratung abgeschlossen – Dokumente','Die Erstberatung ist gespeichert. Bitte die Dokumente einzeln herunterladen:',[
+    {label:'⬇ Beratungsvereinbarung (PDF)', make:()=>({doc:buildBeratungsvertragPdf(cu, sig, datum), name:('Beratungsvereinbarung_'+fullName(cu)).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf'})},
+    {label:'⬇ Beratungsprotokoll (PDF)', make:()=>({doc:buildBeratungsprotokollPdf(cu), name:('Beratungsprotokoll_'+fullName(cu)+'_'+datum).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf'})}
+  ]);
 }
 function buildBeratungsvertragPdf(cu, sig, datum){
   if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return null; }
