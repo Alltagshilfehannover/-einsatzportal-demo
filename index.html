@@ -307,6 +307,17 @@
   .check{padding:8px 13px;border:1.5px solid var(--line);border-radius:20px;font-size:13.5px;font-weight:500;color:var(--muted);user-select:none;cursor:pointer}
   .check.on{background:var(--petrol-soft);border-color:var(--petrol);color:var(--petrol-dark)}
   .section-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--petrol);margin:20px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  /* Schreibgeschützte Detail-Ansicht (Kunde/Mitarbeiter) */
+  .pv-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:2px 16px;margin-bottom:6px}
+  .pv-row{display:flex;justify-content:space-between;gap:18px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .pv-row:last-child{border-bottom:none}
+  .pv-k{color:var(--muted);font-size:13px;flex:0 0 auto;max-width:46%;line-height:1.35}
+  .pv-v{text-align:right;font-weight:500;font-size:14px;line-height:1.4;word-break:break-word}
+  .pv-status{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-left:5px solid #9aa3ab;border-radius:12px;padding:13px 16px;margin-bottom:14px}
+  .pv-status-green{border-left-color:#16a34a}
+  .pv-status-amber{border-left-color:#d97706}
+  .pv-status-grey{border-left-color:#9aa3ab}
+  .pv-held{background:var(--amber-soft,#fdf3e3);border:1px solid #f0dcc2;border-radius:12px;padding:12px 15px;margin-bottom:14px;font-size:13.5px}
   .modal-bg{position:fixed;inset:0;background:rgba(20,35,36,.45);display:none;align-items:center;justify-content:center;z-index:150;padding:20px}
   .modal-bg.show{display:flex}
   .modal{background:var(--card);border-radius:16px;width:100%;max-width:560px;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
@@ -2243,6 +2254,9 @@ const DEFAULT_EMAIL_TEMPLATES=[
   {key:'neuer_kunde', name:'Neuer Auftrag – Mitarbeiter-Info',
    betreff:'Neuer Auftrag verfügbar in {gebiet}',
    text:'Hallo {vorname},\n\nes ist ein neuer Auftrag verfügbar:\n{titel} in {gebiet}.\n\nSchau gern in der Daily-Do-App in der Auftragsbörse vorbei und nimm ihn an, wenn er zu dir passt.\n\nViele Grüße\n{firma}'},
+  {key:'zuweisung_ma', name:'Kunde zugewiesen – Mitarbeiter-Info',
+   betreff:'Neuer Kunde für dich: {titel}',
+   text:'Hallo {vorname},\n\ndir wurde ein neuer Kunde zugewiesen:\n{titel} in {gebiet}.\n\nDie Details findest du in der Daily-Do-App unter „Meine Kunden“. Bitte melde dich zeitnah beim Kunden und vereinbare einen Termin.\n\nViele Grüße\n{firma}'},
   {key:'termin', name:'Terminbestätigung / -erinnerung',
    betreff:'Terminbestätigung am {datum}',
    text:'Hallo {name},\n\nhiermit bestätigen wir Ihren Termin am {datum} um {uhrzeit} Uhr.\nSollten Sie den Termin nicht wahrnehmen können, geben Sie uns bitte rechtzeitig Bescheid.\n\nFreundliche Grüße\n{firma}'},
@@ -2835,6 +2849,32 @@ async function notifyStaffNewJob(job, cu){
   }catch(e){ console.warn('notifyStaffNewJob',e); }
 }
 
+// Persönliche Info-Mail NUR an die zugewiesene Person (keine Rundmail an alle).
+async function notifyStaffAssigned(job, cu, m){
+  if(!CLOUD) return;
+  if(!m || !m.email || !isValidEmail(m.email)) return;
+  try{
+    const tpl=getTemplate('zuweisung_ma');
+    const vars={vorname:m.first, name:fullName(m), titel:job.title, gebiet:(cu&&cu.area)||'', firma:firmaName()};
+    const res=await sendEmail({to:m.email, subject:fillTemplate(tpl.betreff,vars), text:fillTemplate(tpl.text,vars), html:textToHtml(fillTemplate(tpl.text,vars))}, true);
+    if(res.ok){ toast('Info-Mail an '+fullName(m)+' gesendet'); logEmail('zuweisung_ma', fillTemplate(tpl.betreff,vars), m.email, 1, 'gesendet'); }
+  }catch(e){ console.warn('notifyStaffAssigned',e); }
+}
+
+// Zurückgehaltenen Auftrag nachträglich in die Börse freigeben (+ Rundmail).
+function releaseJobToBoard(jobId){
+  if(!requireRoleAction('admin','buero','callcenter')) return;
+  const j=jobs.find(x=>x.id===jobId); if(!j) return;
+  const cu=custById(j.customerId);
+  j.status='available'; j.assignedTo=null; j.commitDeadline=null;
+  if(CLOUD) cloudUpdate('auftraege',j.id,jobToRow(j));
+  logActivity('Auftrag freigegeben: '+j.title);
+  notifyStaffNewJob(j, cu);
+  try{ closeModal(); }catch(e){}
+  toast('Auftrag in die Börse freigegeben – passende Mitarbeiter werden benachrichtigt');
+  renderAdmin((typeof __lastAdminView!=='undefined'&&__lastAdminView)?__lastAdminView:'jobs');
+}
+
 // Vorlagen laden; wenn für diesen Standort noch keine da sind, Standard säen
 async function loadEmailTemplates(){
   try{
@@ -3011,6 +3051,16 @@ function custById(id){return customers.find(c=>c.id===id);}
 /* Automatische Kundennummer: deterministisch aus der Datenbank-ID abgeleitet –
    eindeutig, ohne eigene Zähler-Tabelle, auf allen Geräten identisch. */
 function kdNr(c){ const id=+(c&&c.id!=null?c.id:c)||0; return 'KD-'+String(1000+id); }
+/* ===== Schreibgeschützte Detail-Ansicht: kleine Bausteine =====
+   pvRow = eine Label/Wert-Zeile · pvSection = Kategorie-Karte · ddAge = Alter aus ISO-Datum */
+function pvEsc(v){ return (v==null?'':String(v)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function ddAge(iso){ if(!iso) return ''; const b=new Date(iso); if(isNaN(b.getTime())) return ''; const t=new Date(); let a=t.getFullYear()-b.getFullYear(); const m=t.getMonth()-b.getMonth(); if(m<0||(m===0&&t.getDate()<b.getDate())) a--; return (a>=0&&a<130)?a:''; }
+function pvRow(label, value, raw){
+  const empty=(value==null||value===''||value==='—');
+  const v=empty?'<span style="color:var(--muted)">–</span>':(raw?value:pvEsc(value));
+  return '<div class="pv-row"><span class="pv-k">'+pvEsc(label)+'</span><span class="pv-v">'+v+'</span></div>';
+}
+function pvSection(title, rowsHtml){ return rowsHtml?('<div class="section-label">'+title+'</div><div class="pv-card">'+rowsHtml+'</div>'):''; }
 function availableForMe(){return jobs.filter(j=>j.status==='available'&&!j.rejectedBy.includes(myId));}
 function freqText(c){return c.freqUnit==='nach Bedarf'?'nach Bedarf':(c.freqNum+'× '+c.freqUnit);}
 
@@ -4064,12 +4114,13 @@ function renderAdmin(view){
   }
 
   if(view==='jobs'){
-    c.innerHTML=head('Aufträge','Freigegebene Aufträge, wer angenommen hat und wer abgelehnt hat. Klick auf eine Zeile für die Kunden-Zusammenfassung.')+
+    c.innerHTML=head('Aufträge','Freigegebene und zurückgehaltene Aufträge, wer angenommen bzw. abgelehnt hat. „Nicht freigegeben“ = liegt noch nicht in der Börse. Klick auf eine Zeile für die Kunden-Zusammenfassung.')+
     '<div class="panel"><div class="panel-body" style="padding-top:16px"><table>'+
       '<thead><tr><th>Auftrag</th><th>Gebiet</th><th>Status</th><th>Angenommen von</th><th>Abgelehnt von</th></tr></thead><tbody>'+
       jobs.map(j=>{const cu=custById(j.customerId);return '<tr class="clickable" onclick="showJobSummary('+j.id+')"><td><b>'+j.title+'</b><div style="color:var(--muted);font-size:12.5px">'+(cu?freqText(cu):'')+'</div></td>'+
         '<td>'+(cu?cu.area:'—')+'</td><td>'+jobStatusTag(j)+'</td>'+
-        '<td>'+(j.status==='assigned'?'<b>'+staffName(j.assignedTo)+'</b>':'<span style="color:var(--muted)">noch frei</span>')+
+        '<td>'+(j.status==='assigned'?'<b>'+staffName(j.assignedTo)+'</b>':(j.status==='entwurf'?'<span style="color:var(--muted)">zurückgehalten</span>':'<span style="color:var(--muted)">noch frei</span>'))+
+          (j.status==='entwurf'?' <button class="btn-primary btn-sm" style="width:auto" title="In die Auftragsbörse freigeben und passende Mitarbeiter benachrichtigen" onclick="event.stopPropagation();releaseJobToBoard('+j.id+')">Freigeben</button>':'')+
           ' <button class="btn-ghost btn-sm" style="width:auto" title="Kunden manuell einem Mitarbeiter zuweisen" onclick="event.stopPropagation();assignCustomerDlg('+j.customerId+')">👤 Zuweisen</button></td>'+
         '<td>'+(j.rejectedBy.length?j.rejectedBy.map(id=>'<span class="reject-chip">✕ '+staffName(id)+'</span>').join(''):'<span style="color:var(--muted)">—</span>')+'</td></tr>';}).join('')+
       '</tbody></table></div></div>';
@@ -4602,7 +4653,84 @@ function showJobSummary(jobId){
 let editingStaffId=null;
 function addStaff(){ openStaffModal(null); }
 function editStaff(id){ openStaffModal(id); }
+/* Mitarbeiter ÖFFNEN = schreibgeschützte, kategorisierte Ansicht. Neu/Bearbeiten → editStaffForm. */
 function openStaffModal(id){
+  if(id==null || !staff.find(x=>x.id===id)){ editStaffForm(id); return; }
+  editingStaffId=id;
+  const s=staff.find(x=>x.id===id);
+  const canEdit=hasRole('admin');
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Mitarbeiter · '+fullName(s);
+  document.getElementById('modalBody').innerHTML='<div class="content-form">'+staffProfileHTML(s)+'</div>'+staffDocsHTML(s);
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
+    (canEdit?'<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="editStaffForm('+id+')">✏️ Bearbeiten</button>':'');
+  openModal();
+}
+/* Kategorisierte, schreibgeschützte Mitarbeiter-Ansicht */
+function staffProfileHTML(s){
+  const it=s.intern||{};
+  const stMap={aktiv:['green','Aktiv'],Urlaub:['amber','Urlaub'],krank:['amber','Krank'],inaktiv:['grey','Inaktiv'],'gekündigt':['grey','Gekündigt']};
+  const st=stMap[s.status]||['grey', s.status||'—'];
+  const stdName=(typeof standortNameById==='function')?(standortNameById(s.standortId)||''):'';
+  const extras=(typeof v5ExtrasFor==='function')?v5ExtrasFor(s.id):[];
+  const schulN=(typeof SCHULUNGEN!=='undefined'&&s.schulungen)?SCHULUNGEN.filter(t=>s.schulungen[t.id]).length:null;
+
+  // 1 – Persönliche Daten
+  const s1=pvRow('Name', fullName(s))
+    + pvRow('Geburtsdatum', it.birth)
+    + pvRow('Adresse', it.address)
+    + pvRow('Staatsbürgerschaft / Arbeitserlaubnis', it.citizenship);
+  // 2 – Kontaktdaten
+  const s2=pvRow('Telefon', s.phone)+pvRow('E-Mail', s.email);
+  // 3 – Einsatz & Qualifikation
+  const s3=pvRow('Funktion', s.role)
+    + pvRow('Fähigkeiten', (s.skills||[]).join(', '))
+    + pvRow('Standort', stdName)
+    + pvRow('Gebiet', s.area)
+    + pvRow('Wochenstunden (max.)', (s.maxHours!=null&&s.maxHours!=='')?(s.maxHours+' h'):'')
+    + pvRow('Zeitfenster', s.window)
+    + ((schulN!=null)?pvRow('Pflichtschulungen', schulN+' / '+SCHULUNGEN.length+(schulN>=SCHULUNGEN.length?' ✓':' offen')):'')
+    + (extras.length?pvRow('Ausstattung (mtl. Kosten)', extras.map(e=>pvEsc(e.name)+' <span style="color:var(--muted)">('+pvEsc(String(e.betrag))+' €/Monat)</span>').join('<br>'), true):'');
+  // 4 – Beschäftigung & Abrechnung
+  const s4=pvRow('Anstellungsart', it.employment)
+    + pvRow('Steuer-ID', it.taxId)
+    + pvRow('Steuerklasse', it.taxClass)
+    + pvRow('KV-Nummer', it.kvNr)
+    + pvRow('Krankenkasse', it.kasse)
+    + pvRow('IBAN', it.iban);
+  // 5 – Zugang
+  const s5=pvRow('Login', s.hasLogin?('Aktiv · '+(s.login||s.email||'')):'Kein Login');
+
+  return '<div class="pv-status pv-status-'+st[0]+'">'+
+      '<div><div style="font-size:11px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase">Status</div>'+
+      '<div style="font-size:19px;font-weight:700;margin-top:2px">'+pvEsc(fullName(s))+'</div>'+
+      '<div style="font-size:12.5px;color:var(--muted);margin-top:1px">'+pvEsc(s.role||'')+(s.hasLogin?' · Login aktiv':' · kein Login')+'</div></div>'+
+      '<span class="tag '+st[0]+'" style="font-size:13px;padding:6px 12px">'+st[1]+'</span>'+
+    '</div>'+
+    pvSection('Persönliche Daten', s1)+
+    pvSection('Kontaktdaten', s2)+
+    pvSection('Einsatz &amp; Qualifikation', s3)+
+    pvSection('Beschäftigung &amp; Abrechnung', s4)+
+    pvSection('Zugang', s5);
+}
+/* Dokumente/Verträge des Mitarbeiters – zum Anschauen & Herunterladen (Ansicht) */
+function staffDocsHTML(s){
+  const id=s.id; let h='';
+  if(s.contracts && s.contracts.length){
+    h+='<div class="section-label">Unterschriebene Verträge</div>'+
+      s.contracts.map((ct,i)=>'<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📄 '+ct.name+'</b><div class="li-sub">'+(ct.signedDate?'Unterschrieben am '+fmtDate(ct.signedDate):'')+'</div></div><div style="display:flex;gap:7px;align-items:center">'+(ct.signature?'<img src="'+ct.signature+'" style="height:38px;border:1px solid var(--line);border-radius:6px;background:#fff">':'')+'<button class="btn-ghost btn-sm" onclick="viewContract(\''+ct.name+'\','+id+','+i+')">Lesen</button><button class="btn-primary btn-sm" style="width:auto" onclick="downloadStaffContract('+id+','+i+')">⬇ PDF</button></div></div>').join('');
+  }
+  h+='<div class="section-label">Personalfragebogen</div>'+
+    '<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>📋 Personalfragebogen (DATEV)</b><div class="li-sub">Automatisch aus den Stammdaten erzeugt</div></div><div style="display:flex;gap:7px;align-items:center"><button class="btn-primary btn-sm" style="width:auto" onclick="downloadPersonalfragebogen('+id+')">⬇ PDF</button></div></div>';
+  if(s.docImages && (s.docImages.idFront||s.docImages.idBack||s.docImages.selfie||s.docImages.enrollment)){
+    h+='<div class="section-label">Eingereichte Dokumente <span style="font-weight:400;color:var(--muted);font-size:12px">(nur intern sichtbar)</span></div>'+
+      [['idFront','Personalausweis – Vorderseite','🪪'],['idBack','Personalausweis – Rückseite','🪪'],['selfie','Selfie','🤳'],['enrollment','Immatrikulationsbescheinigung','🎓']]
+        .filter(([k])=>s.docImages[k])
+        .map(([k,label,ic])=>'<div class="list-row" style="padding:11px 0;border-bottom:1px solid var(--line)"><div class="li-main"><b>'+ic+' '+label+'</b></div><div style="display:flex;gap:7px;align-items:center"><img src="'+s.docImages[k]+'" style="height:40px;border:1px solid var(--line);border-radius:6px;background:#fff" onerror="this.style.display=\'none\'"><button class="btn-ghost btn-sm" style="width:auto" onclick="viewStaffDoc('+id+',\''+k+'\',\''+label.replace(/'/g,'')+'\')">Ansehen</button></div></div>').join('');
+  }
+  return h;
+}
+function editStaffForm(id){
   editingStaffId=id;
   const s=(id!=null?staff.find(x=>x.id===id):null)||{first:'',last:'',role:'Haushaltshilfe',status:'aktiv',skills:[],area:'',phone:'',email:'',maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',intern:{birth:'',address:'',taxId:'',taxClass:'I',kvNr:'',kasse:'',employment:'Minijob',citizenship:'Deutsch',iban:''}};
   const it=s.intern||{};
@@ -4659,7 +4787,7 @@ function openStaffModal(id){
         ? '<p style="font-size:13.5px;color:var(--good);margin-bottom:12px">✓ Login aktiv: <b>'+(s.login||s.email)+'</b></p><label>Passwort zurücksetzen</label><input id="es_pass" type="password" placeholder="Neues Passwort (optional)">'
         : '<p style="font-size:13.5px;color:var(--muted);margin-bottom:12px">Noch kein Login. Hier erstellen und an den Mitarbeiter senden.</p><div class="form-row"><div><label>Login (E-Mail)</label><input id="es_login" value="'+s.email+'"></div><div><label>Startpasswort</label><input id="es_pass" type="text" placeholder="z. B. Start2026!"></div></div>')+
     '</div>';
-  let foot='<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>';
+  let foot='<button class="btn-ghost" onclick="'+(id!==null?'openStaffModal('+id+')':'closeModal()')+'">Abbrechen</button>';
   if(id!==null && !s.hasLogin) foot+='<button class="btn-primary" style="width:auto;padding:11px 18px;background:var(--blue)" onclick="createLogin('+id+')">🔑 Login erstellen & senden</button>';
   foot+='<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="saveStaff()">Speichern</button>';
   document.getElementById('modalFoot').innerHTML=foot;
@@ -4786,6 +4914,78 @@ function createLogin(id){
 /* Auswahllisten für die Auswertungs-Felder (Dashboard: Lead-Quellen & Kündigungsgründe) */
 const LEAD_QUELLEN=['Empfehlung','Pflegestützpunkt','Krankenkasse','Arzt/Klinik','Google/Internet','Flyer/Zeitung','Social Media','Sonstiges'];
 const ENDE_GRUENDE=['Verstorben','Umzug ins Pflegeheim','Umzug (anderer Ort)','Zu Wettbewerber gewechselt','Unzufrieden mit Leistung','Preis','Bedarf entfallen','Sonstiges'];
+/* Schreibgeschützte, kategorisierte Kunden-Ansicht (Öffnen zeigt DAS, Bearbeiten erst per Knopf) */
+function customerProfileHTML(c){
+  const it=c.intern||{};
+  const stMap={aktiv:['green','Aktiv'],pausiert:['grey','Inaktiv (pausiert)'],Interessent:['amber','Interessent'],beendet:['grey','Beendet']};
+  const st=stMap[c.status]||['amber', c.status||'—'];
+  const insLabel={gesetzlich:'Gesetzlich versichert',privat:'Privat versichert',beihilfe:'Beihilfeberechtigt'}[c.insuranceType]||c.insuranceType||'';
+  const kt=(c.kostentraegerId!=null)?((kostentraeger.find(k=>k.id===c.kostentraegerId)||{}).name||''):'';
+  const alter=ddAge(c.birth);
+
+  // 1 – Persönliche Daten
+  const s1=pvRow('Name', fullName(c))
+    + pvRow('Adresse', c.address)
+    + pvRow('Gebiet / Stadtteil', c.area)
+    + pvRow('Geburtsdatum', c.birth?(fmtDate(c.birth)+(alter!==''?' · '+alter+' Jahre':'')):'');
+
+  // 2 – Kontaktdaten
+  let s2=pvRow('E-Mail', c.email)
+    + pvRow('Telefon (mobil)', c.phoneMobile)
+    + pvRow('Telefon (Festnetz)', c.phoneLandline)
+    + pvRow('Kontaktperson', c.noContact?'Keine Kontaktperson':(((c.contactName||'')+(c.contactPhone?' · '+c.contactPhone:'')).trim()));
+  if((c.angehoerige||[]).length){
+    const list=c.angehoerige.map(a=>pvEsc(a.name)+' <span style="color:var(--muted)">('+pvEsc(a.beziehung||'')+(a.telefon?', '+pvEsc(a.telefon):'')+(a.bevollmaechtigt?', bevollmächtigt':'')+')</span>').join('<br>');
+    s2+=pvRow('Weitere Angehörige', list, true);
+  }
+
+  // 3 – Pflege & Versicherung
+  let s3=pvRow('Pflegegrad', c.pgrad?('Pflegegrad '+c.pgrad):'')
+    + pvRow('Versicherungsart', insLabel);
+  if(c.insuranceType==='beihilfe') s3+=pvRow('Beihilfe-Anteil', c.beihilfePct?(c.beihilfePct+' %'):'');
+  if(c.insuranceType!=='privat'){ s3+=pvRow('KV-Nummer', it.kvNr)+pvRow('Krankenkasse', it.kasse); }
+  s3+=pvRow('Kostenträger', kt||'Privat (Rechnung an Kunden)')
+    + pvRow('§45b-Budget', it.budget)
+    + (it.budgetUsed?pvRow('Davon genutzt', it.budgetUsed):'');
+
+  // 4 – Leistungen & Einsatz
+  const leistRows=(c.leistungen||[]).length
+    ? c.leistungen.map(l=>pvEsc(l.name)+' <span style="color:var(--muted)">– '+pvEsc(String(l.preis))+' € / '+pvEsc(l.einheit||'')+'</span>').join('<br>') : '';
+  const s4=pvRow('Benötigte Leistungen', (c.need||[]).join(', '))
+    + pvRow('Häufigkeit', freqText(c))
+    + pvRow('Zeitfenster', (c.timeWindows||[]).join(', ')||c.window)
+    + (leistRows?pvRow('Abgerechnete Leistungen', leistRows, true):'')
+    + ((c.pauschale&&c.pauschale.aktiv)?pvRow('Pauschale je Einsatz', pvEsc(String(c.pauschale.betrag))+' €'+(c.pauschale.leistung?' <span style="color:var(--muted)">('+pvEsc(c.pauschale.leistung)+')</span>':''), true):'')
+    + pvRow('Haustiere', (c.pets||[]).join(', '))
+    + (c.petNote?pvRow('Hinweise Tiere/Allergien', c.petNote):'')
+    + pvRow('Hinweise', c.noNotes?'Keine Hinweise':c.notes);
+
+  // 5 – Marketing & Kundenzeitraum
+  let s5=pvRow('Wie auf uns gekommen', c.leadQuelle)
+    + pvRow('Kunde seit', c.startDatum?fmtDate(c.startDatum):'');
+  if(c.status==='beendet') s5+=pvRow('Beendet am', c.endeDatum?fmtDate(c.endeDatum):'')+pvRow('Beendigungsgrund', c.endeGrund);
+
+  // Hinweis-Banner, falls der Auftrag noch zurückgehalten ist (nicht in der Börse)
+  const heldJob=jobs.find(j=>j.customerId===c.id && j.status==='entwurf');
+  const heldBanner=(heldJob && hasRole('admin','buero','callcenter'))
+    ? '<div class="pv-held">⏸ <b>Auftrag noch nicht freigegeben</b> – liegt nicht in der Börse, es wurde niemand benachrichtigt.'
+      + '<div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn-primary btn-sm" style="width:auto" onclick="releaseJobToBoard('+heldJob.id+')">In die Börse freigeben</button>'
+      + '<button class="btn-ghost btn-sm" style="width:auto" onclick="assignCustomerDlg('+c.id+')">👤 Direkt zuweisen</button></div></div>'
+    : '';
+
+  return '<div class="pv-status pv-status-'+st[0]+'">'+
+      '<div><div style="font-size:11px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase">Status</div>'+
+      '<div style="font-size:19px;font-weight:700;margin-top:2px">'+pvEsc(fullName(c))+'</div>'+
+      '<div style="font-size:12.5px;color:var(--muted);margin-top:1px">'+kdNr(c)+(c.area?' · '+pvEsc(c.area):'')+'</div></div>'+
+      '<span class="tag '+st[0]+'" style="font-size:13px;padding:6px 12px">'+st[1]+'</span>'+
+    '</div>'+
+    heldBanner+
+    pvSection('Persönliche Daten', s1)+
+    pvSection('Kontaktdaten', s2)+
+    pvSection('Pflege &amp; Versicherung', s3)+
+    pvSection('Leistungen &amp; Einsatz', s4)+
+    pvSection('Marketing &amp; Kundenzeitraum', s5);
+}
 function customerFormHTML(c){
   const isNew=!c;
   c=c||{first:'',last:'',area:'',street:'',houseNo:'',plz:'',city:'',phoneMobile:'',phoneLandline:'',need:[],freqNum:1,freqUnit:'pro Woche',timeWindows:[],pets:[],pgrad:'1',contactName:'',contactPhone:'',noContact:false,noNotes:false,notes:'',insuranceType:'gesetzlich',beihilfePct:'',intern:{kvNr:'',kasse:'',budget:'',budgetUsed:''}};
@@ -4886,7 +5086,15 @@ function customerFormHTML(c){
     v5PauschaleEditorHTML(c)+
 
     (isNew
-      ? '<button class="btn-primary" style="width:auto;padding:12px 24px;margin-top:8px" onclick="createCustomer()">Anlegen & als Auftrag freigeben</button>'
+      ? '<div class="section-label">Auftrag &amp; Benachrichtigung</div>'+
+        '<div class="confirm-box" style="background:var(--petrol-soft);border-color:var(--line);margin-bottom:12px" onclick="var b=document.getElementById(\'nc_release\');b.checked=!b.checked">'+
+        '<input type="checkbox" id="nc_release" checked onclick="event.stopPropagation()">'+
+        '<label><b>Auftrag sofort in die Börse freigeben</b> und passende Mitarbeiter benachrichtigen.'+
+        '<br><span style="font-weight:400;color:var(--muted);font-size:12.5px">Haken entfernen = Auftrag wird zurückgehalten (nicht in der Börse, keine E-Mail). Du gibst ihn später frei oder weist ihn direkt einer Person zu.</span></label></div>'
+      : '')+
+
+    (isNew
+      ? '<button class="btn-primary" style="width:auto;padding:12px 24px;margin-top:8px" onclick="createCustomer()">Anlegen</button>'
       : '<button class="btn-primary" style="width:auto;padding:12px 24px;margin-top:8px" onclick="updateCustomer('+c.id+')">Änderungen speichern</button>')+
   '</div></div>';
 }
@@ -4981,7 +5189,11 @@ function createCustomer(){
   if(!c.birth) missing.push('Geburtsdatum');
   if(!c.need||!c.need.length) missing.push('Leistung');
   if(missing.length){toast('Kunde unvollständig – fehlt: '+missing.join(', '),true);return;}
-  const job={id:nextJobId++,customerId:c.id,title:(c.need[0]||'Neuer Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]};
+  // Checkbox „sofort freigeben“: an → Börse + Rundmail (wie bisher); aus → Auftrag zurückhalten
+  const relEl=document.getElementById('nc_release');
+  const releaseNow = relEl ? relEl.checked : true;
+  const job={id:nextJobId++,customerId:c.id,title:(c.need[0]||'Neuer Einsatz')+' – '+c.last,skills:c.need.slice(),status:releaseNow?'available':'entwurf',assignedTo:null,rejectedBy:[]};
+  const okMsg = releaseNow ? 'Kunde gespeichert & als Auftrag freigegeben' : 'Kunde gespeichert – Auftrag zurückgehalten (noch nicht freigegeben)';
   if(CLOUD){
     (async()=>{
       const cRow=await cloudInsert('kunden',custToRow(c));
@@ -4989,16 +5201,16 @@ function createCustomer(){
         const jRow=await cloudInsert('auftraege',jobToRow(job)); if(jRow)job.id=jRow.id;
       }
       customers.unshift(c);jobs.unshift(job);
-      logActivity('Kunde angelegt: '+fullName(c));
-      toast('Kunde gespeichert & als Auftrag freigegeben');renderAdmin('jobs');
-      notifyStaffNewJob(job, c);
+      logActivity('Kunde angelegt: '+fullName(c)+(releaseNow?'':' (Auftrag zurückgehalten)'));
+      toast(okMsg);renderAdmin('jobs');
+      if(releaseNow) notifyStaffNewJob(job, c);
       saveCustomerExtrasQuiet(c); // Auswertungs-Felder (Lead-Quelle etc.), still
       lexwareAutoSyncCustomer(c); // still, blockiert nichts
     })();
   }else{
     customers.unshift(c);jobs.unshift(job);
-    logActivity('Kunde angelegt: '+fullName(c));
-    toast('Kunde korrekt angelegt & als Auftrag freigegeben');renderAdmin('jobs');
+    logActivity('Kunde angelegt: '+fullName(c)+(releaseNow?'':' (Auftrag zurückgehalten)'));
+    toast(okMsg);renderAdmin('jobs');
   }
 }
 /* Kundenprofil: Termin-Historie (Vergangenheit) */
@@ -5050,12 +5262,9 @@ function custRechnungenBlockHTML(custId){
   if(list.length>15) html+='<p style="color:var(--muted);font-size:12px;padding:6px 0">… und '+(list.length-15)+' weitere unter „Rechnungen“.</p>';
   return html;
 }
-function editCustomer(id){
-  if(!requireRoleAction('admin','buero','callcenter','buchhaltung')) return;
-  const c=custById(id);
-  const readOnly=!hasRole('admin','buero','callcenter');
-  document.getElementById('modalBox').classList.add('wide');
-  document.getElementById('modalTitle').textContent=(readOnly?'Kunde (nur Ansicht)':'Kunde bearbeiten')+' · '+kdNr(c);
+/* Dokumente / Leistungsnachweise / Termine / Rechnungen / Kommunikation –
+   gemeinsamer Unterbau für Ansicht UND Bearbeiten-Modus (nur zum Anschauen/Aktionen). */
+function custLowerBlocksHTML(c){
   let docsHtml='<div class="section-label">📁 Dokumente (Kunden-Ordner)</div>';
   // Abtretung: kein eigenes Dokument mehr – der Abtretungstext steht auf dem Leistungsnachweis (04.07.2026)
   // Beratungsvereinbarung mit Unterschriftsprobe – NUR für Admin sichtbar
@@ -5097,9 +5306,29 @@ function editCustomer(id){
   docsHtml+='<div class="upload-box" style="margin-top:10px" onclick="document.getElementById(\'extFileInput\').click()"><div class="ub-ic">⬆️</div><div class="ub-t">Externes Dokument hochladen</div><div class="ub-s">PDF, JPG oder PNG · z. B. Pflegegrad-Bescheid, Vollmacht</div></div>'+
     '<input type="file" id="extFileInput" accept="application/pdf,image/*" style="display:none" onchange="uploadExtDoc('+c.id+',this)">';
 
-  document.getElementById('modalBody').innerHTML=customerFormHTML(c).replace('<div class="panel"><div class="panel-body content-form" style="padding-top:18px">','<div class="content-form">').replace(/<\/div><\/div>$/,'</div>')+docsHtml+custTermineBlockHTML(c.id)+custRechnungenBlockHTML(c.id)+'<div style="margin-top:18px">'+custKommListHTML(c.id)+'</div>';
+  return docsHtml+custTermineBlockHTML(c.id)+custRechnungenBlockHTML(c.id)+'<div style="margin-top:18px">'+custKommListHTML(c.id)+'</div>';
+}
+/* Kunde ÖFFNEN = schreibgeschützte, kategorisierte Ansicht. Bearbeiten nur über den Knopf. */
+function editCustomer(id){
+  if(!requireRoleAction('admin','buero','callcenter','buchhaltung')) return;
+  const c=custById(id); if(!c) return;
+  const canEdit=hasRole('admin','buero','callcenter');
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Kunde · '+kdNr(c);
+  document.getElementById('modalBody').innerHTML='<div class="content-form">'+customerProfileHTML(c)+'</div>'+custLowerBlocksHTML(c);
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
-    (readOnly?'':'<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="updateCustomer('+c.id+')">Speichern</button>');
+    (canEdit?'<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="editCustomerForm('+c.id+')">✏️ Bearbeiten</button>':'');
+  openModal();
+}
+/* Kunde BEARBEITEN = das bisherige Formular (nur über „Bearbeiten“ erreichbar). */
+function editCustomerForm(id){
+  if(!requireRoleAction('admin','buero','callcenter')) return;
+  const c=custById(id); if(!c) return;
+  document.getElementById('modalBox').classList.add('wide');
+  document.getElementById('modalTitle').textContent='Kunde bearbeiten · '+kdNr(c);
+  document.getElementById('modalBody').innerHTML=customerFormHTML(c).replace('<div class="panel"><div class="panel-body content-form" style="padding-top:18px">','<div class="content-form">').replace(/<\/div><\/div>$/,'</div>')+custLowerBlocksHTML(c);
+  document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="editCustomer('+c.id+')">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="updateCustomer('+c.id+')">Speichern</button>';
   openModal();
 }
 /* Unterschrift zu einem Leistungsnachweis ermitteln: bevorzugt die am LN
@@ -5224,8 +5453,13 @@ function custBulkStatus(status){
       cu.status=status;
       if(CLOUD) cloudUpdate('kunden',id,{status:status});
       if(aktiv){
+        // Zurückgehaltenen (entwurf) Auftrag jetzt in die Börse geben, statt einen zweiten anzulegen
+        const held=jobs.find(j=>j.customerId===id&&j.status==='entwurf');
         const hatJob=jobs.some(j=>j.customerId===id&&(j.status==='available'||j.status==='assigned'));
-        if(!hatJob){
+        if(held){
+          held.status='available'; neueJobs++;
+          if(CLOUD) cloudUpdate('auftraege',held.id,jobToRow(held));
+        } else if(!hatJob){
           const job={id:nextJobId++,customerId:id,title:((cu.need&&cu.need[0])||'Einsatz')+' – '+cu.last,skills:(cu.need||[]).slice(),status:'available',assignedTo:null,rejectedBy:[]};
           jobs.push(job); neueJobs++;
           if(CLOUD){ cloudInsert('auftraege',jobToRow(job)).then(r=>{ if(r) job.id=r.id; }); }
@@ -6039,6 +6273,7 @@ function assignCustomerTo(customerId){
     if(CLOUD) cloudInsert('aufgaben',aufgabeToRow(auf)).then(r=>{ if(r) auf.id=r.id; });
   }
   logActivity('Kunde manuell zugewiesen: '+fullName(cu)+' → '+fullName(s));
+  notifyStaffAssigned(j, cu, s); // persönliche Info-Mail nur an die zugewiesene Person (keine Rundmail)
   closeModal();
   toast(fullName(cu)+' ist jetzt '+fullName(s)+' zugewiesen');
   renderAdmin(__lastAdminView==='jobs'?'jobs':'customers');
@@ -10918,7 +11153,7 @@ function head(t,s){return '<div class="page-head"><div><h1>'+cleanInput(t,120)+'
 function stat(l,v,f){return '<div class="stat"><div class="label">'+cleanInput(l,120)+'</div><div class="value">'+cleanInput(v,80)+'</div><div class="foot">'+cleanInput(f,180)+'</div></div>';}
 function statClick(l,v,f,fn){return '<div class="stat click" onclick="'+fn+'"><div class="label">'+cleanInput(l,120)+'</div><div class="value">'+cleanInput(v,80)+'</div><div class="foot">'+cleanInput(f,180)+'</div></div>';}
 function placeholder(icon,t,s){return '<div class="panel"><div class="empty"><div class="big">'+icon+'</div><b>'+t+'</b><p style="margin-top:6px;max-width:46ch;margin-inline:auto">'+s+'</p></div></div>';}
-function jobStatusTag(j){return j.status==='available'?'<span class="tag amber">verfügbar</span>':'<span class="tag green">angenommen</span>';}
+function jobStatusTag(j){return j.status==='entwurf'?'<span class="tag grey">nicht freigegeben</span>':(j.status==='available'?'<span class="tag amber">verfügbar</span>':'<span class="tag green">angenommen</span>');}
 function statusTag(s){s=cleanInput(s,40);return s==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag amber">'+s+'</span>';}
 const AUFGABE_STATUS=[['offen','Offen'],['in_arbeit','In Arbeit'],['erledigt','Erledigt']];
 function aufgabeStatusLabel(s){const f=AUFGABE_STATUS.find(x=>x[0]===s);return f?f[1]:'Offen';}
