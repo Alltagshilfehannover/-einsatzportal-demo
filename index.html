@@ -2013,7 +2013,7 @@ async function loadFromCloud(){
     const {data:aData,error}=await sb.from('auftraege').select('*').eq('standort_id',currentStandortId).order('id');
     if(error) throw error;
     if(aData&&aData.length){ jobs=aData.map(rowToJob); }
-    else { jobs=[]; for(const c of customers){ if(c.status!=='beendet'){ const row=jobToRow({customerId:c.id,title:(c.need[0]||'Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]}); const d=await cloudInsert('auftraege',row); if(d)jobs.push(rowToJob(d)); } } }
+    else { jobs=[]; for(const c of customers){ if(!custBeendet(c.status)){ const row=jobToRow({customerId:c.id,title:(c.need[0]||'Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]}); const d=await cloudInsert('auftraege',row); if(d)jobs.push(rowToJob(d)); } } }
     DIAG.push('auftraege: '+jobs.length+' aktiv');
   }catch(e){ DIAG.push('FEHLER auftraege: '+(e.message||e)); console.error('Laden auftraege fehlgeschlagen:', e.message||e); }
 
@@ -3606,7 +3606,7 @@ function adminDashboardHTML(open,newApps){
   /* ---- Kunden ---- */
   const aktive=customers.filter(c=>c.status==='aktiv');
   const interessenten=customers.filter(c=>c.status==='Interessent');
-  const beendete=customers.filter(c=>c.status==='beendet');
+  const beendete=customers.filter(c=>custBeendet(c.status));
   const neuMonat=customers.filter(c=>String(c.startDatum||'').slice(0,7)===thisMonth).length;
   const verlorenJahr=beendete.filter(c=>!c.endeDatum||String(c.endeDatum).slice(0,4)===thisYear);
   const umsatzProKunde=aktive.length?umsatzMonat/aktive.length:0;
@@ -4207,7 +4207,7 @@ function renderAdmin(view){
     (canCreateCust?'<div id="custBulkBar" style="display:'+(custBulkSel.size?'flex':'none')+';flex-wrap:wrap;gap:8px;align-items:center;padding:9px 14px;margin:0 16px 6px;background:var(--petrol-soft);border-radius:10px">'+
       '<b id="custBulkCount" style="font-size:13px">'+custBulkSel.size+' ausgewählt</b>'+
       '<button class="btn-primary btn-sm" style="width:auto" onclick="custBulkStatus(\'aktiv\')">✓ Auf aktiv setzen</button>'+
-      '<button class="btn-ghost btn-sm" onclick="custBulkStatus(\'pausiert\')">⏸ Auf inaktiv (pausiert) setzen</button>'+
+      '<button class="btn-ghost btn-sm" onclick="custBulkStatus(\'inaktiv\')">⏸ Auf inaktiv setzen</button>'+
       '<button class="btn-danger-ghost btn-sm" onclick="custBulkDelete()">🗑 Löschen</button>'+
       '<button class="btn-ghost btn-sm" onclick="custBulkClear()">Auswahl aufheben</button>'+
     '</div>':'')+
@@ -4227,7 +4227,7 @@ function renderAdmin(view){
         '<td class="clickable" onclick="editCustomer('+c.id+')"><b>'+fullName(c)+'</b><div style="font-size:11.5px;color:var(--muted)">'+kdNr(c)+'</div></td>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')">'+(c.area||'—')+'</td>'+
         '<td class="clickable" onclick="editCustomer('+c.id+')">'+(c.need||[]).join(', ')+'</td>'+
-        '<td>'+(c.status==='aktiv'?'<span class="tag green">aktiv</span>':'<span class="tag grey">'+c.status+'</span>')+'</td>'+
+        '<td><span class="tag '+custStatusColor(c.status)+'">'+custStatusLabel(c.status)+'</span></td>'+
         '<td style="text-align:right">'+rowMenu([
           ['Öffnen / Bearbeiten','editCustomer('+c.id+')'],
           ['Leistungsnachweis','startLeistungsnachweis('+c.id+')']
@@ -4535,7 +4535,7 @@ function renderAdmin(view){
     '</div></div>';
   }
   if(view==='lexware'){
-    const custActive=customers.filter(k=>k.status!=='beendet');
+    const custActive=customers.filter(k=>!custBeendet(k.status));
     const custLinked=custActive.filter(k=>k.lexwareId).length;
     const reLinked=rechnungen.filter(r=>r.lexwareId).length;
     c.innerHTML=head('Lexware Office','Buchhaltung anbinden: Kunden übertragen, Rechnungen als Entwurf anlegen und den Zahlungsstatus automatisch abgleichen.')+
@@ -4914,11 +4914,24 @@ function createLogin(id){
 /* Auswahllisten für die Auswertungs-Felder (Dashboard: Lead-Quellen & Kündigungsgründe) */
 const LEAD_QUELLEN=['Empfehlung','Pflegestützpunkt','Krankenkasse','Arzt/Klinik','Google/Internet','Flyer/Zeitung','Social Media','Sonstiges'];
 const ENDE_GRUENDE=['Verstorben','Umzug ins Pflegeheim','Umzug (anderer Ort)','Zu Wettbewerber gewechselt','Unzufrieden mit Leistung','Preis','Bedarf entfallen','Sonstiges'];
+/* Kunden-Status: [Wert, Anzeige-Label]. 'beendet' + 'verstorben' sind terminale Zustände
+   (behandelt via custBeendet – kein neuer Auftrag, zählen als „verloren"). 'inaktiv' ersetzt
+   den Altwert 'pausiert' (beide = vorübergehend keine Einsätze). */
+const KUNDE_STATUS=[['Interessent','Interessent'],['aktiv','Aktiv'],['inaktiv','Inaktiv'],['beendet','Versorgung beendet'],['verstorben','Verstorben']];
+const KUNDE_STATUS_LABEL={Interessent:'Interessent',aktiv:'Aktiv',inaktiv:'Inaktiv',pausiert:'Inaktiv (pausiert)',beendet:'Versorgung beendet',verstorben:'Verstorben'};
+function custStatusLabel(s){return KUNDE_STATUS_LABEL[s]||s||'—';}
+function custStatusColor(s){return s==='aktiv'?'green':(s==='Interessent'?'amber':'grey');}
+function custBeendet(s){return s==='beendet'||s==='verstorben';}
+function kundeStatusOptionsHTML(cur){
+  cur=(cur==='pausiert')?'inaktiv':cur;                 // Altwert auf inaktiv abbilden
+  let opts=KUNDE_STATUS.slice();
+  if(cur && !opts.some(o=>o[0]===cur)) opts=[[cur,cur]].concat(opts); // unbekannten Altwert erhalten
+  return opts.map(o=>'<option value="'+o[0]+'" '+(o[0]===cur?'selected':'')+'>'+o[1]+'</option>').join('');
+}
 /* Schreibgeschützte, kategorisierte Kunden-Ansicht (Öffnen zeigt DAS, Bearbeiten erst per Knopf) */
 function customerProfileHTML(c){
   const it=c.intern||{};
-  const stMap={aktiv:['green','Aktiv'],pausiert:['grey','Inaktiv (pausiert)'],Interessent:['amber','Interessent'],beendet:['grey','Beendet']};
-  const st=stMap[c.status]||['amber', c.status||'—'];
+  const st=[custStatusColor(c.status), custStatusLabel(c.status)];
   const insLabel={gesetzlich:'Gesetzlich versichert',privat:'Privat versichert',beihilfe:'Beihilfeberechtigt'}[c.insuranceType]||c.insuranceType||'';
   const kt=(c.kostentraegerId!=null)?((kostentraeger.find(k=>k.id===c.kostentraegerId)||{}).name||''):'';
   const alter=ddAge(c.birth);
@@ -4963,7 +4976,7 @@ function customerProfileHTML(c){
   // 5 – Marketing & Kundenzeitraum
   let s5=pvRow('Wie auf uns gekommen', c.leadQuelle)
     + pvRow('Kunde seit', c.startDatum?fmtDate(c.startDatum):'');
-  if(c.status==='beendet') s5+=pvRow('Beendet am', c.endeDatum?fmtDate(c.endeDatum):'')+pvRow('Beendigungsgrund', c.endeGrund);
+  if(custBeendet(c.status)) s5+=pvRow('Beendet am', c.endeDatum?fmtDate(c.endeDatum):'')+pvRow('Beendigungsgrund', c.endeGrund);
 
   // Hinweis-Banner, falls der Auftrag noch zurückgehalten ist (nicht in der Börse)
   const heldJob=jobs.find(j=>j.customerId===c.id && j.status==='entwurf');
@@ -5015,8 +5028,8 @@ function customerFormHTML(c){
       LEAD_QUELLEN.map(q=>'<option '+(c.leadQuelle===q?'selected':'')+'>'+q+'</option>').join('')+'</select></div>'+
     '<div><label>Kunde seit (Leistungsbeginn)</label><input id="nc_startDatum" type="date" value="'+(c.startDatum||'')+'"></div></div>'+
     (isNew?'':'<div style="margin-bottom:4px"><label>Kunden-Status</label><select id="nc_status">'+
-      ['Interessent','aktiv','pausiert','beendet'].map(s=>'<option '+(c.status===s?'selected':'')+'>'+s+'</option>').join('')+
-      '</select><div style="font-size:12px;color:var(--muted);margin:-6px 0 10px">„pausiert" = vorübergehend keine Einsätze · „beendet" = Kunde hat gekündigt (unten Datum und Grund erfassen)</div></div>')+
+      kundeStatusOptionsHTML(c.status)+
+      '</select><div style="font-size:12px;color:var(--muted);margin:-6px 0 10px">„Inaktiv" = vorübergehend keine Einsätze · „Versorgung beendet" / „Verstorben" = Betreuung endgültig beendet (unten Datum und Grund erfassen)</div></div>')+
     (isNew?'':'<div class="form-row"><div><label>Beendet am (falls beendet)</label><input id="nc_endeDatum" type="date" value="'+(c.endeDatum||'')+'"></div>'+
     '<div><label>Beendigungsgrund</label><select id="nc_endeGrund"><option value="">—</option>'+
       ENDE_GRUENDE.map(g=>'<option '+(c.endeGrund===g?'selected':'')+'>'+g+'</option>').join('')+'</select></div></div>')+
@@ -10152,7 +10165,7 @@ function buildGeschaeftsberichtPdf(){
   // Kunden & Personal
   const aktive=customers.filter(c=>c.status==='aktiv');
   const interessenten=customers.filter(c=>c.status==='Interessent');
-  const verloren=customers.filter(c=>c.status==='beendet'&&(!c.endeDatum||String(c.endeDatum).slice(0,4)===thisYear));
+  const verloren=customers.filter(c=>custBeendet(c.status)&&(!c.endeDatum||String(c.endeDatum).slice(0,4)===thisYear));
   const umsatzProKunde=aktive.length?umsatzMonat/aktive.length:0;
   const churn=aktive.map(c=>churnScore(c)).filter(r=>r&&r.score>=50).length;
   const aktiveMA=staff.filter(s=>s.status==='aktiv').length;
@@ -10570,7 +10583,7 @@ function lexwareAutoSyncCustomer(c){
 async function lexwareSyncCustomers(){
   if(!requireRoleAction('admin','buchhaltung')) return;
   const log=document.getElementById('lx_synclog');
-  const todo=customers.filter(k=>k.status!=='beendet'&&!k.lexwareId);
+  const todo=customers.filter(k=>!custBeendet(k.status)&&!k.lexwareId);
   if(!todo.length){ if(log) log.textContent='Alle aktiven Kunden sind bereits übertragen.'; return; }
   let ok=0,fail=0;
   for(let i=0;i<todo.length;i++){
