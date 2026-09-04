@@ -528,6 +528,30 @@
   .ct-ev{position:absolute;left:3px;right:3px;background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff;border-radius:7px;padding:4px 7px;font-size:11.5px;font-weight:600;overflow:hidden;cursor:pointer;box-shadow:0 2px 6px rgba(124,58,237,.3);z-index:2}
   .ct-ev .et{font-weight:700}
   .ct-ev .es{opacity:.92;font-size:10.5px}
+  /* --- Apple-Stil: Termine ziehen und in der Laenge aendern --- */
+  .ct-ev{touch-action:none}
+  .ct-ev.editable{cursor:grab}
+  .ct-ev.dragging{cursor:grabbing;opacity:.94;box-shadow:0 10px 26px rgba(0,0,0,.34);z-index:30}
+  .ct-rz{position:absolute;left:0;right:0;height:11px;z-index:4;cursor:ns-resize}
+  .ct-rz.top{top:-1px}
+  .ct-rz.bot{bottom:-1px}
+  .ct-rz::after{content:'';position:absolute;left:50%;transform:translateX(-50%);width:28px;height:3px;border-radius:2px;background:rgba(255,255,255,.8);opacity:0;transition:opacity .12s}
+  .ct-rz.top::after{top:3px}
+  .ct-rz.bot::after{bottom:3px}
+  .ct-ev.editable:hover .ct-rz::after,.ct-ev.dragging .ct-rz::after{opacity:1}
+  /* --- Status vergangener Termine: gemacht / nicht gemacht --- */
+  .ct-ev-done{background:linear-gradient(135deg,#12693c,#1f9e59)!important;box-shadow:0 2px 6px rgba(18,105,60,.3)!important}
+  .ct-ev-missed{background:linear-gradient(135deg,#a3170d,#dd5340)!important;box-shadow:0 2px 6px rgba(163,23,13,.3)!important}
+  .cm-ev-done{background:#daf3e4!important;color:#0f5c34!important}
+  .cm-ev-missed{background:#fde8e5!important;color:#8d1e13!important}
+  /* --- Legende unter dem Kalender --- */
+  .cal-legend{display:flex;flex-wrap:wrap;gap:9px;align-items:center;padding:11px 14px;border-top:1px solid var(--line);background:#fcfcfe}
+  .cal-legend .lg{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--muted);border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 11px;cursor:pointer;transition:.12s}
+  .cal-legend .lg:hover{border-color:var(--petrol);color:var(--petrol-dark)}
+  .cal-legend .lg.on{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol-dark)}
+  .cal-legend .lg .sw{width:13px;height:13px;border-radius:4px;flex:0 0 auto}
+  .cal-legend .lg .ct{font-variant-numeric:tabular-nums;opacity:.85}
+  .cal-legend .lg-note{font-size:12px;color:var(--muted);margin-left:auto;max-width:100%}
   @media(max-width:600px){
     .cal-toolbar .cal-title{font-size:15px;width:100%;order:-1}
     .cal-seg button{padding:6px 10px;font-size:12px}
@@ -604,7 +628,7 @@
 <!-- Content-Security-Policy: erlaubt Skripte nur von dieser Seite und den zwei
      festgelegten CDNs, Datenbank-Verbindungen nur zu Supabase. Blockiert
      eingeschleuste Fremd-Skripte (XSS-Schadensbegrenzung). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://unpkg.com https://*.tile.openstreetmap.org; font-src 'self' data:; connect-src 'self' https://kqufqziznvrvodadpmek.supabase.co https://nominatim.openstreetmap.org; frame-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://unpkg.com https://*.tile.openstreetmap.org; font-src 'self' data:; connect-src 'self' https://kqufqziznvrvodadpmek.supabase.co https://nominatim.openstreetmap.org; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="no-referrer">
 <!-- CDN-Skripte: Version festgenagelt + integrity-Hash. Der Browser lädt das
      Skript nur, wenn es Byte für Byte unverändert ist (Schutz vor
@@ -1568,8 +1592,42 @@ function validateUploadFile(file, opts={}){
   return true;
 }
 function safeDataUrl(url, imagesOnly=false){
-  const rx = imagesOnly ? /^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=\r\n]+$/i : /^data:(image\/(png|jpeg|webp)|application\/pdf);base64,[a-z0-9+/=\r\n]+$/i;
+  const rx = imagesOnly ? /^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=\r\n]+$/i : /^data:(image\/(png|jpeg|webp)|application\/pdf|image\/jpg)[;,]base64,[a-z0-9+/=\r\n]+$/i;
   return rx.test(String(url||'')) ? url : '';
+}
+/* SICHERHEIT: Zentrale Dokument-Vorschau. Erst Typ-Prüfung (nur PNG/JPEG/WebP/PDF),
+   dann Anzeige über eine Blob-URL im neuen Tab. So kann ein manipulierter
+   DB-Eintrag (z. B. data:text/html mit Script) NIEMALS als Seite im eigenen
+   Origin ausgeführt werden (verhindert Session-Token-Diebstahl per Stored XSS). */
+function dataUrlToBlobUrl(safe){
+  const comma=safe.indexOf(',');
+  const mimeRaw=safe.slice(5, safe.indexOf(';'));
+  const mime=(mimeRaw==='image/jpg')?'image/jpeg':mimeRaw;
+  const bin=atob(safe.slice(comma+1).replace(/[\r\n]/g,''));
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes],{type:mime}));
+}
+function openDocPreviewWindow(dataUrl){
+  const safe=safeDataUrl(dataUrl);
+  if(!safe){ toast('Vorschau blockiert – unerwartetes Dateiformat (erlaubt: Bild oder PDF)',true); return; }
+  try{
+    const url=dataUrlToBlobUrl(safe);
+    const w=window.open(url,'_blank');
+    if(!w){ toast('Popup blockiert – bitte Popups für diese Seite erlauben',true); }
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, 120000);
+  }catch(e){ toast('Vorschau fehlgeschlagen: '+(e&&(e.message||e)),true); }
+}
+/* Sichere Einbettung eines Dokuments (Bild/PDF) in ein Modal: Typ-Prüfung +
+   PDFs als Blob-URL (data:-iframes sind per CSP gesperrt). */
+function docEmbedHtml(dataUrl){
+  const safe=safeDataUrl(dataUrl);
+  if(!safe) return '<p style="color:var(--muted);padding:12px 0">Vorschau blockiert – unerwartetes Dateiformat (erlaubt: Bild oder PDF).</p>';
+  if(safe.indexOf('data:application/pdf')===0){
+    try{ return '<iframe src="'+dataUrlToBlobUrl(safe)+'" style="width:100%;height:68vh;border:1px solid var(--line);border-radius:8px"></iframe>'; }
+    catch(e){ return '<p style="color:var(--muted);padding:12px 0">PDF-Vorschau fehlgeschlagen.</p>'; }
+  }
+  return '<img src="'+safe+'" style="width:100%;max-height:70vh;object-fit:contain;border-radius:8px;background:#f3f0fb">';
 }
 /* Signatur sicher ins PDF setzen. jsPDF.addImage hängt bei degenerierten Bildern
    (z. B. 1×1-PNG) in einer Endlosschleife – das würde den ganzen Tab einfrieren.
@@ -1981,215 +2039,242 @@ async function seedIfEmpty(){
    bricht NICHT das ganze Laden ab. Fehler werden in der Konsole
    protokolliert, damit man sieht, welche Tabelle/Spalte hakt. */
 let DIAG=[]; // sichtbare Diagnose-Meldungen
-async function loadFromCloud(){
+async function loadFromCloud(deferHeavy){
   DIAG=[];
   if(currentStandortId==null){ DIAG.push("kein Standort gewaehlt - Laden uebersprungen"); return; }
-  // Mitarbeiter
-  try{
-    const {data,error}=await sb.from('mitarbeiter').select('*').eq('standort_id',currentStandortId).order('id');
-    if(error) throw error;
-    if(data) staff=data.map(rowToStaff);
-    DIAG.push('mitarbeiter: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER mitarbeiter: '+(e.message||e)); console.error('Laden mitarbeiter fehlgeschlagen:', e.message||e); }
+  const SID=currentStandortId;
 
-  // Kunden
-  try{
-    const {data,error}=await sb.from('kunden').select('*').eq('standort_id',currentStandortId).order('id');
-    if(error) throw error;
-    if(data) customers=data.map(rowToCust);
-    DIAG.push('kunden: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER kunden: '+(e.message||e)); console.error('Laden kunden fehlgeschlagen:', e.message||e); }
+  // ==== Einzel-Lader: jeweils in sich abgeschlossen, Fehler bleiben lokal ====
+  async function ldMitarbeiter(){
+    try{
+      const {data,error}=await sb.from('mitarbeiter').select('*').eq('standort_id',SID).order('id');
+      if(error) throw error;
+      if(data) staff=data.map(rowToStaff);
+      DIAG.push('mitarbeiter: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER mitarbeiter: '+(e.message||e)); console.error('Laden mitarbeiter fehlgeschlagen:', e.message||e); }
+  }
+  async function ldKunden(){
+    try{
+      const {data,error}=await sb.from('kunden').select('*').eq('standort_id',SID).order('id');
+      if(error) throw error;
+      if(data) customers=data.map(rowToCust);
+      DIAG.push('kunden: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER kunden: '+(e.message||e)); console.error('Laden kunden fehlgeschlagen:', e.message||e); }
+  }
+  async function ldVertraege(){
+    try{
+      const {data:vRows,error}=await sb.from('vertraege').select('*');
+      if(error) throw error;
+      if(vRows){ vRows.forEach(v=>{const s=staff.find(x=>x.id===v.mitarbeiter_id); if(s){ s.contracts=s.contracts||[]; s.contracts.push({name:v.name,signedDate:v.signed_date,signature:v.signature}); }}); }
+      DIAG.push('vertraege: '+(vRows?vRows.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER vertraege: '+(e.message||e)); console.error('Laden vertraege fehlgeschlagen:', e.message||e); }
+  }
+  async function ldAuftraege(){
+    try{
+      const {data:aData,error}=await sb.from('auftraege').select('*').eq('standort_id',SID).order('id');
+      if(error) throw error;
+      if(aData&&aData.length){ jobs=aData.map(rowToJob); }
+      else { jobs=[]; for(const c of customers){ if(!custBeendet(c.status)){ const row=jobToRow({customerId:c.id,title:(c.need[0]||'Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]}); const d=await cloudInsert('auftraege',row); if(d)jobs.push(rowToJob(d)); } } }
+      DIAG.push('auftraege: '+jobs.length+' aktiv');
+    }catch(e){ DIAG.push('FEHLER auftraege: '+(e.message||e)); console.error('Laden auftraege fehlgeschlagen:', e.message||e); }
+  }
+  async function ldBewerbungen(){
+    try{
+      const {data,error}=await sb.from('bewerbungen').select('*').order('id');
+      if(error) throw error;
+      if(data) applications=data.map(rowToApp);
+      DIAG.push('bewerbungen: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER bewerbungen: '+(e.message||e)); console.error('Laden bewerbungen fehlgeschlagen:', e.message||e); }
+  }
+  async function ldMarketing(){
+    try{
+      const {data,error}=await sb.from('marketing_material').select('id,name,typ,created_at').order('created_at',{ascending:false});
+      if(error) throw error;
+      if(data) marketingMaterial=data.map(r=>({id:r.id,name:r.name,typ:r.typ,createdAt:r.created_at}));
+      DIAG.push('marketing: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER marketing (V3_MIGRATION.sql ausführen?): '+(e.message||e)); }
+  }
+  async function ldLohn(){
+    try{
+      const {data,error}=await sb.from('lohnabrechnungen').select('id,mitarbeiter_id,monat,status,datei_name,freigegeben_am,created_at').eq('standort_id',SID).order('monat',{ascending:false});
+      if(error) throw error;
+      if(data) lohnabrechnungen=data.map(r=>({id:r.id,staffId:r.mitarbeiter_id,monat:r.monat,status:r.status||'erhalten',dateiName:r.datei_name,freigegebenAm:r.freigegeben_am,createdAt:r.created_at}));
+      DIAG.push('lohnabrechnungen: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER lohnabrechnungen (V3_MIGRATION.sql ausführen?): '+(e.message||e)); }
+  }
+  async function ldTermine(){
+    try{
+      const {data,error}=await sb.from('termine').select('*').eq('standort_id',SID).order('id');
+      if(error) throw error;
+      if(data) appointments=data.map(rowToAppt);
+      DIAG.push('termine: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER termine: '+(e.message||e)); console.error('Laden termine fehlgeschlagen:', e.message||e); }
+  }
+  async function ldStundenzettel(){
+    try{
+      const {data,error}=await sb.from('stundenzettel').select('*').eq('standort_id',SID).order('id');
+      if(error) throw error;
+      if(data) timesheets=data.map(rowToTimesheet);
+      DIAG.push('stundenzettel: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER stundenzettel: '+(e.message||e)); console.error('Laden stundenzettel fehlgeschlagen:', e.message||e); }
+  }
+  async function ldKostentraeger(){
+    try{
+      const {data,error}=await sb.from('kostentraeger').select('*').eq('standort_id',SID).order('id');
+      if(error) throw error;
+      if(data&&data.length) kostentraeger=data.map(rowToKt);
+      DIAG.push('kostentraeger: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER kostentraeger: '+(e.message||e)); console.error('Laden kostentraeger fehlgeschlagen:', e.message||e); }
+  }
+  async function ldRechnungen(){
+    try{
+      const {data,error}=await sb.from('rechnungen').select('*').eq('standort_id',SID).order('id');
+      if(error) throw error;
+      if(data){
+        const fresh=data.map(rowToRechnung);
+        // Lokal erstellte, noch nicht bestätigte Rechnungen NICHT verlieren:
+        const pend=rechnungen.filter(r=>r&&r._pending&&!fresh.some(f=>String(f.nummer)===String(r.nummer)));
+        rechnungen=fresh.concat(pend);
+      }
+      DIAG.push('rechnungen: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER rechnungen: '+(e.message||e)); console.error('Laden rechnungen fehlgeschlagen:', e.message||e); }
+  }
+  async function ldAbtretungen(){
+    try{
+      const {data,error}=await sb.from('abtretungen').select('*').order('id');
+      if(error) throw error;
+      if(data){ data.forEach(a=>{ const cu=customers.find(c=>c.id===a.customer_id); if(cu) cu.abtretung={date:a.signed_date, signature:a.signature}; }); }
+      DIAG.push('abtretungen: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER abtretungen: '+(e.message||e)); console.error('Laden abtretungen fehlgeschlagen:', e.message||e); }
+  }
+  async function ldLeistungsnachweise(){
+    try{
+      const {data,error}=await sb.from('leistungsnachweise').select('*').order('id');
+      if(error) throw error;
+      if(data){
+        customers.forEach(c=>{ c.leistungsnachweise=[]; });
+        data.forEach(l=>{ const cu=customers.find(c=>c.id===l.customer_id); if(cu){ (cu.leistungsnachweise=cu.leistungsnachweise||[]).push({id:l.id, date:l.datum, task:l.task, mins:Number(l.mins)||0, von:l.von||'', bis:l.bis||'', signature:l.signature||'', staffId:l.mitarbeiter_id}); } });
+        // Selbstheilung: LN ohne Unterschrift bekommt sie aus dem passenden Stundenzettel
+        customers.forEach(c=>{ (c.leistungsnachweise||[]).forEach(ln=>{
+          if(ln.signature) return;
+          const ts=timesheets.find(t=>t.customerId===c.id&&t.date===ln.date&&t.signature&&(!ln.von||t.start===ln.von));
+          if(ts){
+            ln.signature=ts.signature;
+            if(!ln.von){ ln.von=ts.start; ln.bis=ts.end; }
+            if(CLOUD&&sb&&ln.id){ sb.from('leistungsnachweise').update({signature:ts.signature, von:ln.von, bis:ln.bis}).eq('id',ln.id).then(()=>{},()=>{}); }
+          }
+        }); });
+      }
+      DIAG.push('leistungsnachweise: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER leistungsnachweise (DOKUMENTE_MIGRATION.sql ausgeführt?): '+(e.message||e)); }
+  }
+  async function ldBeratungen(){
+    try{
+      const {data,error}=await sb.from('beratungen').select('*').order('id');
+      if(error) throw error;
+      if(data){ data.forEach(b=>{ const cu=customers.find(c=>c.id===b.customer_id); if(cu) cu.beratung={date:b.datum, signature:b.signature, mitarbeiterId:b.mitarbeiter_id, punkte:b.punkte||[]}; }); }
+      DIAG.push('beratungen: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER beratungen (BERATUNG_MIGRATION.sql ausgeführt?): '+(e.message||e)); }
+  }
+  async function ldLeistungen(){
+    try{
+      const {data,error}=await sb.from('leistungen').select('*').eq('standort_id',SID).order('id');
+      if(error) throw error;
+      if(data) leistungenKatalog=data.map(rowToLk);
+      DIAG.push('leistungen: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER leistungen: '+(e.message||e)); console.error('Laden leistungen fehlgeschlagen:', e.message||e); }
+  }
+  async function ldKommunikation(){
+    try{
+      const {data,error}=await sb.from('kommunikation').select('*').eq('standort_id',SID).order('date',{ascending:false});
+      if(error) throw error;
+      if(data) kommunikationen=data.map(rowToKomm);
+      DIAG.push('kommunikation: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER kommunikation: '+(e.message||e)); console.error('Laden kommunikation fehlgeschlagen:', e.message||e); }
+  }
+  async function ldAufgaben(){
+    try{
+      const {data,error}=await sb.from('aufgaben').select('*').eq('standort_id',SID).order('id');
+      if(error) throw error;
+      if(data) aufgaben=data.map(rowToAufgabe);
+      DIAG.push('aufgaben: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER aufgaben: '+(e.message||e)); console.error('Laden aufgaben fehlgeschlagen:', e.message||e); }
+  }
+  async function ldAbwesenheiten(){
+    try{
+      const {data,error}=await sb.from('abwesenheiten').select('*').eq('standort_id',SID).order('von',{ascending:false});
+      if(error) throw error;
+      if(data){
+        tv4Abw=data.map(tv4RowToAbw); tv4AbwCloud=true;
+        tv4NextAbwId=tv4Abw.reduce((m,a)=>Math.max(m,a.id||0),0)+1;
+        try{ localStorage.setItem('dailydo-tv4-abw',JSON.stringify(tv4Abw)); }catch(e){}
+      }
+      DIAG.push('abwesenheiten: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER abwesenheiten: '+(e.message||e)); console.error('Laden abwesenheiten fehlgeschlagen:', e.message||e); }
+  }
+  async function ldUrlaub(){
+    try{
+      const {data,error}=await sb.from('mitarbeiter').select('id,urlaub_anspruch').eq('standort_id',SID);
+      if(error) throw error;
+      if(data){ data.forEach(r=>{ if(r.urlaub_anspruch!==null&&r.urlaub_anspruch!==undefined) tv4Anspruch[r.id]=r.urlaub_anspruch; }); }
+    }catch(e){ console.warn('Urlaubsanspruch nicht geladen (Spalte fehlt evtl. noch):', e.message||e); }
+  }
+  async function ldSchulungen(){
+    try{
+      const {data,error}=await sb.from('schulungen_eigene').select('id,titel,beschreibung,datei_name,datei_typ,pflicht,created_at').eq('standort_id',SID).order('created_at',{ascending:false});
+      if(error) throw error;
+      if(data) eigeneSchulungen=data.map(r=>({id:r.id,titel:r.titel,beschreibung:r.beschreibung||'',dateiName:r.datei_name,dateiTyp:r.datei_typ,pflicht:r.pflicht!==false,createdAt:r.created_at}));
+      DIAG.push('schulungen_eigene: '+(data?data.length:0)+' geladen');
+    }catch(e){ DIAG.push('FEHLER schulungen_eigene: '+(e.message||e)); console.warn('Eigene Schulungen nicht geladen (Tabelle fehlt evtl. – TODOS_MIGRATION.sql ausführen):', e.message||e); }
+  }
+  async function ldV5(){
+    try{ if(typeof v5LoadCloudState==='function'){ await v5LoadCloudState(); DIAG.push('v5_state: geladen'); } }
+    catch(e){ DIAG.push('FEHLER v5_state (V5_MIGRATION.sql ausführen?): '+(e.message||e)); }
+  }
 
-  // Verträge den Mitarbeitern zuordnen
-  try{
-    const {data:vRows,error}=await sb.from('vertraege').select('*');
-    if(error) throw error;
-    if(vRows){ vRows.forEach(v=>{const s=staff.find(x=>x.id===v.mitarbeiter_id); if(s){ s.contracts=s.contracts||[]; s.contracts.push({name:v.name,signedDate:v.signed_date,signature:v.signature}); }}); }
-    DIAG.push('vertraege: '+(vRows?vRows.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER vertraege: '+(e.message||e)); console.error('Laden vertraege fehlgeschlagen:', e.message||e); }
+  // ==== Phase 1: Basisdaten (parallel) – reicht für den ersten Bildschirm ====
+  await Promise.all([ ldMitarbeiter(), ldKunden(), ldKostentraeger(), ldLeistungen(), ldTermine(), ldAufgaben(), ldKommunikation(), ldAbwesenheiten(), ldRechnungen() ]);
+  // ==== Phase 2: hängt an Mitarbeiter/Kunden (parallel) ====
+  await Promise.all([ ldVertraege(), ldAuftraege(), ldUrlaub() ]);
+  finalizeLoad(true);
 
-  // Aufträge
-  try{
-    const {data:aData,error}=await sb.from('auftraege').select('*').eq('standort_id',currentStandortId).order('id');
-    if(error) throw error;
-    if(aData&&aData.length){ jobs=aData.map(rowToJob); }
-    else { jobs=[]; for(const c of customers){ if(!custBeendet(c.status)){ const row=jobToRow({customerId:c.id,title:(c.need[0]||'Einsatz')+' – '+c.last,skills:c.need.slice(),status:'available',assignedTo:null,rejectedBy:[]}); const d=await cloudInsert('auftraege',row); if(d)jobs.push(rowToJob(d)); } } }
-    DIAG.push('auftraege: '+jobs.length+' aktiv');
-  }catch(e){ DIAG.push('FEHLER auftraege: '+(e.message||e)); console.error('Laden auftraege fehlgeschlagen:', e.message||e); }
-
-  // Bewerbungen
-  try{
-    const {data,error}=await sb.from('bewerbungen').select('*').order('id');
-    if(error) throw error;
-    if(data) applications=data.map(rowToApp);
-    DIAG.push('bewerbungen: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER bewerbungen: '+(e.message||e)); console.error('Laden bewerbungen fehlgeschlagen:', e.message||e); }
-
-  // Marketing-Material (standortübergreifend; Tabelle kommt mit V3_MIGRATION.sql)
-  try{
-    const {data,error}=await sb.from('marketing_material').select('id,name,typ,created_at').order('created_at',{ascending:false});
-    if(error) throw error;
-    if(data) marketingMaterial=data.map(r=>({id:r.id,name:r.name,typ:r.typ,createdAt:r.created_at}));
-    DIAG.push('marketing: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER marketing (V3_MIGRATION.sql ausführen?): '+(e.message||e)); }
-
-  // Lohnabrechnungen (Rückläufer vom Steuerberater; Tabelle kommt mit V3_MIGRATION.sql)
-  try{
-    const {data,error}=await sb.from('lohnabrechnungen').select('id,mitarbeiter_id,monat,status,datei_name,freigegeben_am,created_at').eq('standort_id',currentStandortId).order('monat',{ascending:false});
-    if(error) throw error;
-    if(data) lohnabrechnungen=data.map(r=>({id:r.id,staffId:r.mitarbeiter_id,monat:r.monat,status:r.status||'erhalten',dateiName:r.datei_name,freigegebenAm:r.freigegeben_am,createdAt:r.created_at}));
-    DIAG.push('lohnabrechnungen: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER lohnabrechnungen (V3_MIGRATION.sql ausführen?): '+(e.message||e)); }
-
-  // Termine
-  try{
-    const {data,error}=await sb.from('termine').select('*').eq('standort_id',currentStandortId).order('id');
-    if(error) throw error;
-    if(data) appointments=data.map(rowToAppt);
-    DIAG.push('termine: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER termine: '+(e.message||e)); console.error('Laden termine fehlgeschlagen:', e.message||e); }
-
-  // Stundenzettel (inkl. abgeschlossene Einsätze mit Unterschrift)
-  try{
-    const {data,error}=await sb.from('stundenzettel').select('*').eq('standort_id',currentStandortId).order('id');
-    if(error) throw error;
-    if(data) timesheets=data.map(rowToTimesheet);
-    DIAG.push('stundenzettel: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER stundenzettel: '+(e.message||e)); console.error('Laden stundenzettel fehlgeschlagen:', e.message||e); }
-
-  // Kostenträger
-  try{
-    const {data,error}=await sb.from('kostentraeger').select('*').eq('standort_id',currentStandortId).order('id');
-    if(error) throw error;
-    if(data&&data.length) kostentraeger=data.map(rowToKt);
-    DIAG.push('kostentraeger: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER kostentraeger: '+(e.message||e)); console.error('Laden kostentraeger fehlgeschlagen:', e.message||e); }
-
-  // Rechnungen
-  try{
-    const {data,error}=await sb.from('rechnungen').select('*').eq('standort_id',currentStandortId).order('id');
-    if(error) throw error;
-    if(data){
-      const fresh=data.map(rowToRechnung);
-      // Lokal erstellte, noch nicht bestätigte Rechnungen NICHT verlieren:
-      // pending-Rechnungen behalten, die (noch) nicht in der Cloud-Antwort stehen.
-      const pend=rechnungen.filter(r=>r&&r._pending&&!fresh.some(f=>String(f.nummer)===String(r.nummer)));
-      rechnungen=fresh.concat(pend);
-    }
-    DIAG.push('rechnungen: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER rechnungen: '+(e.message||e)); console.error('Laden rechnungen fehlgeschlagen:', e.message||e); }
-
-  // Abtretungserklärungen den Kunden zuordnen (bisher gingen sie beim
-  // Neuladen der Seite verloren, weil sie nie zurückgelesen wurden)
-  try{
-    const {data,error}=await sb.from('abtretungen').select('*').order('id');
-    if(error) throw error;
-    if(data){ data.forEach(a=>{ const cu=customers.find(c=>c.id===a.customer_id); if(cu) cu.abtretung={date:a.signed_date, signature:a.signature}; }); }
-    DIAG.push('abtretungen: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER abtretungen: '+(e.message||e)); console.error('Laden abtretungen fehlgeschlagen:', e.message||e); }
-
-  // Leistungsnachweise den Kunden zuordnen (dauerhaft gespeichert, Tabelle
-  // leistungsnachweise – DOKUMENTE_MIGRATION.sql). Vorher zurücksetzen,
-  // damit der 25s-Sync keine Duplikate anhäuft.
-  try{
-    const {data,error}=await sb.from('leistungsnachweise').select('*').order('id');
-    if(error) throw error;
-    if(data){
-      customers.forEach(c=>{ c.leistungsnachweise=[]; });
-      data.forEach(l=>{ const cu=customers.find(c=>c.id===l.customer_id); if(cu){ (cu.leistungsnachweise=cu.leistungsnachweise||[]).push({id:l.id, date:l.datum, task:l.task, mins:Number(l.mins)||0, von:l.von||'', bis:l.bis||'', signature:l.signature||'', staffId:l.mitarbeiter_id}); } });
-      // Selbstheilung: LN ohne Unterschrift bekommt sie aus dem passenden
-      // Stundenzettel (gleicher Kunde + Tag, ggf. gleiche Startzeit) – dort ist
-      // die Original-Unterschrift sicher gespeichert. Die DB-Zeile wird still
-      // mitrepariert, damit es dauerhaft stimmt.
-      customers.forEach(c=>{ (c.leistungsnachweise||[]).forEach(ln=>{
-        if(ln.signature) return;
-        const ts=timesheets.find(t=>t.customerId===c.id&&t.date===ln.date&&t.signature&&(!ln.von||t.start===ln.von));
-        if(ts){
-          ln.signature=ts.signature;
-          if(!ln.von){ ln.von=ts.start; ln.bis=ts.end; }
-          if(CLOUD&&sb&&ln.id){ sb.from('leistungsnachweise').update({signature:ts.signature, von:ln.von, bis:ln.bis}).eq('id',ln.id).then(()=>{},()=>{}); }
-        }
-      }); });
-    }
-    DIAG.push('leistungsnachweise: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER leistungsnachweise (DOKUMENTE_MIGRATION.sql ausgeführt?): '+(e.message||e)); }
-
-  // Beratungen (inkl. Unterschriftsprobe) den Kunden zuordnen
-  try{
-    const {data,error}=await sb.from('beratungen').select('*').order('id');
-    if(error) throw error;
-    if(data){ data.forEach(b=>{ const cu=customers.find(c=>c.id===b.customer_id); if(cu) cu.beratung={date:b.datum, signature:b.signature, mitarbeiterId:b.mitarbeiter_id, punkte:b.punkte||[]}; }); }
-    DIAG.push('beratungen: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER beratungen (BERATUNG_MIGRATION.sql ausgeführt?): '+(e.message||e)); }
-
-  // Leistungskatalog
-  try{
-    const {data,error}=await sb.from('leistungen').select('*').eq('standort_id',currentStandortId).order('id');
-    if(error) throw error;
-    if(data) leistungenKatalog=data.map(rowToLk);
-    DIAG.push('leistungen: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER leistungen: '+(e.message||e)); console.error('Laden leistungen fehlgeschlagen:', e.message||e); }
-
-  // Kommunikation (CRM)
-  try{
-    const {data,error}=await sb.from('kommunikation').select('*').eq('standort_id',currentStandortId).order('date',{ascending:false});
-    if(error) throw error;
-    if(data) kommunikationen=data.map(rowToKomm);
-    DIAG.push('kommunikation: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER kommunikation: '+(e.message||e)); console.error('Laden kommunikation fehlgeschlagen:', e.message||e); }
-
-  // Aufgaben
-  try{
-    const {data,error}=await sb.from('aufgaben').select('*').eq('standort_id',currentStandortId).order('id');
-    if(error) throw error;
-    if(data) aufgaben=data.map(rowToAufgabe);
-    DIAG.push('aufgaben: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER aufgaben: '+(e.message||e)); console.error('Laden aufgaben fehlgeschlagen:', e.message||e); }
-
-  // Abwesenheiten (Urlaub/Krank). Fehlt die Tabelle noch, läuft die App
-  // unverändert mit lokaler Speicherung im Browser weiter (nur DIAG-Eintrag).
-  try{
-    const {data,error}=await sb.from('abwesenheiten').select('*').eq('standort_id',currentStandortId).order('von',{ascending:false});
-    if(error) throw error;
-    if(data){
-      tv4Abw=data.map(tv4RowToAbw); tv4AbwCloud=true;
-      tv4NextAbwId=tv4Abw.reduce((m,a)=>Math.max(m,a.id||0),0)+1;
-      try{ localStorage.setItem('dailydo-tv4-abw',JSON.stringify(tv4Abw)); }catch(e){}
-    }
-    DIAG.push('abwesenheiten: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER abwesenheiten: '+(e.message||e)); console.error('Laden abwesenheiten fehlgeschlagen:', e.message||e); }
-
-  // Urlaubsanspruch (Spalte urlaub_anspruch an staff, optional)
-  try{
-    const {data,error}=await sb.from('mitarbeiter').select('id,urlaub_anspruch').eq('standort_id',currentStandortId);
-    if(error) throw error;
-    if(data){ data.forEach(r=>{ if(r.urlaub_anspruch!==null&&r.urlaub_anspruch!==undefined) tv4Anspruch[r.id]=r.urlaub_anspruch; }); }
-  }catch(e){ console.warn('Urlaubsanspruch nicht geladen (Spalte fehlt evtl. noch):', e.message||e); }
-
-  // Eigene Schulungen (nur Metadaten – die Datei wird erst beim Ansehen geladen)
-  try{
-    const {data,error}=await sb.from('schulungen_eigene').select('id,titel,beschreibung,datei_name,datei_typ,pflicht,created_at').eq('standort_id',currentStandortId).order('created_at',{ascending:false});
-    if(error) throw error;
-    if(data) eigeneSchulungen=data.map(r=>({id:r.id,titel:r.titel,beschreibung:r.beschreibung||'',dateiName:r.datei_name,dateiTyp:r.datei_typ,pflicht:r.pflicht!==false,createdAt:r.created_at}));
-    DIAG.push('schulungen_eigene: '+(data?data.length:0)+' geladen');
-  }catch(e){ DIAG.push('FEHLER schulungen_eigene: '+(e.message||e)); console.warn('Eigene Schulungen nicht geladen (Tabelle fehlt evtl. – TODOS_MIGRATION.sql ausführen):', e.message||e); }
-
-  // E-Mail-Vorlagen
-  await loadEmailTemplates();
-
-  // V5-Zusatzdaten (Steuer-Aufgaben, Ausstattung/Kosten, Beratungsvorlage, Kündigungen) – teamweit über v5_state
-  try{ if(typeof v5LoadCloudState==='function'){ await v5LoadCloudState(); DIAG.push('v5_state: geladen'); } }
-  catch(e){ DIAG.push('FEHLER v5_state (V5_MIGRATION.sql ausführen?): '+(e.message||e)); }
-
-  // Geladene Inhalte entschärfen, bevor sie per innerHTML gerendert werden
+  // ==== Phase 3: schwere & nicht-essenzielle Daten (Unterschriftsbilder, Dokumente,
+  // Bewerbungen …) – blockieren den ersten Bildschirm nicht mehr ====
+  async function ldHeavy(){
+    await Promise.all([ ldStundenzettel(), ldAbtretungen(), ldBeratungen(), ldBewerbungen(), ldMarketing(), ldLohn(), ldSchulungen(), loadEmailTemplates(), ldV5() ]);
+    await ldLeistungsnachweise(); // braucht timesheets (Selbstheilung) + customers
+    finalizeLoad(false);
+  }
+  if(deferHeavy){ ldHeavy().then(rerenderAfterDeferred).catch(e=>console.warn('Nachladen:', e&&(e.message||e))); }
+  else { await ldHeavy(); }
+}
+// Nach einem Ladevorgang: geladene Daten entschärfen (idempotent, da cleanInput
+// Zeichen ENTFERNT statt zu escapen) + ID-Zähler heben. myId nur beim Erstladen
+// setzen (sonst würde die Hintergrund-Nachladung die Identität eines angemeldeten
+// Mitarbeiters überschreiben).
+function finalizeLoad(setMyId){
   sanitizeAllLocalData();
-  // ID-Zähler über das Maximum der geladenen Daten heben. Ohne das würde eine
-  // neu angelegte (lokale) ID mit einer bereits geladenen DB-ID kollidieren –
-  // besonders bei der Sammelrechnung, die mehrere Objekte synchron erzeugt und
-  // sofort rendert, bevor die DB die echten IDs zurückliefert.
   reindexCounters();
-  // myId auf ersten Mitarbeiter setzen
-  if(staff.length){ myId=staff[0].id; }
+  if(setMyId && staff.length){ myId=staff[0].id; }
+}
+// Aktuelle Ansicht nach dem Nachladen der schweren Daten einmal neu zeichnen –
+// nur, wenn kein Modal offen ist und nichts getippt wird (Scroll bleibt erhalten).
+function rerenderAfterDeferred(){
+  try{
+    const app=document.getElementById('appScreen');
+    if(!app || !app.classList.contains('active')) return;
+    const bg=document.getElementById('modalBg');
+    if(bg && bg.classList.contains('show')) return;
+    const ae=document.activeElement;
+    if(ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT')) return;
+    const sx=window.scrollX, sy=window.scrollY;
+    if(currentRole==='staff'){
+      if(typeof renderStaff==='function') renderStaff((typeof __lastStaffView!=='undefined'&&__lastStaffView)||'board');
+    } else if(typeof renderAdmin==='function'){
+      renderAdmin(__lastAdminView||(typeof defaultViewForRole==='function'?defaultViewForRole():'dashboard'));
+    }
+    window.scrollTo(sx,sy);
+  }catch(e){ console.warn('Nachlade-Render:', e&&(e.message||e)); }
 }
 function reindexCounters(){
   const mx=(arr)=>arr.reduce((m,o)=>Math.max(m, (+o.id||0)), 0)+1;
@@ -2646,9 +2731,7 @@ async function openEigeneSchulung(id){
   document.getElementById('modalTitle').textContent=cleanInput(x.titel,80);
   document.getElementById('modalBody').innerHTML=
     (x.beschreibung?'<p style="color:var(--muted);font-size:13.5px;margin-bottom:10px">'+cleanInput(x.beschreibung,300)+'</p>':'')+
-    ((d.datei_typ||'').indexOf('image')===0
-      ?'<img src="'+d.datei_data+'" style="max-width:100%;border:1px solid var(--line);border-radius:10px">'
-      :'<iframe src="'+d.datei_data+'" style="border:1px solid var(--line);border-radius:10px;width:100%;height:62vh"></iframe>');
+    docEmbedHtml(d.datei_data);
   document.getElementById('modalFoot').innerHTML=
     '<button class="btn-ghost" onclick="closeModal();document.getElementById(\'modalBox\').classList.remove(\'wide\')">Schließen</button>'+
     (m&&!schonBestaetigt?'<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="eigeneSchulungAbschliessen('+id+')">✓ Gelesen &amp; bestätigen</button>':'');
@@ -2920,7 +3003,7 @@ async function switchStandort(id){
   const sel=document.getElementById('standortSwitch');
   if(sel) sel.value=String(currentStandortId);
   showCloudBadge('verbinde');
-  await loadFromCloud();
+  await loadFromCloud(true);
   showCloudBadge('cloud');
   if(currentRole!=='staff'){ renderAdmin(__lastAdminView||defaultViewForRole()); }
 }
@@ -2944,7 +3027,7 @@ async function ensureDataLoaded(){
     await loadStandorte();
     await seedIfEmpty();
     CLOUD=true;
-    await loadFromCloud();   // einzelne Fehler werden intern abgefangen
+    await loadFromCloud(true);   // Erstladen: erst Basisdaten, Schweres im Hintergrund
     __dataLoaded=true;
     showCloudBadge('cloud');
   }catch(e){
@@ -3314,7 +3397,7 @@ async function enterApp(role, user){
               currentStandortId=+ziel;
               try{ localStorage.setItem('dailydo-standort', String(ziel)); }catch(e){}
             }
-            await loadFromCloud();  // Daten des richtigen Standorts laden
+            await loadFromCloud(true);  // Daten des richtigen Standorts laden
             found=staff.find(matchMail);
           }
         }catch(e){ console.warn('Standortübergreifende Profilsuche:', e&&(e.message||e)); }
@@ -3986,9 +4069,7 @@ async function marketingData(id){
 }
 async function openMarketing(id){
   const d=await marketingData(id); if(!d||!d.data) return;
-  const w=window.open('','_blank'); if(!w){ toast('Popup blockiert – bitte erlauben',true); return; }
-  if((d.typ||'').indexOf('image')===0) w.document.write('<title>'+cleanInput(d.name,80)+'</title><body style="margin:0;background:#111"><img src="'+d.data+'" style="max-width:100%;display:block;margin:auto"></body>');
-  else w.document.write('<title>'+cleanInput(d.name,80)+'</title><iframe src="'+d.data+'" style="border:0;width:100vw;height:100vh"></iframe>');
+  openDocPreviewWindow(d.data);
 }
 async function downloadMarketing(id){
   const d=await marketingData(id); if(!d||!d.data) return;
@@ -4050,9 +4131,7 @@ async function openLohn(id){
   try{
     const {data,error}=await sb.from('lohnabrechnungen').select('datei_data,datei_name').eq('id',id).single();
     if(error) throw error;
-    const w=window.open('','_blank'); if(!w){ toast('Popup blockiert – bitte erlauben',true); return; }
-    if(String(data.datei_data||'').indexOf('data:image')===0) w.document.write('<title>'+cleanInput(data.datei_name||'Lohnabrechnung',80)+'</title><body style="margin:0;background:#111"><img src="'+data.datei_data+'" style="max-width:100%;display:block;margin:auto"></body>');
-    else w.document.write('<title>'+cleanInput(data.datei_name||'Lohnabrechnung',80)+'</title><iframe src="'+data.datei_data+'" style="border:0;width:100vw;height:100vh"></iframe>');
+    openDocPreviewWindow(data.datei_data);
   }catch(e){ toast('Abrechnung konnte nicht geladen werden: '+(e.message||e),true); }
 }
 function lohnFreigeben(id){
@@ -4087,6 +4166,7 @@ function lohnLoeschen(id){
 
 /* ============ ADMIN VIEWS ============ */
 let __lastAdminView=null;
+let __lastStaffView=null; // zuletzt gezeigte Mitarbeiter-Ansicht (für Neuzeichnung nach Nachladen)
 function renderAdmin(view){
   ensureHilfeWidget();
   if(!standorte.length && view!=='standorte' && currentRole==='admin'){ view='standorte'; toastHint('Bitte zuerst einen Standort anlegen'); }
@@ -5405,12 +5485,7 @@ function uploadExtDoc(custId, input){
 }
 function openExtDoc(custId, idx){
   const cu=custById(custId); if(!cu||!cu.extDocs||!cu.extDocs[idx])return;
-  const d=cu.extDocs[idx];
-  const w=window.open();
-  if(w){
-    if((d.type||'').indexOf('image')===0){ w.document.write('<title>'+d.name+'</title><body style="margin:0;background:#111"><img src="'+d.data+'" style="max-width:100%;display:block;margin:auto"></body>'); }
-    else { w.document.write('<title>'+d.name+'</title><iframe src="'+d.data+'" style="border:0;width:100vw;height:100vh"></iframe>'); }
-  }
+  openDocPreviewWindow(cu.extDocs[idx].data);
 }
 function deleteExtDoc(custId, idx){
   const cu=custById(custId); if(!cu||!cu.extDocs)return;
@@ -5708,23 +5783,15 @@ function deleteApplication(id){
 }
 function viewStaffDoc(staffId, key, label){
   const s=staff.find(x=>x.id===staffId); if(!s||!s.docImages||!s.docImages[key])return;
-  const data=s.docImages[key];
-  const isPdf=(data||'').indexOf('data:application/pdf')===0;
   document.getElementById('modalTitle').textContent=label;
-  document.getElementById('modalBody').innerHTML= isPdf
-    ? '<iframe src="'+data+'" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px"></iframe>'
-    : '<img src="'+data+'" style="width:100%;max-height:72vh;object-fit:contain;border-radius:8px;background:#f3f0fb">';
+  document.getElementById('modalBody').innerHTML=docEmbedHtml(s.docImages[key]);
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="editStaff('+staffId+')">← Zurück zum Profil</button>';
   openModal();
 }
 function viewDocImage(imgKey, appId, label){
   const a=applications.find(x=>x.id===appId); if(!a||!a.docImages||!a.docImages[imgKey])return;
-  const data=a.docImages[imgKey];
-  const isPdf=(data||'').indexOf('application/pdf')>-1 || (data||'').indexOf('data:application/pdf')===0;
   document.getElementById('modalTitle').textContent=label;
-  document.getElementById('modalBody').innerHTML= isPdf
-    ? '<iframe src="'+data+'" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px"></iframe>'
-    : '<img src="'+data+'" style="width:100%;max-height:72vh;object-fit:contain;border-radius:8px;background:#f3f0fb">';
+  document.getElementById('modalBody').innerHTML=docEmbedHtml(a.docImages[imgKey]);
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="showApplication('+appId+')">← Zurück zur Bewerbung</button>';
   openModal();
 }
@@ -5831,6 +5898,7 @@ function sendAppLoginJetzt(id){
 }
 /* ============ MITARBEITER VIEWS ============ */
 function renderStaff(view){
+  __lastStaffView=view;
   ensureHilfeWidget();
   const m0=me();
   // Gekündigte Mitarbeiter haben keinen Zugang mehr zur App
@@ -5905,8 +5973,16 @@ function renderStaff(view){
   if(view==='mine'){
     const mine=jobs.filter(j=>j.status==='assigned'&&j.assignedTo===myId);
     c.innerHTML=head('Meine Kunden','Angenommene Aufträge mit vollständigen Kontaktdaten. Vereinbare jetzt selbst einen Termin.')+
-    (mine.length?'<div class="cards grid-2">'+mine.map(mineCard).join('')+'</div>':placeholder('✓','Noch keine Kunden angenommen','Geh zur Auftragsbörse und nimm einen Auftrag an – die vollständigen Daten erscheinen dann hier.'));
-    setTimeout(fillDistances,60);
+    (mine.length
+      ? '<div style="display:flex;gap:10px;align-items:center;margin:-4px 0 12px;flex-wrap:wrap">'+
+          '<input id="mineSearchInput" class="search-input" style="flex:1;min-width:220px;max-width:430px" placeholder="🔍 Kunde suchen – Name, Ort, Straße, Telefon …" value="'+((mineSearch||'').replace(/"/g,'&quot;'))+'" oninput="mineSearchSet(this.value)" onkeydown="if(event.key===\'Escape\'){this.value=\x27\x27;mineSearchSet(\x27\x27);}">'+
+          '<span style="font-size:12.5px;color:var(--muted)">'+mine.length+' Kunde'+(mine.length===1?'':'n')+' insgesamt</span>'+
+        '</div>'+
+        '<div id="mineHint" style="margin:0 0 10px;font-size:13px;color:var(--muted);display:none"></div>'+
+        '<div class="cards grid-2" id="mineList">'+mine.map(mineCard).join('')+'</div>'+
+        '<div id="mineEmpty" style="display:none">'+placeholder('🔍','Kein Kunde gefunden','Zu deiner Suche passt keiner deiner Kunden. Lösche die Eingabe, um wieder alle zu sehen.')+'</div>'
+      : placeholder('✓','Noch keine Kunden angenommen','Geh zur Auftragsbörse und nimm einen Auftrag an – die vollständigen Daten erscheinen dann hier.'));
+    setTimeout(function(){ fillDistances(); if(mineSearch) mineSearchSet(mineSearch); },60);
   }
   if(view==='aufgaben'){
     const all=aufgaben.filter(a=>a.mitarbeiterId===myId);
@@ -5932,7 +6008,7 @@ function renderStaff(view){
         '</div></div>';}).join(''):placeholder('☑','Keine Aufgaben','Aktuell hat dir das Büro keine Aufgaben mit diesem Status zugewiesen.'))+
     '</div></div>';
   }
-  if(view==='calendar'){ c.innerHTML=head('Meine Termine','Deine vereinbarten Einsätze. Termine entstehen, wenn du bei „Meine Kunden” einen Termin vereinbarst.')+
+  if(view==='calendar'){ c.innerHTML=head('Meine Termine','Deine Einsätze. Neue Termine legst du direkt hier an: in der Wochen- oder Tagesansicht über die freie Fläche ziehen oder „+ Neuer Termin“. Verschieben und Dauer ändern geht wie im Apple-Kalender.')+
     calendarHTML(myId); }
   if(view==='hours'){
     const mine=timesheets.filter(t=>t.staffId===myId)
@@ -6148,7 +6224,9 @@ function mineCard(j){
       timerHtml='<div class="example-id" style="background:var(--danger-soft);border-color:#eccfc8;margin-bottom:12px"><div style="font-size:20px">⚠️</div><div><b>Frist abgelaufen</b> – bitte umgehend Termin vereinbaren oder zurückgeben.</div></div>';
     }
   }
-  return '<div class="job"><div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+' · '+distSlot(cu.id)+'</div></div><span class="tag green">angenommen</span></div>'+
+  const suchtext=[j.title,fullName(cu),cu.first,cu.last,cu.area,cu.address,cu.plz,cu.city,cu.phone,cu.contact,cu.notes,(cu.need||[]).join(' ')]
+    .filter(Boolean).join(' ').toLowerCase().replace(/[&<>"]/g,' ');
+  return '<div class="job" data-mine-search="'+suchtext+'"><div class="job-top"><div><h3>'+j.title+'</h3><div class="job-loc">📍 '+cu.area+' · '+distSlot(cu.id)+'</div></div><span class="tag green">angenommen</span></div>'+
     timerHtml+
     '<div class="reveal"><div class="rh">✓ Vollständige Kundendaten</div>'+
       '<div class="reveal-row"><span class="k">Name</span><span class="v">'+fullName(cu)+'</span></div>'+
@@ -6160,6 +6238,30 @@ function mineCard(j){
     '<div class="job-actions"><button class="btn-accept" onclick="addAppointment('+cu.id+')">Termin vereinbaren</button>'+
     (cu.beratung&&((cu.beratung.punkte&&cu.beratung.punkte.length)||cu.beratung.signature)?'<button class="btn-ghost" onclick="v5ShowBeratungsprotokoll('+cu.id+')">📋 Beratungsprotokoll</button>':'')+
     '<button class="btn-danger-ghost" onclick="releaseJob('+j.id+')">Zurückgeben</button></div></div>';
+}
+/* Suche in „Meine Kunden": filtert die Karten direkt im DOM, damit die
+   Eingabe beim Tippen den Fokus behält. Gilt für jeden Standort gleich
+   (Hannover wie Braunschweig) – gesucht wird im Kundenbestand des
+   angemeldeten Mitarbeiters. */
+var mineSearch='';
+function mineSearchSet(v){
+  mineSearch=String(v||'');
+  const q=mineSearch.trim().toLowerCase();
+  const karten=document.querySelectorAll('#mineList .job');
+  let treffer=0;
+  karten.forEach(function(el){
+    const hay=el.getAttribute('data-mine-search')||'';
+    const hit=!q||hay.indexOf(q)>-1;
+    el.style.display=hit?'':'none';
+    if(hit) treffer++;
+  });
+  const hint=document.getElementById('mineHint');
+  if(hint){
+    hint.style.display=q?'block':'none';
+    hint.textContent=q?(treffer+' von '+karten.length+' Kunden passen zu „'+mineSearch+'“'):'';
+  }
+  const leer=document.getElementById('mineEmpty');
+  if(leer) leer.style.display=(q&&treffer===0)?'':'none';
 }
 function emptyBoard(){return '<div class="empty"><div class="big">🎉</div><b>Aktuell keine offenen Aufträge</b><p style="margin-top:6px">Sobald das Büro einen neuen Kunden freigibt, erscheint er hier. Abgelehnte Aufträge werden dir nicht erneut angezeigt.</p></div>';}
 
@@ -7066,8 +7168,9 @@ function refreshCal(){ const h=document.getElementById('calHost'); if(h) h.inner
 function calEvents(){
   let list=appointments.slice();
   if(calStaffFilter!==null){
-    // Mitarbeiter-Ansicht: nur eigene UND abgesagte ausblenden
-    list=list.filter(a=>a.staffId===calStaffFilter && a.status!=='abgesagt');
+    // Mitarbeiter-Ansicht: nur eigene Termine – abgesagte bleiben sichtbar
+    // (durchgestrichen), damit nichts unbemerkt aus dem Kalender verschwindet.
+    list=list.filter(a=>a.staffId===calStaffFilter);
   }
   // Admin-Ansicht (calStaffFilter===null): alle, auch abgesagte.
   // Zusätzlich: freie Suche nach Kunde ODER Mitarbeiter.
@@ -7083,6 +7186,8 @@ function calEvents(){
   if(calStaffFilter===null && typeof calStaffPick!=='undefined' && calStaffPick!=null){
     list=list.filter(function(a){ return a.staffId===calStaffPick; });
   }
+  // Filter ueber die Legende (z. B. nur „nicht erledigt")
+  if(calStateFilter){ list=list.filter(function(a){ return apptState(a)===calStateFilter; }); }
   return list;
 }
 /* Admin-Kalender: Suchfeld über dem Kalender. Tippt man einen Kunden- oder
@@ -7107,6 +7212,7 @@ function apptStatusFlags(a){
   if(a.problem) flags.push({ic:'⚠️',label:'Problem: '+a.problem,cls:'problem'});
   if(a.wunsch) flags.push({ic:'💡',label:'Wunsch: '+a.wunsch,cls:'wunsch'});
   const ts=timesheets.find(t=>t.staffId===a.staffId&&t.customerId===a.customerId&&t.date===a.date);
+  if(ts) flags.push({ic:'\u2705',label:'Erledigt \u2013 Stundenzettel erfasst ('+(ts.start||'')+(ts.end?'\u2013'+ts.end:'')+')',cls:'erledigt'});
   // „Verpasst" erst NACH dem Termintag – am selben Tag kann der Einsatz noch
   // gestartet und die Zeit angepasst werden (z. B. später gekommen). Erst wenn
   // bis Tagesende kein Stundenzettel erfasst wurde, gilt der Termin als verpasst.
@@ -7115,9 +7221,76 @@ function apptStatusFlags(a){
     if(!(ts.signature||ts.proof)) flags.push({ic:'✍️',label:'Unterschrift fehlt',cls:'nosign'});
     if(ts.start&&a.time&&ts.start!==a.time) flags.push({ic:'⏱',label:'Zeiten angepasst: '+ts.start+'–'+(ts.end||'?')+' statt '+a.time,cls:'zeit'});
   }else if(vorbei){
-    flags.push({ic:'❌',label:'Termin verpasst – kein Stundenzettel erfasst',cls:'verpasst'});
+    flags.push({ic:'❌',label:'Nicht erledigt – kein Stundenzettel erfasst',cls:'verpasst'});
   }
   return flags;
+}
+/* ============================================================
+   TERMIN-STATUS: geplant / erledigt / nicht erledigt / abgesagt
+   Ein vergangener Termin verschwindet nie aus dem Kalender. Er wird
+   eingefaerbt und bleibt ueber die Legende jederzeit auffindbar.
+   „Erledigt" heisst: zu Mitarbeiter + Kunde + Tag existiert ein
+   Stundenzettel (entsteht durch „Termin starten"/„Zeit erfassen").
+   ============================================================ */
+function apptDone(a){
+  if(!a) return false;
+  if(a.status==='erledigt') return true;
+  return !!timesheets.find(function(t){ return t.staffId===a.staffId&&t.customerId===a.customerId&&t.date===a.date; });
+}
+function apptState(a){
+  if(!a) return 'geplant';
+  if(a.status==='abgesagt') return 'abgesagt';
+  if(apptDone(a)) return 'erledigt';
+  if(String(a.date||'')<todayISO()) return 'verpasst';
+  return 'geplant';
+}
+function apptPrefix(a){ const s=apptState(a); return s==='abgesagt'?'\u2715 ':s==='erledigt'?'\u2713 ':s==='verpasst'?'\u2717 ':''; }
+/* Symbole am Termin – Erledigt/Verpasst steckt schon in Farbe und Vorzeichen */
+function apptIcons(a){ return apptStatusFlags(a).filter(function(f){ return f.cls!=='verpasst'&&f.cls!=='erledigt'; }); }
+
+var calStateFilter=null;   // null | 'geplant' | 'erledigt' | 'verpasst' | 'abgesagt'
+const CAL_STATES=[
+  {k:'geplant', label:'Geplant',       sw:'linear-gradient(135deg,#7c3aed,#db2777)'},
+  {k:'erledigt',label:'Erledigt',      sw:'linear-gradient(135deg,#12693c,#1f9e59)'},
+  {k:'verpasst',label:'Nicht erledigt',sw:'linear-gradient(135deg,#a3170d,#dd5340)'},
+  {k:'abgesagt',label:'Abgesagt',      sw:'repeating-linear-gradient(135deg,#e9657f,#e9657f 4px,#d94f6b 4px,#d94f6b 8px)'}
+];
+function calSetStateFilter(k){
+  calStateFilter=(calStateFilter===k)?null:k;
+  refreshCal();
+}
+/* Erster und letzter Tag des gerade angezeigten Zeitraums (ISO) */
+function calRange(){
+  if(calView==='month'){
+    const first=new Date(calCursor.getFullYear(),calCursor.getMonth(),1);
+    const a=weekStart(first); const b=new Date(a); b.setDate(a.getDate()+41);
+    return [dateKey(a),dateKey(b)];
+  }
+  if(calView==='week'){
+    const a=weekStart(calCursor); const b=new Date(a); b.setDate(a.getDate()+6);
+    return [dateKey(a),dateKey(b)];
+  }
+  const d=new Date(calCursor.getFullYear(),calCursor.getMonth(),calCursor.getDate());
+  return [dateKey(d),dateKey(d)];
+}
+/* Legende: erklaert die Farben und dient zugleich als Filter. Vergangene
+   Termine bleiben so dauerhaft einsehbar („Nicht erledigt" anklicken). */
+function calLegendHTML(){
+  const r=calRange();
+  // Zaehlung ohne den Legendenfilter selbst, sonst waeren alle anderen 0
+  const merk=calStateFilter; calStateFilter=null;
+  const evs=calEvents().filter(function(e){ return String(e.date||'')>=r[0]&&String(e.date||'')<=r[1]; });
+  calStateFilter=merk;
+  const cnt={geplant:0,erledigt:0,verpasst:0,abgesagt:0};
+  evs.forEach(function(e){ const st=apptState(e); if(cnt[st]!=null) cnt[st]++; });
+  const chips=CAL_STATES.map(function(st){
+    return '<span class="lg'+(calStateFilter===st.k?' on':'')+'" onclick="calSetStateFilter(\''+st.k+'\')" title="Nur '+st.label+' anzeigen">'+
+      '<span class="sw" style="background:'+st.sw+'"></span>'+st.label+' <span class="ct">'+cnt[st.k]+'</span></span>';
+  }).join('');
+  const note=calStateFilter
+    ? '<span class="lg-note">Gefiltert auf \u201e'+(CAL_STATES.filter(function(x){return x.k===calStateFilter;})[0]||{}).label+'\u201c \u2013 nochmal klicken zeigt wieder alles.</span>'
+    : '<span class="lg-note">Vergangene Termine bleiben stehen: gr\u00fcn = gemacht, rot = nicht gemacht. Zum Filtern anklicken.</span>';
+  return '<div class="cal-legend">'+chips+note+'</div>';
 }
 function pad2(n){return String(n).padStart(2,'0');}
 function dateKey(d){return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());}
@@ -7138,11 +7311,11 @@ function renderCalendar(){
   const adminBar = calCanEdit()
     ? '<div style="display:flex;gap:8px;align-items:center;padding:8px 2px 12px;flex-wrap:wrap">'+
         '<button class="btn-primary btn-sm" style="width:auto" onclick="calNewAppt()">+ Neuer Termin</button>'+
-        '<button class="btn-danger-ghost btn-sm" onclick="calDeleteAll()">🗑 Alle Termine löschen</button>'+
-        '<span style="font-size:12.5px;color:var(--muted)">Termine per Drag &amp; Drop verschieben · in der Wochen-/Tagesansicht auf freie Fläche ziehen = neuer Termin</span>'+
+        (calStaffFilter===null?'<button class="btn-danger-ghost btn-sm" onclick="calDeleteAll()">🗑 Alle Termine löschen</button>':'')+
+        '<span style="font-size:12.5px;color:var(--muted)">Termin verschieben: anfassen und ziehen · Dauer ändern: obere oder untere Kante ziehen · freie Fläche ziehen = neuer Termin</span>'+
       '</div>'
     : '';
-  return '<div class="cal-wrap">'+toolbar+adminBar+body+'</div>';
+  return '<div class="cal-wrap">'+toolbar+adminBar+body+calLegendHTML()+'</div>';
 }
 
 function monthTitle(d){ const m=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']; return m[d.getMonth()]+' '+d.getFullYear(); }
@@ -7161,7 +7334,11 @@ function monthView(){
     const d=new Date(start); d.setDate(start.getDate()+i);
     const other=d.getMonth()!==calCursor.getMonth();
     const dayEvs=evs.filter(e=>e.date===dateKey(d)).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
-    const shown=dayEvs.slice(0,3).map(e=>{const cu=custById(e.customerId);const cl=e.status==='abgesagt'?' cm-ev-cancel':'';const fl=apptStatusFlags(e);return '<div class="cm-ev'+cl+'"'+(calCanEdit()?' draggable="true" ondragstart="calDragStart(event,'+e.id+')"':'')+' onclick="event.stopPropagation();showAppt('+e.id+')" '+(fl.length?'title="'+fl.map(f=>f.label).join(' · ').replace(/"/g,'&quot;')+'"':'')+'>'+(e.status==='abgesagt'?'✕ ':'')+(fl.map(f=>f.ic).join(''))+(fl.length?' ':'')+(e.time||'')+' '+(cu?cu.last:'Termin')+'</div>';}).join('');
+    const shown=dayEvs.slice(0,3).map(e=>{const cu=custById(e.customerId);
+      const st=apptState(e);
+      const cl = st==='abgesagt'?' cm-ev-cancel':(st==='erledigt'?' cm-ev-done':(st==='verpasst'?' cm-ev-missed':''));
+      const fl=apptStatusFlags(e), ic=apptIcons(e);
+      return '<div class="cm-ev'+cl+'"'+(calCanEditAppt(e)?' draggable="true" ondragstart="calDragStart(event,'+e.id+')"':'')+' onclick="event.stopPropagation();showAppt('+e.id+')" '+(fl.length?'title="'+fl.map(f=>f.label).join(' · ').replace(/"/g,'&quot;')+'"':'')+'>'+apptPrefix(e)+(ic.map(f=>f.ic).join(''))+(ic.length?' ':'')+(e.time||'')+' '+(cu?cu.last:'Termin')+'</div>';}).join('');
     const more=dayEvs.length>3?'<div class="cm-more">+'+(dayEvs.length-3)+' mehr</div>':'';
     cells+='<div class="cm-cell'+(other?' other':'')+(sameDay(d,today)?' today':'')+'"'+(calCanEdit()?' ondragover="calDragOver(event)" ondrop="calDropDay(event,\''+dateKey(d)+'\')"':'')+' onclick="openDay(\''+dateKey(d)+'\')"><span class="cm-num">'+d.getDate()+'</span>'+shown+more+'</div>';
   }
@@ -7203,12 +7380,15 @@ function timeView(days){
       let top=((hh-startHour)*60+mm)/60*slotH; if(top<0)top=0;
       const height=Math.max(22,(e.duration||60)/60*slotH-3);
       const cu=custById(e.customerId);
-      const cancCl=e.status==='abgesagt'?' ct-ev-cancel':'';
-      const fl=apptStatusFlags(e);
-      const flIcons=fl.length?'<span class="ct-flags" title="'+fl.map(f=>f.label).join(' · ').replace(/"/g,'&quot;')+'">'+fl.map(f=>f.ic).join('')+'</span>':'';
-      evLayer+='<div class="ct-ev'+cancCl+'" style="top:'+top+'px;height:'+height+'px"'+(calCanEdit()?' draggable="true" ondragstart="event.stopPropagation();calDragStart(event,'+e.id+')"':'')+' onclick="showAppt('+e.id+')"><div class="et">'+(e.status==='abgesagt'?'✕ ':'')+(e.time||'')+' '+(cu?fullName(cu):'Termin')+' '+flIcons+'</div>'+(height>34?'<div class="es">'+(e.status==='abgesagt'?'Abgesagt: '+(e.cancelReason||''):(e.note||(cu?cu.area:'')))+'</div>':'')+'</div>';
+      const st=apptState(e);
+      const cancCl = st==='abgesagt'?' ct-ev-cancel':(st==='erledigt'?' ct-ev-done':(st==='verpasst'?' ct-ev-missed':''));
+      const fl=apptStatusFlags(e), ic=apptIcons(e);
+      const flIcons=ic.length?'<span class="ct-flags">'+ic.map(f=>f.ic).join('')+'</span>':'';
+      const ed=calCanEditAppt(e);
+      const griffe=ed?'<div class="ct-rz top"></div><div class="ct-rz bot"></div>':'';
+      evLayer+='<div class="ct-ev'+cancCl+(ed?' editable':'')+'" data-id="'+e.id+'" style="top:'+top+'px;height:'+height+'px"'+(fl.length?' title="'+fl.map(f=>f.label).join(' · ').replace(/"/g,'&quot;')+'"':'')+' onclick="showAppt('+e.id+')"><div class="et">'+apptPrefix(e)+(e.time||'')+' '+(cu?fullName(cu):'Termin')+' '+flIcons+'</div>'+(height>34?'<div class="es">'+(e.status==='abgesagt'?'Abgesagt: '+(e.cancelReason||''):(e.note||(cu?cu.area:'')))+'</div>':'')+griffe+'</div>';
     });
-    dayCols+='<div class="ct-col" style="height:'+totalH+'px;position:relative"'+(calCanEdit()?' ondragover="calDragOver(event)" ondrop="calDropTime(event,\''+dateKey(d)+'\')" onmousedown="calCreateDown(event,\''+dateKey(d)+'\')"':'')+'>'+slots+evLayer+'</div>';
+    dayCols+='<div class="ct-col" data-date="'+dateKey(d)+'" style="height:'+totalH+'px;position:relative"'+(calCanEdit()?' ondragover="calDragOver(event)" ondrop="calDropTime(event,\''+dateKey(d)+'\')" onmousedown="calCreateDown(event,\''+dateKey(d)+'\')"':'')+'>'+slots+evLayer+'</div>';
   });
 
   const gridCols='60px repeat('+days+',1fr)';
@@ -7235,7 +7415,17 @@ function quickAddInfo(){
    Aktiv nur wenn der Admin-/Bürokalender gerendert wird (calStaffFilter===null).
    ============================================================ */
 const CAL_START_HOUR=6, CAL_SLOT_H=48;   // muss zu timeView() passen
-function calCanEdit(){ return calStaffFilter===null; }
+const CAL_END_HOUR=22;                   // letzte anklickbare Zeile
+/* Wer darf im gerade gezeigten Kalender planen?
+   - Bürokalender (calStaffFilter===null): Admin und Büro.
+   - Mitarbeiterkalender: der Mitarbeiter selbst – er legt seine Termine
+     jetzt direkt im Kalender an, statt nur über „Meine Kunden". */
+function calCanEdit(){
+  if(calStaffFilter===null) return currentRole==='admin'||currentRole==='buero';
+  return currentRole==='staff'&&calStaffFilter===myId;
+}
+/* Einzelner Termin: abgesagte Termine bleiben stehen, sind aber gesperrt. */
+function calCanEditAppt(a){ return !!a&&calCanEdit()&&a.status!=='abgesagt'; }
 var __calDragId=null;
 function calDragStart(ev,id){
   __calDragId=id;
@@ -7254,7 +7444,7 @@ function calYToTime(y){
 function calDropDay(ev,dateStr){
   ev.preventDefault();
   const id=calDragId(ev); __calDragId=null;
-  const a=appointments.find(x=>x.id===id); if(!a||a.date===dateStr) return;
+  const a=appointments.find(x=>x.id===id); if(!a||!calCanEditAppt(a)||a.date===dateStr) return;
   a.date=dateStr;
   if(CLOUD) cloudUpdate('termine',a.id,apptToRow(a));
   logActivity('Termin verschoben auf '+fmtDate(dateStr));
@@ -7264,7 +7454,7 @@ function calDropDay(ev,dateStr){
 function calDropTime(ev,dateStr){
   ev.preventDefault();
   const id=calDragId(ev); __calDragId=null;
-  const a=appointments.find(x=>x.id===id); if(!a) return;
+  const a=appointments.find(x=>x.id===id); if(!a||!calCanEditAppt(a)) return;
   const rect=ev.currentTarget.getBoundingClientRect();
   const t=calYToTime(ev.clientY-rect.top);
   a.date=dateStr; a.time=t;
@@ -7305,19 +7495,169 @@ function calCreateUp(ev){
   if(dur<15) dur=60;   // reiner Klick -> Standarddauer
   calNewAppt(c.date, calYToTime(a), dur);
 }
+/* ============================================================
+   TERMINE ZIEHEN UND IN DER LAENGE AENDERN (wie im Apple-Kalender)
+   Woche/Tag: Kachel anfassen und ziehen = verschieben (Tag + Uhrzeit),
+   obere oder untere Kante ziehen = Termin kuerzen oder verlaengern.
+   Raster 15 Minuten, waehrend des Ziehens laeuft die Uhrzeit mit.
+   Funktioniert mit Maus und am Tablet (dort: kurz halten, dann ziehen).
+   ============================================================ */
+var __ctDrag=null;        // laufende Geste
+var __ctJustDragged=false; // unterdrueckt den Klick direkt nach dem Ziehen
+const CT_STEP=CAL_SLOT_H/4;               // 15 Minuten in Pixeln
+function ctSnap(px){ return Math.round(px/CT_STEP)*CT_STEP; }
+function ctPxToMin(px){ return Math.round((px/CAL_SLOT_H*60)/15)*15 + CAL_START_HOUR*60; }
+function ctMinToStr(min){ return pad2(Math.floor(min/60))+':'+pad2(min%60); }
+function ctPxToTime(px){ return ctMinToStr(ctPxToMin(px)); }
+function ctTimeToPx(t){ const p=String(t||'09:00').split(':'); return ((+p[0]-CAL_START_HOUR)*60+(+p[1]||0))/60*CAL_SLOT_H; }
+/* Tagesspalte unter der Zeigerposition */
+function ctColAt(x){
+  const host=document.getElementById('calHost'); if(!host) return null;
+  const cols=host.querySelectorAll('.ct-col'); let erste=null,letzte=null;
+  for(let i=0;i<cols.length;i++){
+    const r=cols[i].getBoundingClientRect();
+    if(i===0) erste=cols[i];
+    letzte=cols[i];
+    if(x>=r.left&&x<=r.right) return cols[i];
+  }
+  if(!erste) return null;
+  return x<erste.getBoundingClientRect().left?erste:letzte;
+}
+/* Kachel waehrend der Geste beschriften: „09:15–10:45" */
+function ctLabel(d){
+  const et=d.el.querySelector('.et'); if(!et) return;
+  const von=ctPxToMin(d.top), bis=von+d.dur;
+  et.textContent=ctMinToStr(von)+'\u2013'+ctMinToStr(Math.min(bis,CAL_END_HOUR*60))+' \u00b7 '+d.dur+' Min.';
+}
+function ctDown(ev){
+  if(ev.button!=null&&ev.button!==0) return;
+  const el=ev.target&&ev.target.closest?ev.target.closest('.ct-ev'):null;
+  if(!el) return;
+  const host=document.getElementById('calHost'); if(!host||!host.contains(el)) return;
+  if(!el.classList.contains('editable')) return;      // abgesagt / kein Recht
+  const id=+el.getAttribute('data-id');
+  const a=appointments.find(x=>x.id===id); if(!a) return;
+  const griff=ev.target.closest('.ct-rz');
+  const modus=griff?(griff.classList.contains('top')?'top':'bot'):'move';
+  __ctDrag={id:id,a:a,el:el,modus:modus,pid:ev.pointerId,
+    x0:ev.clientX,y0:ev.clientY,
+    top0:ctTimeToPx(a.time),dur0:(a.duration||60),
+    top:ctTimeToPx(a.time),dur:(a.duration||60),
+    datum:a.date, aktiv:false, bewegt:false,
+    touch:(ev.pointerType==='touch'||ev.pointerType==='pen')};
+  if(modus!=='move'){ ctAktiv(); ev.preventDefault(); }
+  else if(__ctDrag.touch){ __ctDrag.timer=setTimeout(ctAktiv,300); }   // kurz halten
+}
+function ctAktiv(){
+  const d=__ctDrag; if(!d||d.aktiv) return;
+  d.aktiv=true;
+  d.el.classList.add('dragging');
+  document.body.style.userSelect='none';
+  try{ d.el.setPointerCapture(d.pid); }catch(e){}
+  ctLabel(d);
+}
+function ctMove(ev){
+  const d=__ctDrag; if(!d) return;
+  const dy=ev.clientY-d.y0, dx=ev.clientX-d.x0;
+  if(!d.aktiv){
+    if(d.touch){ if(Math.abs(dy)>10||Math.abs(dx)>10){ clearTimeout(d.timer); __ctDrag=null; } return; }
+    if(Math.abs(dy)<4&&Math.abs(dx)<4) return;
+    ctAktiv();
+  }
+  ev.preventDefault();
+  d.bewegt=true;
+  const maxPx=(CAL_END_HOUR-CAL_START_HOUR)*CAL_SLOT_H;
+  if(d.modus==='move'){
+    let top=ctSnap(d.top0+dy);
+    const hoehe=d.dur0/60*CAL_SLOT_H;
+    top=Math.max(0,Math.min(top,maxPx-hoehe));
+    d.top=top; d.dur=d.dur0;
+    const col=ctColAt(ev.clientX);
+    if(col){ d.datum=col.getAttribute('data-date'); if(col!==d.el.parentNode) col.appendChild(d.el); }
+  } else if(d.modus==='bot'){
+    let h=ctSnap(d.dur0/60*CAL_SLOT_H+dy);
+    h=Math.max(CT_STEP,Math.min(h,maxPx-d.top0));
+    d.top=d.top0; d.dur=Math.round(h/CAL_SLOT_H*60);
+  } else {
+    const unten=d.top0+d.dur0/60*CAL_SLOT_H;
+    let top=ctSnap(d.top0+dy);
+    top=Math.max(0,Math.min(top,unten-CT_STEP));
+    d.top=top; d.dur=Math.round((unten-top)/CAL_SLOT_H*60);
+  }
+  d.el.style.top=d.top+'px';
+  d.el.style.height=Math.max(22,d.dur/60*CAL_SLOT_H-3)+'px';
+  ctLabel(d);
+}
+function ctUp(ev){
+  const d=__ctDrag; if(!d) return;
+  __ctDrag=null;
+  if(d.timer) clearTimeout(d.timer);
+  document.body.style.userSelect='';
+  try{ d.el.releasePointerCapture(d.pid); }catch(e){}
+  d.el.classList.remove('dragging');
+  if(!d.aktiv||!d.bewegt){ refreshCal(); return; }   // nur getippt -> Klick oeffnet die Details
+  const a=d.a;
+  const neuZeit=ctPxToTime(d.top), neuDauer=Math.max(15,d.dur), neuDatum=d.datum||a.date;
+  const geaendert=(a.date!==neuDatum)||(a.time!==neuZeit)||((a.duration||60)!==neuDauer);
+  if(geaendert){
+    a.date=neuDatum; a.time=neuZeit; a.duration=neuDauer;
+    if(CLOUD) cloudUpdate('termine',a.id,apptToRow(a));
+    const cu=custById(a.customerId);
+    logActivity((d.modus==='move'?'Termin verschoben: ':'Termindauer geändert: ')+(cu?fullName(cu):'')+' '+fmtDate(a.date)+' '+a.time+' ('+neuDauer+' Min.)');
+    toast(d.modus==='move'
+      ? 'Verschoben auf '+fmtDate(neuDatum)+', '+neuZeit+' Uhr'
+      : 'Neue Dauer: '+neuDauer+' Minuten ('+neuZeit+' Uhr)');
+  }
+  __ctJustDragged=true; setTimeout(function(){ __ctJustDragged=false; },260);
+  refreshCal();
+}
+function ctAbbruch(){
+  const d=__ctDrag; if(!d) return; __ctDrag=null;
+  if(d.timer) clearTimeout(d.timer);
+  document.body.style.userSelect='';
+  d.el.classList.remove('dragging');
+  refreshCal();
+}
+document.addEventListener('pointerdown',ctDown);
+document.addEventListener('pointermove',ctMove);
+document.addEventListener('pointerup',ctUp);
+document.addEventListener('pointercancel',ctAbbruch);
+/* Nach dem Ziehen darf der Klick den Termin nicht zusaetzlich oeffnen */
+document.addEventListener('click',function(ev){
+  if(!__ctJustDragged) return;
+  if(ev.target&&ev.target.closest&&ev.target.closest('.ct-ev')){ ev.stopPropagation(); ev.preventDefault(); }
+},true);
+
+/* Kunden, für die ein Mitarbeiter selbst Termine anlegen darf:
+   angenommene bzw. zugewiesene Aufträge plus alle Kunden, bei denen er
+   bereits im Einsatz war. */
+function calMyCustomers(){
+  const ids={};
+  jobs.forEach(function(j){ if(j.status==='assigned'&&j.assignedTo===myId) ids[j.customerId]=1; });
+  appointments.forEach(function(a){ if(a.staffId===myId) ids[a.customerId]=1; });
+  timesheets.forEach(function(t){ if(t.staffId===myId) ids[t.customerId]=1; });
+  return (customers||[]).filter(function(c){ return ids[c.id]; });
+}
 /* Modal: neuen Termin im Kalender anlegen (Kunde + Mitarbeiter frei wählbar) */
 function calNewAppt(dateStr,timeStr,dur){
   if(!calCanEdit()) return;
   dateStr=dateStr||todayISO(); timeStr=timeStr||'09:00'; dur=dur||60;
-  const custOpts=(customers||[]).slice().sort((a,b)=>fullName(a).localeCompare(fullName(b)))
+  // Mitarbeiter legen Termine für ihre eigenen Kunden an – auf sich selbst.
+  const alsStaff = (currentRole==='staff');
+  const kundenListe = alsStaff ? calMyCustomers() : (customers||[]);
+  const custOpts=kundenListe.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b)))
     .map(c=>'<option value="'+c.id+'">'+fullName(c)+(c.area?' · '+c.area:'')+'</option>').join('');
   const staffOpts=(staff||[]).slice().sort((a,b)=>staffName(a.id).localeCompare(staffName(b.id)))
     .map(s=>'<option value="'+s.id+'">'+staffName(s.id)+'</option>').join('');
+  const keineKunden = alsStaff && !kundenListe.length;
   document.getElementById('modalTitle').textContent='Neuer Termin';
   document.getElementById('modalBody').innerHTML=
     '<div class="content-form">'+
+    (keineKunden?'<div class="example-id" style="background:var(--amber-soft);border-color:#f0dcc2;margin-bottom:12px"><div style="font-size:20px">ℹ️</div><div>Dir ist noch kein Kunde zugeordnet. Nimm zuerst unter „Auftragsbörse" einen Auftrag an – danach kannst du hier Termine anlegen.</div></div>':'')+
     '<label>Kunde *</label><select id="na_cust">'+(custOpts||'<option value="">– keine Kunden –</option>')+'</select>'+
-    '<label>Mitarbeiter *</label><select id="na_staff">'+(staffOpts||'<option value="">– keine Mitarbeiter –</option>')+'</select>'+
+    (alsStaff
+      ? '<label>Mitarbeiter</label><input value="'+String(staffName(myId)).replace(/"/g,'&quot;')+'" disabled><input type="hidden" id="na_staff" value="'+myId+'">'
+      : '<label>Mitarbeiter *</label><select id="na_staff">'+(staffOpts||'<option value="">– keine Mitarbeiter –</option>')+'</select>')+
     '<div class="form-row"><div><label>Datum</label><input id="na_date" type="date" value="'+dateStr+'"></div>'+
     '<div><label>Uhrzeit</label><input id="na_time" type="time" value="'+timeStr+'"></div></div>'+
     '<label>Dauer (Minuten)</label><input id="na_dur" type="number" value="'+dur+'">'+
@@ -7330,18 +7670,33 @@ function calNewAppt(dateStr,timeStr,dur){
   openModal();
 }
 function calSaveNewAppt(){
-  if(currentRole!=='admin'&&currentRole!=='buero'){ toast('Keine Berechtigung',true); return; }
-  const cidRaw=val('na_cust'), sidRaw=val('na_staff'), date=val('na_date'), time=val('na_time');
+  const alsStaff=(currentRole==='staff');
+  if(!alsStaff&&currentRole!=='admin'&&currentRole!=='buero'){ toast('Keine Berechtigung',true); return; }
+  if(alsStaff&&typeof requireStaffAction==='function'&&!requireStaffAction()) return;
+  const cidRaw=val('na_cust'), date=val('na_date'), time=val('na_time');
+  const sidRaw=alsStaff?String(myId):val('na_staff');
   const cid = cidRaw===''?NaN:+cidRaw, sid = sidRaw===''?NaN:+sidRaw;  // ID 0 ist gültig – nur echte Leerauswahl abweisen
   if(isNaN(cid)){ toastHint('Bitte einen Kunden wählen'); return; }
   if(isNaN(sid)){ toastHint('Bitte einen Mitarbeiter wählen'); return; }
   if(!date||!time){ toastHint('Bitte Datum und Uhrzeit angeben'); return; }
+  // Mitarbeiter dürfen nur für die eigenen Kunden und auf sich selbst planen
+  if(alsStaff){
+    if(sid!==myId){ toast('Keine Berechtigung',true); return; }
+    if(!calMyCustomers().some(function(c){ return c.id===cid; })){ toast('Dieser Kunde ist dir nicht zugeordnet',true); return; }
+  }
   const cu=custById(cid);
   // Kein separates Kennenlerngespräch/Dienstleistungsvertrag mehr: Neue Kunden
   // werden ausschließlich beim ersten Termin über die Erstberatung aufgenommen.
   const type='einsatz';
   const base={staffId:sid,customerId:cid,time:time,date:date,duration:parseInt(val('na_dur'))||60,note:val('na_note'),type:type,status:'geplant'};
   const created=v5CreateApptSeries(base,'na');
+  // Wie beim Anlegen über „Meine Kunden": ein echter Termin erfüllt die
+  // Meldefrist, der Auftrag bleibt fest beim Mitarbeiter, Kunde wird aktiv.
+  if(alsStaff){
+    const jb=jobs.find(x=>x.customerId===cid&&x.assignedTo===myId&&x.status==='assigned');
+    if(jb&&jb.commitDeadline){ jb.commitDeadline=null; if(CLOUD) cloudUpdate('auftraege',jb.id,jobToRow(jb)); }
+    if(cu&&cu.status!=='aktiv'){ cu.status='aktiv'; if(CLOUD) cloudUpdate('kunden',cu.id,custToRow(cu)); }
+  }
   logActivity('Termin angelegt (Kalender): '+(cu?fullName(cu):'')+' '+fmtDate(date)+' '+time+(created.length>1?' (+'+(created.length-1)+' Serie)':''));
   closeModal(); toast(created.length>1?(created.length+' Serientermine angelegt'):'Termin angelegt'); refreshCal();
 }
@@ -8996,12 +9351,7 @@ function removeStandortAnerkennung(id){
 }
 function viewStandortAnerkennung(){
   const d=__standortDraft; if(!d||!d.anerkennungData) return;
-  const isPdf=(d.anerkennungData||'').indexOf('application/pdf')>-1;
-  const w=window.open();
-  if(w){
-    if(isPdf){ w.document.write('<title>'+(d.anerkennungName||'Anerkennung')+'</title><iframe src="'+d.anerkennungData+'" style="border:0;width:100vw;height:100vh"></iframe>'); }
-    else { w.document.write('<title>'+(d.anerkennungName||'Anerkennung')+'</title><body style="margin:0;background:#111"><img src="'+d.anerkennungData+'" style="max-width:100%;display:block;margin:auto"></body>'); }
-  }
+  openDocPreviewWindow(d.anerkennungData);
 }
 function saveStandort(id){
   captureStandortDraftFields();
@@ -15026,9 +15376,7 @@ function v5KuendShow(staffId){
   const s=staff.find(function(x){return x.id===staffId;}); const k=v5Kuend[staffId]; if(!s||!k) return;
   document.getElementById('modalTitle').textContent='Kündigung – '+fullName(s);
   document.getElementById('modalBody').innerHTML= k.doc
-    ? ((k.doc.indexOf('application/pdf')>-1)
-        ? '<iframe src="'+k.doc+'" style="width:100%;height:70vh;border:1px solid var(--line);border-radius:8px"></iframe>'
-        : '<img src="'+k.doc+'" style="width:100%;max-height:72vh;object-fit:contain;border-radius:8px;background:#f3f0fb">')
+    ? docEmbedHtml(k.doc)
     : '<div class="doc-text" style="max-height:60vh;white-space:pre-wrap">'+v5Esc(k.text||'')+'</div>';
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="v5TaxAction2ByStaff('+staffId+')">⬇ Herunterladen</button><button class="btn-ghost" onclick="closeModal()">Schließen</button>';
   openModal();
