@@ -2123,6 +2123,8 @@ async function loadFromCloud(deferHeavy){
       const {data,error}=await sb.from('stundenzettel').select('*').eq('standort_id',SID).order('id');
       if(error) throw error;
       if(data) timesheets=data.map(rowToTimesheet);
+      // Lokal gemerkte Haken/Kennzeichen wieder auftragen (siehe tsMerkmaleAnwenden)
+      if(typeof tsMerkmaleAnwenden==='function') tsMerkmaleAnwenden();
       DIAG.push('stundenzettel: '+(data?data.length:0)+' geladen');
     }catch(e){ DIAG.push('FEHLER stundenzettel: '+(e.message||e)); console.error('Laden stundenzettel fehlgeschlagen:', e.message||e); }
   }
@@ -3057,6 +3059,12 @@ async function ensureDataLoaded(){
    Wechsel in die Stundenzettel-Ansicht zusätzlich sofort einmal.
    ============================================================ */
 let __refreshInFlight=false;
+/* Zeitpunkt der letzten Nutzer-Aktion. Direkt nach einem Klick wird
+   NICHT neu gezeichnet – sonst verschwindet der gerade angeklickte
+   Knopf mitten im Klick und die Aktion geht verloren. */
+let __letzteAktion=0;
+document.addEventListener('pointerdown',function(){ __letzteAktion=Date.now(); },true);
+document.addEventListener('keydown',function(){ __letzteAktion=Date.now(); },true);
 // Kompakter Fingerabdruck der Kerndaten: nur wenn er sich ändert, wird
 // neu gezeichnet – sonst bleibt der Bildschirm komplett unangetastet
 // (kein sichtbares "Neuladen" mehr alle paar Sekunden).
@@ -3080,6 +3088,7 @@ async function refreshCloudDataSilently(){
   const ae=document.activeElement;
   const typing=ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT');
   if(modalOpen || editingForm || typing) return;
+  if(Date.now()-__letzteAktion < 8000) return; // gerade wird geklickt/getippt
   if(__cloudWriteInFlight>0) return; // gerade wird eine Rechnung gespeichert – nicht überschreiben
   __refreshInFlight=true;
   try{
@@ -4720,10 +4729,14 @@ function renderAdmin(view){
         '<input id="calSearchInput" class="search-input" style="flex:1;min-width:200px;max-width:360px" placeholder="🔍 Nach Kunde oder Mitarbeiter suchen …" value="'+((calSearch||'').replace(/"/g,'&quot;'))+'" oninput="calSearchSet(this.value)" onkeydown="if(event.key===\'Escape\'){this.value=\x27\x27;calSearchSet(\x27\x27);}">'+
         v5CalStaffFilterHTML()+
       '</div>'+
-      '<button class="btn-ghost btn-sm" onclick="openScreenshotImport()">📷 Termine aus Screenshot importieren</button>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button class="btn-ghost btn-sm" id="calRbBtn" onclick="calRbToggle()" title="Vergangene Termine als Liste: was hat stattgefunden, was ist ausgefallen?">'+(calRbAn?'📋 Rückblick schließen':'📋 Rückblick: was hat stattgefunden?')+'</button>'+
+        '<button class="btn-ghost btn-sm" onclick="openScreenshotImport()">📷 Termine aus Screenshot importieren</button>'+
+      '</div>'+
     '</div>'+
     '<div id="calSearchHint" style="margin:0 0 12px;font-size:13px;color:var(--muted);'+((calSearch||'').trim()?'':'display:none')+'"></div>'+
-    calendarHTML(null); }
+    calendarHTML(null)+
+    '<div id="calRueckblick">'+(calRbAn?calRueckblickHTML():'')+'</div>'; }
   if(view==='steuerberater'){ c.innerHTML=head('Steuerberater','Aufgaben zur Übermittlung an den Steuerberater, Datenblätter je Mitarbeiter und der Kündigungs-Ablauf.')+steuerberaterHTML(); }
   if(view==='beratungsvorlage'){ c.innerHTML=beratungsvorlageHTML(); }
 }
@@ -7310,6 +7323,178 @@ function calLegendHTML(){
     : '<span class="lg-note">Vergangene Termine bleiben stehen: gr\u00fcn = gemacht, rot = nicht gemacht. Zum Filtern anklicken.</span>';
   return '<div class="cal-legend">'+chips+note+'</div>';
 }
+
+/* ============================================================
+   RUECKBLICK / KONTROLLE (Buero, Admin)
+   Beantwortet die Frage "Was hat in der Vergangenheit wirklich
+   stattgefunden?" fuer einen Mitarbeiter und einen Zeitraum.
+   Im Monatsraster muesste man dafuer Monat fuer Monat zurueck-
+   blaettern - hier steht alles in einer Liste, mit Zaehlern.
+   Grundlage ist dieselbe Logik wie im Kalender (apptState):
+     erledigt      = zu Mitarbeiter+Kunde+Tag gibt es einen Stundenzettel
+     nicht erledigt= Tag vorbei, kein Stundenzettel
+     abgesagt      = Termin wurde abgesagt (mit Grund)
+   ============================================================ */
+var calRbAn=false;          // Panel sichtbar?
+var calRbZeit='30';         // Zeitraum
+var calRbStatus='';         // '' | 'erledigt' | 'verpasst' | 'abgesagt' | 'geplant'
+const CAL_RB_ZEIT=[['30','Letzte 30 Tage'],['90','Letzte 3 Monate'],['monat','Dieser Monat'],['vormonat','Letzter Monat'],['jahr','Dieses Jahr'],['alles','Alles']];
+
+function calRbToggle(){
+  calRbAn=!calRbAn;
+  calRbRender();
+  if(calRbAn){ const el=document.getElementById('calRueckblick'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }
+}
+function calRbSetZeit(v){ calRbZeit=v; calRbStatus=''; calRbRender(); }
+function calRbSetStatus(v){ calRbStatus=(calRbStatus===v)?'':v; calRbRender(); }
+function calRbRender(){
+  const el=document.getElementById('calRueckblick');
+  if(el) el.innerHTML=calRbAn?calRueckblickHTML():'';
+  const btn=document.getElementById('calRbBtn');
+  if(btn) btn.textContent=calRbAn?'📋 Rückblick schließen':'📋 Rückblick: was hat stattgefunden?';
+}
+/* Zeitraum als [von, bis] in ISO - immer bis heute, nie in die Zukunft */
+function calRbRange(){
+  const heute=todayISO();
+  const d=new Date();
+  if(calRbZeit==='monat')    return [heute.slice(0,7)+'-01', heute];
+  if(calRbZeit==='vormonat'){
+    const a=new Date(d.getFullYear(),d.getMonth()-1,1);
+    const b=new Date(d.getFullYear(),d.getMonth(),0);
+    return [dateKey(a), dateKey(b)];
+  }
+  if(calRbZeit==='jahr')  return [heute.slice(0,4)+'-01-01', heute];
+  if(calRbZeit==='alles') return ['0001-01-01', heute];
+  const n=parseInt(calRbZeit,10)||30;
+  const von=new Date(); von.setDate(von.getDate()-(n-1));
+  return [dateKey(von), heute];
+}
+/* Stundenzettel zu einem Termin (gleiche Zuordnung wie apptStatusFlags) */
+function apptTs(a){
+  if(!a) return null;
+  return timesheets.find(function(t){ return t.staffId===a.staffId&&t.customerId===a.customerId&&t.date===a.date; })||null;
+}
+/* Termine des Zeitraums, gefiltert auf den gewaehlten Mitarbeiter */
+function calRbTermine(){
+  const r=calRbRange();
+  return (appointments||[]).filter(function(a){
+    const d=String(a.date||'');
+    if(d<r[0]||d>r[1]) return false;
+    if(typeof calStaffPick!=='undefined' && calStaffPick!=null && a.staffId!==calStaffPick) return false;
+    return true;
+  }).sort(function(a,b){
+    const c=String(b.date||'').localeCompare(String(a.date||''));
+    return c!==0?c:String(b.time||'').localeCompare(String(a.time||''));
+  });
+}
+function calRbBemerkung(a, st, ts){
+  if(st==='abgesagt') return (a.cancelReason||'ohne Angabe')+(a.cancelDetail?' – '+a.cancelDetail:'');
+  if(st==='erledigt'){
+    if(!ts) return 'als erledigt markiert';
+    return (ts.signature?'mit Unterschrift':'ohne Unterschrift')+(ts.status==='freigegeben'?', freigegeben':ts.status==='abgelehnt'?', abgelehnt':', noch zu prüfen');
+  }
+  if(st==='verpasst') return a.problem?('gemeldetes Problem: '+a.problem):'kein Stundenzettel erfasst';
+  return a.problem?('Problem: '+a.problem):'';
+}
+function calRueckblickHTML(){
+  const list=calRbTermine();
+  const r=calRbRange();
+  const wer=(typeof calStaffPick!=='undefined'&&calStaffPick!=null)?staffName(calStaffPick):'alle Mitarbeiter';
+  const cnt={erledigt:0,verpasst:0,abgesagt:0,geplant:0};
+  list.forEach(function(a){ const st=apptState(a); if(cnt[st]!=null) cnt[st]++; });
+  const bewertet=cnt.erledigt+cnt.verpasst+cnt.abgesagt;
+  const quote=bewertet?Math.round(cnt.erledigt/bewertet*100):0;
+
+  const kachel=function(k,label,farbe,hint){
+    const an=calRbStatus===k;
+    return '<div onclick="calRbSetStatus(\''+k+'\')" title="'+hint+'" style="cursor:pointer;flex:1;min-width:130px;border:2px solid '+(an?farbe:'var(--line)')+';background:'+(an?farbe+'14':'var(--card)')+';border-radius:12px;padding:12px 14px">'+
+      '<div style="font-size:26px;font-weight:700;color:'+farbe+';line-height:1.1">'+cnt[k]+'</div>'+
+      '<div style="font-size:12.5px;color:var(--muted);font-weight:600;margin-top:2px">'+label+'</div></div>';
+  };
+
+  const zeitSel='<select style="width:auto" onchange="calRbSetZeit(this.value)">'+
+    CAL_RB_ZEIT.map(function(z){ return '<option value="'+z[0]+'"'+(calRbZeit===z[0]?' selected':'')+'>'+z[1]+'</option>'; }).join('')+'</select>';
+
+  const gefiltert=calRbStatus?list.filter(function(a){ return apptState(a)===calRbStatus; }):list;
+
+  const zeilen=gefiltert.map(function(a){
+    const cu=custById(a.customerId);
+    const st=apptState(a);
+    const ts=apptTs(a);
+    const farbe= st==='erledigt'?'#12693c' : st==='verpasst'?'#a3170d' : st==='abgesagt'?'#b45309' : 'var(--muted)';
+    const tag  = st==='erledigt'?'<span class="tag green">✓ hat stattgefunden</span>'
+               : st==='verpasst'?'<span class="tag red">✗ ausgefallen</span>'
+               : st==='abgesagt'?'<span class="tag amber">✕ abgesagt</span>'
+               : '<span class="tag grey">○ steht noch aus</span>';
+    const istZeit = ts ? (ts.start+'–'+ts.end+' <span style="color:var(--muted);font-size:11.5px">('+tsDuration(ts)+')</span>') : '<span style="color:var(--muted)">—</span>';
+    const nachtrag = (st==='verpasst'&&tsCanManage())
+      ? '<button class="btn-ghost btn-sm" title="Der Einsatz war doch – Stunden von Hand nachtragen" onclick="event.stopPropagation();adminAddTimesheetFromAppt('+a.id+')">⏱ nachtragen</button>'
+      : '';
+    return '<tr class="clickable" style="border-left:3px solid '+farbe+'" onclick="showAppt('+a.id+')">'+
+      '<td><b>'+fmtDate(a.date)+'</b><div style="font-size:11.5px;color:var(--muted)">'+(a.time||'')+' Uhr</div></td>'+
+      '<td>'+(cu?fullName(cu):'—')+(cu&&cu.area?'<div style="font-size:11.5px;color:var(--muted)">'+cu.area+'</div>':'')+'</td>'+
+      (calStaffPick==null?'<td>'+staffName(a.staffId)+'</td>':'')+
+      '<td>'+tag+'</td>'+
+      '<td>'+istZeit+'</td>'+
+      '<td style="font-size:12.5px;color:var(--muted);max-width:260px">'+cleanInput(calRbBemerkung(a,st,ts),200)+'</td>'+
+      '<td style="text-align:right">'+nachtrag+'</td></tr>';
+  }).join('');
+
+  return '<div class="panel" style="margin-top:18px;border:2px solid var(--petrol-soft)">'+
+    '<div class="panel-head"><h3>Rückblick · '+wer+'</h3>'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+zeitSel+
+      '<button class="btn-ghost btn-sm" onclick="calRbExport()" title="Als CSV-Datei für Excel">⬇ CSV</button>'+
+      '<button class="btn-ghost btn-sm" onclick="calRbToggle()">Schließen</button></div></div>'+
+    '<div class="panel-body" style="padding-top:14px">'+
+      '<p style="color:var(--muted);font-size:13px;margin-bottom:12px">'+fmtDate(r[0])+' bis '+fmtDate(r[1])+
+        ' · Ein Termin gilt als <b>stattgefunden</b>, sobald zu Mitarbeiter, Kunde und Tag ein Stundenzettel vorliegt.'+
+        (typeof calStaffPick!=='undefined'&&calStaffPick==null?' Oben im Kalender einen Mitarbeiter wählen, um nur dessen Termine zu sehen.':'')+'</p>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">'+
+        kachel('erledigt','hat stattgefunden','#12693c','Nur diese anzeigen')+
+        kachel('verpasst','ausgefallen','#a3170d','Nur diese anzeigen')+
+        kachel('abgesagt','abgesagt','#b45309','Nur diese anzeigen')+
+        kachel('geplant','steht noch aus','#6b6480','Nur diese anzeigen')+
+      '</div>'+
+      (bewertet
+        ? '<div style="margin:10px 0 4px;font-size:14px"><b>'+cnt.erledigt+' von '+bewertet+'</b> Terminen haben stattgefunden ('+quote+' %).'+
+          (cnt.verpasst?' <span style="color:#a3170d;font-weight:600">'+cnt.verpasst+' ohne Stundenzettel – bitte prüfen.</span>':' Keine Lücken.')+'</div>'
+        : '')+
+      (calRbStatus?'<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Gefiltert – nochmal auf die Kachel klicken zeigt wieder alles.</div>':'')+
+    '</div>'+
+    '<div class="panel-body" style="padding-top:0">'+
+    (gefiltert.length
+      ? '<table><thead><tr><th>Termin</th><th>Kunde</th>'+(calStaffPick==null?'<th>Mitarbeiter</th>':'')+'<th>Ergebnis</th><th>Erfasste Zeit</th><th>Bemerkung</th><th></th></tr></thead><tbody>'+zeilen+'</tbody></table>'
+      : '<div class="empty"><div class="big">🗓</div><b>Keine Termine in diesem Zeitraum</b><p style="margin-top:6px">Zeitraum oben ändern oder einen anderen Mitarbeiter wählen.</p></div>')+
+    '</div></div>';
+}
+function calRbExport(){
+  const list=calRbTermine();
+  if(!list.length){ toast('Keine Termine im gewählten Zeitraum',true); return; }
+  const STATUS={erledigt:'hat stattgefunden',verpasst:'ausgefallen',abgesagt:'abgesagt',geplant:'steht noch aus'};
+  const rows=list.map(function(a){
+    const cu=custById(a.customerId); const st=apptState(a); const ts=apptTs(a);
+    return {datum:fmtDate(a.date), uhrzeit:a.time||'', mitarbeiter:staffName(a.staffId),
+            kunde:cu?fullName(cu):'', ergebnis:STATUS[st]||st,
+            erfasste_zeit:ts?(ts.start+'-'+ts.end):'', dauer:ts?tsDuration(ts):'',
+            bemerkung:calRbBemerkung(a,st,ts)};
+  });
+  const kopf=['datum','uhrzeit','mitarbeiter','kunde','ergebnis','erfasste_zeit','dauer','bemerkung'];
+  const wer=(typeof calStaffPick!=='undefined'&&calStaffPick!=null)?staffName(calStaffPick):'alle';
+  downloadCSV(('Rueckblick_'+wer+'_'+calRbRange()[0]+'_bis_'+calRbRange()[1]).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.csv', toCSV(kopf,rows));
+  toast(rows.length+' Termine exportiert');
+}
+/* Aus einem ausgefallenen Termin direkt die Stunden nachtragen */
+function adminAddTimesheetFromAppt(id){
+  if(!requireRoleAction('admin','buero','buchhaltung')) return;
+  const a=(appointments||[]).find(function(x){ return x.id===id; });
+  if(!a){ toast('Termin nicht gefunden',true); return; }
+  const dauer=Math.max(15, a.duration||60);
+  const von=String(a.time||'09:00');
+  const p=von.split(':'); const minGes=(+p[0]||9)*60+(+p[1]||0)+dauer;
+  const bis=pad2(Math.min(23,Math.floor(minGes/60)))+':'+pad2(minGes%60);
+  mtsForm(null, a.staffId, a.customerId, {date:a.date, start:von, end:bis, task:a.note||''});
+}
+
 function pad2(n){return String(n).padStart(2,'0');}
 function dateKey(d){return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());}
 function sameDay(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();}
@@ -8436,6 +8621,46 @@ function saveTimesheet(){
    in der Liste gekennzeichnet und können sofort freigegeben werden.
    Dieselbe Maske korrigiert auch eine bereits erfasste Zeit.
    ============================================================ */
+
+/* ============================================================
+   MERKMALE DER STUNDENZETTEL – AUSFALLSICHERUNG
+   `ln_gedruckt` und `nachgetragen` stehen in der Datenbank erst,
+   wenn STUNDEN_NACHTRAG_MIGRATION.sql ausgeführt wurde. Solange
+   das nicht passiert ist, würde jedes Hintergrund-Laden die
+   Merkmale wieder wegwischen. Deshalb merkt sich dieser Browser
+   sie zusätzlich lokal und trägt sie nach jedem Laden erneut auf.
+   Sobald die Spalten existieren, gewinnt die Datenbank und der
+   lokale Eintrag wird gelöscht (sonst käme ein entfernter Haken
+   wieder zurück).
+   ============================================================ */
+function tsMerkKey(){ return 'dailydo-ts-merkmale-'+(typeof currentStandortId!=='undefined'?currentStandortId:'0'); }
+function tsMerkLaden(){ try{ return JSON.parse(localStorage.getItem(tsMerkKey())||'{}')||{}; }catch(e){ return {}; } }
+function tsMerkSichern(m){ try{ localStorage.setItem(tsMerkKey(), JSON.stringify(m)); }catch(e){} }
+function tsMerkSetzen(id, feld, wert){
+  const m=tsMerkLaden(); const k=String(id);
+  const e=m[k]||{};
+  if(wert) e[feld]=wert; else delete e[feld];
+  if(Object.keys(e).length) m[k]=e; else delete m[k];
+  tsMerkSichern(m);
+}
+function tsMerkEntfernen(id, feld){ tsMerkSetzen(id, feld, null); }
+/* Nach jedem Laden aus der Cloud wieder auftragen */
+function tsMerkmaleAnwenden(){
+  const m=tsMerkLaden(); if(!m||!Object.keys(m).length) return;
+  (timesheets||[]).forEach(function(t){
+    const e=m[String(t.id)]; if(!e) return;
+    if(!t.lnGedruckt && e.ln) t.lnGedruckt=e.ln;
+    if(!t.nachgetragen && e.na) t.nachgetragen=true;
+  });
+}
+/* Einmalige, deutliche Warnung, wenn die Spalten fehlen */
+var __migrationGemeldet=false;
+function migrationFehltHinweis(){
+  if(__migrationGemeldet) return;
+  __migrationGemeldet=true;
+  toast('In der Datenbank fehlen noch die Spalten für Haken und Nachtrag. Bitte STUNDEN_NACHTRAG_MIGRATION.sql in Supabase ausführen – bis dahin merkt sich nur dieser Browser die Haken.', true);
+}
+
 function tsCanManage(){ return hasRole('admin','buero','buchhaltung'); }
 /* Stundenlohn aller Mitarbeiter auf den Standard (17,00 €) setzen –
    für Altbestände, in denen noch ein anderer Lohn gespeichert ist. */
@@ -8475,8 +8700,9 @@ function adminEditTimesheet(id){
   if(!t){ toast('Stundenzettel nicht gefunden',true); return; }
   mtsForm(t, null, null);
 }
-function mtsForm(t, prefStaffId, prefCustId){
+function mtsForm(t, prefStaffId, prefCustId, vor){
   const neu=!t;
+  vor=vor||{};   // Vorbelegung aus einem ausgefallenen Termin
   const sid = neu ? (prefStaffId!=null?prefStaffId:((staff[0]||{}).id)) : t.staffId;
   const cid = neu ? (prefCustId!=null?prefCustId:((customers[0]||{}).id)) : t.customerId;
   document.getElementById('modalBox').classList.remove('wide');
@@ -8484,16 +8710,17 @@ function mtsForm(t, prefStaffId, prefCustId){
   document.getElementById('modalBody').innerHTML=
     '<p style="color:var(--muted);font-size:13.5px;margin-bottom:14px">'+
       (neu
-        ? 'Für einen Einsatz, der in der App nicht erfasst wurde. Der Eintrag wird als <b>nachgetragen</b> gekennzeichnet – ohne Kundenunterschrift.'
+        ? (vor.date?'Termin vom <b>'+fmtDate(vor.date)+'</b> war ausgefallen gemeldet. Die Zeiten sind aus dem Termin vorbelegt – bitte prüfen und anpassen. Der Eintrag wird als <b>nachgetragen</b> gekennzeichnet.'
+                   :'Für einen Einsatz, der in der App nicht erfasst wurde. Der Eintrag wird als <b>nachgetragen</b> gekennzeichnet – ohne Kundenunterschrift.')
         : 'Datum und Uhrzeit dieses Einsatzes korrigieren. Eine vorhandene Kundenunterschrift bleibt erhalten.')+
     '</p>'+
     '<div class="content-form">'+
     '<label>Mitarbeiter *</label><select id="mts_staff">'+mtsStaffOptions(sid)+'</select>'+
     '<label>Kunde *</label><select id="mts_cust">'+mtsCustOptions(cid)+'</select>'+
-    '<label>Datum *</label><input id="mts_date" type="date" value="'+(neu?todayISO():(t.date||todayISO()))+'" max="'+todayISO()+'">'+
-    '<div class="form-row"><div><label>Beginn *</label><input id="mts_start" type="time" value="'+(neu?'09:00':(t.start||'09:00'))+'"></div>'+
-    '<div><label>Ende *</label><input id="mts_end" type="time" value="'+(neu?'11:00':(t.end||'11:00'))+'"></div></div>'+
-    '<label>Tätigkeit</label><input id="mts_task" value="'+String((t&&t.task)||'').replace(/"/g,'&quot;')+'" placeholder="z. B. Haushaltshilfe &amp; Einkauf">'+
+    '<label>Datum *</label><input id="mts_date" type="date" value="'+(neu?(vor.date||todayISO()):(t.date||todayISO()))+'" max="'+todayISO()+'">'+
+    '<div class="form-row"><div><label>Beginn *</label><input id="mts_start" type="time" value="'+(neu?(vor.start||'09:00'):(t.start||'09:00'))+'"></div>'+
+    '<div><label>Ende *</label><input id="mts_end" type="time" value="'+(neu?(vor.end||'11:00'):(t.end||'11:00'))+'"></div></div>'+
+    '<label>Tätigkeit</label><input id="mts_task" value="'+String((t&&t.task)||vor.task||'').replace(/"/g,'&quot;')+'" placeholder="z. B. Haushaltshilfe &amp; Einkauf">'+
     '<label style="display:flex;align-items:center;gap:9px;margin-top:12px;font-weight:600"><input type="checkbox" id="mts_billable" style="width:17px;height:17px"'+((!t||t.billable!==false)?' checked':'')+'> Abrechenbar (Rechnung an den Kunden möglich)</label>'+
     (neu?'<label style="display:flex;align-items:center;gap:9px;margin-top:8px;font-weight:600"><input type="checkbox" id="mts_approve" style="width:17px;height:17px" checked> Sofort freigeben (erscheint direkt unter „Bereit zur Abrechnung")</label>':'')+
     '<div style="margin-top:12px"><label>Notiz zum Nachtrag</label><input id="mts_grund" value="'+String((t&&t.nachtragGrund)||'').replace(/"/g,'&quot;')+'" placeholder="z. B. Zettel vom Mitarbeiter, Handy war leer"></div>'+
@@ -8534,7 +8761,14 @@ function mtsSave(id){
     if(CLOUD){
       cloudInsertAuto('stundenzettel',{mitarbeiter_id:sid, customer_id:cid, date:datum, start:start, ende:end,
         task:task, status:ts.status, proof:false, billable:billable, nachgetragen:true,
-        standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } });
+        standort_id:currentStandortId}).then(r=>{
+        if(r&&r.id){
+          const alt=ts.id; ts.id=r.id;
+          proofs.forEach(function(pp){ if(pp.timesheetId===alt) pp.timesheetId=r.id; });
+          // Kennzeichen lokal sichern, falls die Spalte in der DB fehlt
+          if(r.nachgetragen===undefined){ tsMerkSetzen(r.id,'na',true); migrationFehltHinweis(); }
+        }
+      });
     }
     if(freigeben){
       proofs.push({id:nextProofId++, timesheetId:ts.id, staffId:sid, customerId:cid, date:datum, task:task, minutes:tsMinutes(ts), signed:false});
@@ -8543,6 +8777,8 @@ function mtsSave(id){
     closeModal();
     toast(freigeben?'Stunden nachgetragen und freigegeben':'Stunden nachgetragen – warten auf Freigabe');
   }
+  // Kam der Nachtrag aus dem Kalender-Rückblick, dort bleiben und nur auffrischen
+  if(__lastAdminView==='calendar'){ if(typeof refreshCal==='function') refreshCal(); if(typeof calRbRender==='function') calRbRender(); return; }
   if(typeof renderAdmin==='function') renderAdmin(__lastAdminView==='rechnungen'?'rechnungen':'hours');
 }
 /* Nachgetragenen Eintrag wieder entfernen (nur Admin) */
@@ -8570,9 +8806,19 @@ function adminDeleteTimesheet(id){
 function tsMarkLn(id, on, quiet){
   const t=timesheets.find(x=>x.id===id); if(!t) return;
   t.lnGedruckt = on ? todayISO() : '';
+  // Sofort lokal merken, damit der Haken das naechste Hintergrund-Laden ueberlebt
+  tsMerkSetzen(id,'ln', t.lnGedruckt||null);
   if(CLOUD&&sb){
     sb.from('stundenzettel').update({ln_gedruckt:(t.lnGedruckt||null)}).eq('id',id)
-      .then(function(r){ if(r&&r.error) console.warn('LN-Haken speichern: '+r.error.message+' – LN_GEDRUCKT_MIGRATION.sql ausführen'); }, function(){});
+      .then(function(r){
+        if(r&&r.error){
+          console.warn('LN-Haken speichern: '+r.error.message+' – STUNDEN_NACHTRAG_MIGRATION.sql ausführen');
+          if(isMissingColError(r.error)) migrationFehltHinweis();
+        } else {
+          // In der Datenbank gespeichert -> lokale Notlösung nicht mehr nötig
+          tsMerkEntfernen(id,'ln');
+        }
+      }, function(){});
   }
   if(!quiet){
     logActivity((on?'Leistungsnachweis abgehakt':'LN-Haken entfernt')+': '+staffName(t.staffId)+' · '+fmtDate(t.date));
@@ -15240,6 +15486,8 @@ function v5CalStaffFilterHTML(){
 function v5CalStaffPick(v){
   calStaffPick = (v===''||v==null)?null:(+v);
   if(typeof refreshCal==='function') refreshCal();
+  // Der Rückblick zeigt denselben Mitarbeiter – mit umstellen
+  if(typeof calRbRender==='function') calRbRender();
 }
 
 /* ============================================================
