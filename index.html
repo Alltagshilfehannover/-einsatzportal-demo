@@ -1413,7 +1413,15 @@ let staffBulkSel=new Set();  // Sammelauswahl in der Mitarbeiterliste (Mitarbeit
 const LIST_PAGE_SIZE=100;
 let custPage=0, staffPage=0, hoursPage=0;
 // Stundenzettel-Bereich: Suche (Kunde/Mitarbeiter), Monats-/Jahresfilter, Offen/Archiv, Abrechenbar/Kostenlos
-let hoursSearch='', hoursMonat='', hoursJahr='', hoursTab='offen', hoursArt='';
+let hoursSearch='', hoursMonat='', hoursJahr='', hoursTab='offen', hoursArt='', hoursLn='';
+/* ============================================================
+   EINHEITLICHER STUNDENLOHN (Standard 17,00 EUR)
+   Basis fuer Mitarbeiter-Dashboard, Lohnuebersicht, Lohn-CSV und
+   Rentabilitaet. Ist beim Mitarbeiter ein eigener Stundenlohn
+   hinterlegt, gilt dieser; sonst der Standardlohn.
+   ============================================================ */
+const STD_STUNDENLOHN=17;
+function staffWage(s){ const w=parseFloat(s&&s.wage); return (isFinite(w)&&w>0)?w:STD_STUNDENLOHN; }
 function pagerHTML(page,total,varName,view){
   const pages=Math.max(1,Math.ceil(total/LIST_PAGE_SIZE));
   if(pages<=1) return '';
@@ -1438,16 +1446,16 @@ let myId=0;
 /* Mitarbeiter: jetzt mit internen Verwaltungsfeldern + Zugangsdaten */
 let staff=[
   {id:0,first:'Ivonne',last:'Bengsch',role:'Haushaltshilfe',status:'aktiv',skills:['Haushaltshilfe','Begleitung'],area:'Hannover',phone:'0171 1112233',email:'ivonne@alltagshilfe.de',maxHours:30,days:['Mo','Di','Mi','Do','Fr'],window:'Vormittags',
-    wage:14.50,bonus:{earned:50,pending:50,reason:'Führungszeugnis + Erste-Hilfe nachgereicht'},daysWorked:18,color:'#0f5b63',
+    wage:17.00,bonus:{earned:50,pending:50,reason:'Führungszeugnis + Erste-Hilfe nachgereicht'},daysWorked:18,color:'#0f5b63',
     login:'ivonne@alltagshilfe.de',hasLogin:true,
     contracts:[{name:'Arbeitsvertrag',signedDate:'2024-03-01',signature:null},{name:'Datenschutzvertrag',signedDate:'2024-03-01',signature:null},{name:'Haftungserklärung',signedDate:'2024-03-01',signature:null}],
     intern:{birth:'14.03.1985',address:'Lindener Marktplatz 2, 30449 Hannover',taxId:'12 345 678 901',taxClass:'I',kvNr:'A123456789',kasse:'AOK Niedersachsen',employment:'Midijob',citizenship:'Deutsch',iban:'DE12 3456 7890 1234 5678 90'}},
   {id:1,first:'Natalie',last:'Nagel',role:'Betreuungskraft',status:'aktiv',skills:['Betreuung','Begleitung'],area:'Garbsen',phone:'0171 4445566',email:'natalie@alltagshilfe.de',maxHours:25,days:['Mo','Mi','Fr'],window:'Nachmittags',
-    wage:15.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:55,color:'#e08a2b',
+    wage:17.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:55,color:'#e08a2b',
     login:'natalie@alltagshilfe.de',hasLogin:true,
     intern:{birth:'22.07.1990',address:'Planetenring 12, 30823 Garbsen',taxId:'98 765 432 109',taxClass:'IV',kvNr:'B987654321',kasse:'TK',employment:'Minijob',citizenship:'Deutsch',iban:'DE98 7654 3210 9876 5432 10'}},
   {id:2,first:'Silvana',last:'Flasbart',role:'Haushaltshilfe',status:'Urlaub',skills:['Haushaltshilfe'],area:'Wunstorf',phone:'0171 7778899',email:'silvana@alltagshilfe.de',maxHours:20,days:['Di','Do'],window:'Flexibel',
-    wage:14.00,bonus:{earned:100,pending:0,reason:'Alle Nachweise vollständig'},daysWorked:64,color:'#2c6e9b',
+    wage:17.00,bonus:{earned:100,pending:0,reason:'Alle Nachweise vollständig'},daysWorked:64,color:'#2c6e9b',
     login:'silvana@alltagshilfe.de',hasLogin:true,
     intern:{birth:'03.11.1978',address:'Bahnhofstraße 5, 31515 Wunstorf',taxId:'45 678 901 234',taxClass:'III',kvNr:'C456789012',kasse:'Barmer',employment:'Teilzeit',citizenship:'Deutsch',iban:'DE45 6789 0123 4567 8901 23'}},
 ];
@@ -1701,7 +1709,7 @@ function initSupabase(){
 function staffToRow(s){return {
   first:s.first,last:s.last,role:s.role,status:s.status,skills:s.skills||[],area:s.area,phone:s.phone,email:s.email,gender:s.gender||null,
   max_hours:s.maxHours||20,days:s.days||[],time_window:s.window||'Flexibel',
-  wage:s.wage||14,bonus_earned:(s.bonus&&s.bonus.earned)||0,bonus_pending:(s.bonus&&s.bonus.pending)||0,bonus_reason:(s.bonus&&s.bonus.reason)||null,
+  wage:staffWage(s),bonus_earned:(s.bonus&&s.bonus.earned)||0,bonus_pending:(s.bonus&&s.bonus.pending)||0,bonus_reason:(s.bonus&&s.bonus.reason)||null,
   days_worked:s.daysWorked||0,color:s.color||'#0f5b63',has_login:!!s.hasLogin,login:s.login||null,
   birth:(s.intern&&s.intern.birth)||null,address:(s.intern&&s.intern.address)||null,tax_id:(s.intern&&s.intern.taxId)||null,
   tax_class:(s.intern&&s.intern.taxClass)||null,kv_nr:(s.intern&&s.intern.kvNr)||null,kasse:(s.intern&&s.intern.kasse)||null,
@@ -2291,7 +2299,8 @@ function reindexCounters(){
   nextAufgabeId=Math.max(nextAufgabeId, mx(aufgaben));
 }
 function rowToTimesheet(r){
-  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, start:r.start, end:r.ende, task:r.task, status:r.status||'offen', proof:r.proof, signature:r.signature, signedAt:r.signed_at, hasAbtretung:!!r.signature, billable:r.billable!==false, rejectGrund:r.reject_grund||'' };
+  return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, start:r.start, end:r.ende, task:r.task, status:r.status||'offen', proof:r.proof, signature:r.signature, signedAt:r.signed_at, hasAbtretung:!!r.signature, billable:r.billable!==false, rejectGrund:r.reject_grund||'',
+           nachgetragen:!!r.nachgetragen, lnGedruckt:r.ln_gedruckt||'' };
 }
 // Sichtbarer Diagnose-Kasten (per Klick auf das Status-Badge aufrufbar)
 function showDiag(){
@@ -4097,8 +4106,8 @@ function exportLohnCSV(monat){
   const rows=Object.entries(byStaff).map(([sid,min])=>{
     const s=staff.find(x=>x.id===+sid)||{};
     return { monat:monat, mitarbeiter:staffName(+sid), beschaeftigungsart:(s.intern&&s.intern.employment)||'',
-      freigegebene_stunden:(min/60).toFixed(2).replace('.',','), stundenlohn_eur:((s.wage)||14).toFixed(2).replace('.',','),
-      brutto_richtwert_eur:(min/60*((s.wage)||14)).toFixed(2).replace('.',',') };
+      freigegebene_stunden:(min/60).toFixed(2).replace('.',','), stundenlohn_eur:staffWage(s).toFixed(2).replace('.',','),
+      brutto_richtwert_eur:(min/60*staffWage(s)).toFixed(2).replace('.',',') };
   });
   downloadCSV('lohnexport_steuerberater_'+monat+'.csv', toCSV(headers, rows));
   try{ localStorage.setItem('dailydo-lohn-uebermittelt-'+currentStandortId+'-'+monat, todayISO()); }catch(e){}
@@ -4391,6 +4400,8 @@ function renderAdmin(view){
       if(hoursMonat&&d.slice(5,7)!==hoursMonat)return false;
       if(hoursArt==='abrechenbar'&&t.billable===false)return false;
       if(hoursArt==='kostenlos'&&t.billable!==false)return false;
+      if(hoursLn==='offen'&&t.lnGedruckt)return false;
+      if(hoursLn==='erledigt'&&!t.lnGedruckt)return false;
       if(hq){const cu=custById(t.customerId);const s=((cu?fullName(cu):'')+' '+staffName(t.staffId)).toLowerCase();if(!s.includes(hq))return false;}
       return true;
     }).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
@@ -4401,9 +4412,10 @@ function renderAdmin(view){
       '<select style="width:auto" onchange="hoursMonat=this.value;hoursPage=0;renderAdmin(\'hours\')"><option value="">Alle Monate</option>'+MONATE.map(([v,l])=>'<option value="'+v+'" '+(hoursMonat===v?'selected':'')+'>'+l+'</option>').join('')+'</select>'+
       '<select style="width:auto" onchange="hoursJahr=this.value;hoursPage=0;renderAdmin(\'hours\')"><option value="">Alle Jahre</option>'+jahre.map(j=>'<option '+(hoursJahr===j?'selected':'')+'>'+j+'</option>').join('')+'</select>'+
       '<select style="width:auto" onchange="hoursArt=this.value;hoursPage=0;renderAdmin(\'hours\')" title="Nach Abrechnungsart filtern"><option value="">Alle Arten</option><option value="abrechenbar" '+(hoursArt==='abrechenbar'?'selected':'')+'>💶 Abrechenbar</option><option value="kostenlos" '+(hoursArt==='kostenlos'?'selected':'')+'>🎁 Kostenlos</option></select>'+
+      '<select style="width:auto" onchange="hoursLn=this.value;hoursPage=0;renderAdmin(\'hours\')" title="Leistungsnachweis für die Rechnung abgehakt?"><option value="">LN: alle</option><option value="offen" '+(hoursLn==='offen'?'selected':'')+'>☐ LN noch offen</option><option value="erledigt" '+(hoursLn==='erledigt'?'selected':'')+'>✓ LN erledigt</option></select>'+
       '<div class="filter-chips">'+[['offen','Offen'+(offenAnz?' ('+offenAnz+')':'')],['archiv','🗄 Archiv'],['alle','Alle']].map(([v,l])=>'<span class="chip '+(hoursTab===v?'on':'')+'" onclick="hoursTab=\''+v+'\';hoursPage=0;renderAdmin(\'hours\')">'+l+'</span>').join('')+'</div>'+
     '</div>'+
-    '<div class="panel"><div class="panel-head"><h3>'+tsList.length+' Einträge'+(hoursTab==='offen'?' zu prüfen':hoursTab==='archiv'?' im Archiv':'')+'</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-primary btn-sm" style="width:auto" onclick="hoursBulkLN()" title="Alle angehakten Stundenzettel als EIN PDF herunterladen">⬇ LN (Auswahl)</button><button class="btn-primary btn-sm" style="width:auto" onclick="hoursBulkAbtretung()" title="Abtretungserklärungen der angehakten Zeilen als EIN PDF (nur gesetzlich Versicherte)">⬇ Abtretungen (Auswahl)</button><button class="btn-ghost btn-sm" onclick="exportStundenzettel()">⬇ CSV Export</button><button class="btn-ghost btn-sm" onclick="manualRefreshHours()">↻ Aktualisieren</button></div></div><div class="panel-body" style="padding-top:16px">'+
+    '<div class="panel"><div class="panel-head"><h3>'+tsList.length+' Einträge'+(hoursTab==='offen'?' zu prüfen':hoursTab==='archiv'?' im Archiv':'')+'</h3><div style="display:flex;gap:8px;flex-wrap:wrap">'+(tsCanManage()?'<button class="btn-primary btn-sm" style="width:auto" onclick="adminAddTimesheet()" title="Einsatz nachtragen, der in der App nicht erfasst wurde">+ Stunden nachtragen</button>':'')+'<button class="btn-primary btn-sm" style="width:auto" onclick="hoursBulkLN()" title="Alle angehakten Stundenzettel als EIN PDF herunterladen">⬇ LN (Auswahl)</button><button class="btn-primary btn-sm" style="width:auto" onclick="hoursBulkAbtretung()" title="Abtretungserklärungen der angehakten Zeilen als EIN PDF (nur gesetzlich Versicherte)">⬇ Abtretungen (Auswahl)</button><button class="btn-ghost btn-sm" onclick="exportStundenzettel()">⬇ CSV Export</button><button class="btn-ghost btn-sm" onclick="manualRefreshHours()">↻ Aktualisieren</button></div></div><div class="panel-body" style="padding-top:16px">'+
     (tsList.length?'<table><thead><tr><th style="width:34px"><input type="checkbox" title="Alle (sichtbaren) auswählen" onclick="hoursSelAll(this.checked)"></th><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Zeit</th><th>Dauer</th><th>Unterschrift</th><th>Status</th><th>Dokumente</th><th>Rechnung</th><th class="ts-act"></th></tr></thead><tbody>'+
       pageSlice(tsList,hoursPage).map(t=>{const cu=custById(t.customerId);const dur=tsDuration(t);
         const sigOk=signatureLooksValid(t.signature);
@@ -4411,7 +4423,8 @@ function renderAdmin(view){
         const statusTag = (t.status==='freigegeben'?'<span class="tag green">freigegeben</span>'
                         : t.status==='abgelehnt'?'<span class="tag red">abgelehnt</span>'
                         : '<span class="tag amber">zu prüfen</span>')
-                        +(anom?'<div style="font-size:11px;color:var(--danger);max-width:170px;margin-top:3px" title="Automatisch erkannt – bitte vor Freigabe prüfen">⚠ '+anom+'</div>':'');
+                        +(anom?'<div style="font-size:11px;color:var(--danger);max-width:170px;margin-top:3px" title="Automatisch erkannt – bitte vor Freigabe prüfen">⚠ '+anom+'</div>':'')
+                        +(t.nachgetragen?'<div style="margin-top:3px"><span class="tag blue" style="font-size:10px" title="'+(t.nachtragGrund?String(t.nachtragGrund).replace(/"/g,'&quot;'):'Vom Büro von Hand nachgetragen')+'">✎ nachgetragen</span></div>':'');
         // Neben der Original-Unterschrift die hinterlegte Unterschriftsprobe
         // des Kunden anzeigen (aus der Erstberatung) – zum direkten Vergleich
         const probe=(cu&&cu.beratung&&cu.beratung.signature)?cu.beratung.signature:null;
@@ -4424,7 +4437,7 @@ function renderAdmin(view){
         return '<tr><td><input type="checkbox" class="ts-sel" value="'+t.id+'" onclick="event.stopPropagation()"></td><td>'+fmtDate(t.date)+'</td><td><b>'+staffName(t.staffId)+'</b></td><td>'+(cu?fullName(cu):'—')+'</td><td>'+t.start+'–'+t.end+'</td><td>'+dur+'</td>'+
         '<td>'+sigCell+'</td>'+
         '<td>'+statusTag+'</td>'+
-        '<td>'+(t.signature?'<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')" title="Leistungsnachweis">⬇ LN</button>'+(cu&&cu.insuranceType==='gesetzlich'?'<button class="btn-ghost btn-sm" onclick="downloadTsAbtretung('+t.id+')" title="Abtretungserklärung">⬇ AB</button>':'')+'</div>':'<span style="color:var(--muted);font-size:12px">—</span>')+'</td>'+
+        '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:flex-start">'+(t.signature?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')" title="Leistungsnachweis drucken – hakt ihn automatisch ab">⬇ LN</button>'+(cu&&cu.insuranceType==='gesetzlich'?'<button class="btn-ghost btn-sm" onclick="downloadTsAbtretung('+t.id+')" title="Abtretungserklärung">⬇ AB</button>':''):'')+(tsCanManage()?lnHakenHTML(t):(t.lnGedruckt?'<span class="tag green" style="font-size:10px">✓ LN '+fmtDate(t.lnGedruckt)+'</span>':''))+'</div></td>'+
         '<td>'+(()=>{ const re=rechnungen.find(r=>r.stundenzettelId===t.id);
           if(t.billable===false) return '<span class="tag grey" style="font-size:11px">kostenlos / nicht abrechenbar</span>';
           if(re) return '<span class="tag green" style="font-size:11px">'+re.nummer+'</span>';
@@ -4435,7 +4448,8 @@ function renderAdmin(view){
         // „Freigeben" auch bei horizontal gescrollter Tabelle sichtbar bleibt
         '<td class="ts-act">'+(t.status==='offen'
             ? '<div class="ts-actions"><button class="btn-primary btn-sm" style="width:100%;background:var(--good);font-weight:700" onclick="approveTimesheet('+t.id+')">✓ Freigeben</button><button class="btn-danger-ghost btn-sm" onclick="rejectTimesheet('+t.id+')">✕ Ablehnen</button></div>'
-            : (t.status==='freigegeben'?'<span style="color:var(--good)">✓ freigegeben</span>':'<span style="color:#c0392b">✕ abgelehnt</span>'+(t.rejectGrund?'<div style="font-size:11px;color:var(--muted);max-width:160px">Grund: '+t.rejectGrund+'</div>':'')))+'</td></tr>';}).join('')+
+            : (t.status==='freigegeben'?'<span style="color:var(--good)">✓ freigegeben</span>':'<span style="color:#c0392b">✕ abgelehnt</span>'+(t.rejectGrund?'<div style="font-size:11px;color:var(--muted);max-width:160px">Grund: '+t.rejectGrund+'</div>':'')))
+          +(tsCanManage()?'<div class="ts-actions" style="margin-top:5px"><button class="btn-ghost btn-sm" onclick="adminEditTimesheet('+t.id+')" title="Datum/Uhrzeit korrigieren">✏ Korrigieren</button>'+(hasRole('admin')?'<button class="btn-danger-ghost btn-sm" onclick="adminDeleteTimesheet('+t.id+')" title="Eintrag löschen">🗑</button>':'')+'</div>':'')+'</td></tr>';}).join('')+
       '</tbody></table>'+pagerHTML(hoursPage,tsList.length,'hoursPage','hours'):'<div class="empty"><div class="big">⏱</div><b>'+(hq||hoursMonat||hoursJahr||hoursArt?'Keine Einträge für diese Filter':(hoursTab==='offen'?'Nichts zu prüfen':'Noch keine Stundenzettel'))+'</b><p style="margin-top:6px">'+(hq||hoursMonat||hoursJahr||hoursArt?'Suche oder Filter anpassen.':(hoursTab==='offen'?'Neue Einsätze erscheinen hier zur Freigabe – Erledigtes liegt im Archiv.':'Sobald Mitarbeiter Einsätze abschließen, erscheinen sie hier.'))+'</p></div>')+
     '</div></div>';
   }
@@ -4459,12 +4473,13 @@ function renderAdmin(view){
     '<div class="panel"><div class="panel-head"><h3>Schritt 1 · Stunden an den Steuerberater übermitteln</h3>'+
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
       (uebermittelt?'<span class="tag green">✓ übermittelt am '+fmtDate(uebermittelt)+'</span>':'<span class="tag amber">noch nicht übermittelt</span>')+
+      (canManage?'<button class="btn-ghost btn-sm" onclick="setAllWagesStandard()" title="Setzt bei allen Mitarbeitern den Stundenlohn auf den Standard">'+STD_STUNDENLOHN.toFixed(2).replace('.',',')+' €/Std. für alle setzen</button>':'')+
       (canManage?'<button class="btn-primary btn-sm" style="width:auto" onclick="exportLohnCSV(\''+monat+'\')">⬇ CSV exportieren &amp; als übermittelt markieren</button>':'')+
       '</div></div>'+
     '<div class="panel-body" style="padding-top:10px">'+
     (Object.keys(byStaff).length
       ? '<table><thead><tr><th>Mitarbeiter</th><th>Freigegebene Stunden</th><th>Stundenlohn</th><th>Brutto (Richtwert)</th></tr></thead><tbody>'+
-        Object.entries(byStaff).map(([sid,min])=>{ const s=staff.find(x=>x.id===+sid); const w=(s&&s.wage)||14;
+        Object.entries(byStaff).map(([sid,min])=>{ const s=staff.find(x=>x.id===+sid); const w=staffWage(s);
           return '<tr><td><b>'+staffName(+sid)+'</b></td><td>'+(min/60).toFixed(2).replace('.',',')+' Std.</td><td>'+w.toFixed(2).replace('.',',')+' €</td><td>'+(min/60*w).toFixed(2).replace('.',',')+' €</td></tr>';}).join('')+
         '</tbody></table>'
       : '<p style="color:var(--muted)">Für diesen Monat sind keine freigegebenen Stundenzettel vorhanden – zuerst unter „Stundenzettel" freigeben.</p>')+
@@ -4577,14 +4592,16 @@ function renderAdmin(view){
       '<button class="btn-ghost btn-sm" onclick="rwBelegScanStart()">📷 Überweisungsbelege scannen</button>'+
       (ueberfaelligMitMail.length?'<button class="btn-ghost btn-sm" style="color:#b45309;border-color:#f0d9b5" onclick="mahnAlleUeberfaellig()">⏰ '+ueberfaelligMitMail.length+' überfällige erinnern</button>':'')+
     '</div>'+
-    '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Bereit zur Abrechnung ('+ready.length+')</h3>'+
-      (ready.length?'<div style="display:flex;gap:8px"><button class="btn-ghost btn-sm" onclick="rwToggleAll(this)">Alle auswählen</button>'+
+    '<div class="panel" style="margin-bottom:18px"><div class="panel-head"><h3>Bereit zur Abrechnung ('+ready.length+')'+(ready.filter(t=>t.lnGedruckt).length?' <span class="tag green" style="font-size:10.5px">'+ready.filter(t=>t.lnGedruckt).length+'× LN erledigt</span>':'')+'</h3>'+
+      (ready.length?'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-ghost btn-sm" onclick="rwToggleAll(this)">Alle auswählen</button>'+
+      '<button class="btn-ghost btn-sm" onclick="rwBulkLN()" title="Leistungsnachweise der ausgewählten Zeilen als EIN PDF – sie werden dabei abgehakt">⬇ LN (Auswahl) drucken</button>'+
       '<button class="btn-primary btn-sm" style="width:auto" onclick="rwBulkInvoice()">🧾 Ausgewählte abrechnen</button></div>':'')+'</div>'+
     '<div class="panel-body" style="padding-top:10px">'+
-    (ready.length?'<table><thead><tr><th style="width:34px"></th><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Dauer</th><th></th></tr></thead><tbody>'+
+    (ready.length?'<table><thead><tr><th style="width:34px"></th><th>Datum</th><th>Mitarbeiter</th><th>Kunde</th><th>Dauer</th><th>Leistungsnachweis</th><th></th></tr></thead><tbody>'+
       ready.map(t=>{const cu=custById(t.customerId);
-        return '<tr><td><input type="checkbox" class="rw-sel" value="'+t.id+'" style="width:17px;height:17px"></td>'+
+        return '<tr'+(t.lnGedruckt?' style="background:#f2fbf5"':'')+'><td><input type="checkbox" class="rw-sel" value="'+t.id+'" style="width:17px;height:17px"></td>'+
         '<td>'+fmtDate(t.date)+'</td><td>'+staffName(t.staffId)+'</td><td>'+(cu?fullName(cu)+' <span style="color:var(--muted);font-size:11.5px">'+kdNr(cu)+'</span>':'—')+'</td><td>'+tsDuration(t)+'</td>'+
+        '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:flex-start">'+(t.signature?'<button class="btn-ghost btn-sm" onclick="downloadTsLN('+t.id+')" title="Leistungsnachweis drucken – hakt ihn automatisch ab">⬇ LN</button>':'')+lnHakenHTML(t)+'</div></td>'+
         '<td style="text-align:right"><button class="btn-primary btn-sm" style="width:auto" onclick="openInvoiceModal('+t.id+')">🧾 Rechnung erstellen</button></td></tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><div class="big">✓</div><b>Aktuell nichts offen</b><p style="margin-top:6px">Sobald ein Stundenzettel freigegeben ist, erscheint er hier zur Abrechnung.</p></div>')+
     '</div></div>'+
@@ -4743,6 +4760,7 @@ function openStaffModal(id){
   document.getElementById('modalTitle').textContent='Mitarbeiter · '+fullName(s);
   document.getElementById('modalBody').innerHTML='<div class="content-form">'+staffProfileHTML(s)+'</div>'+staffDocsHTML(s);
   document.getElementById('modalFoot').innerHTML='<button class="btn-ghost" onclick="closeModal()">Schließen</button>'+
+    (tsCanManage()?'<button class="btn-ghost" style="width:auto" onclick="adminAddTimesheet('+id+')" title="Einsatz nachtragen, der in der App nicht erfasst wurde">⏱ Stunden nachtragen</button>':'')+
     (canEdit?'<button class="btn-primary" style="width:auto;padding:10px 18px" onclick="editStaffForm('+id+')">✏️ Bearbeiten</button>':'');
   openModal();
 }
@@ -4897,7 +4915,7 @@ function saveStaff(){
     logActivity('Mitarbeiter bearbeitet: '+fullName(s));
     closeModal();toast('Mitarbeiterdaten gespeichert');
   }else{
-    const s={id:nextStaffId++,maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',skills:[],color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,intern:{}};
+    const s={id:nextStaffId++,maxHours:20,days:[],window:'Flexibel',hasLogin:false,login:'',skills:[],color:nextColor(),wage:STD_STUNDENLOHN,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,intern:{}};
     gatherStaff(s);
     if(s.email && !isValidEmail(s.email)){toastHint('Bitte gültige E-Mail-Adresse eingeben');return;}
     if(!isValidPhone(s.phone)){toastHint('Bitte gültige Telefonnummer eingeben');return;}
@@ -5858,7 +5876,7 @@ function sendAppLoginJetzt(id){
   // Signierte Verträge für die Mitarbeiter-Akte aufbereiten
   const signedDocs=Object.keys(a.docs||{}).filter(d=>a.docs[d]).map(d=>({name:d,signedDate:todayISO(),signature:(a.signatures&&a.signatures[d])||null}));
   // Bewerber wird zum aktiven Mitarbeiter
-  const newStaff={id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,color:nextColor(),wage:14.00,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,contracts:signedDocs,
+  const newStaff={id:nextStaffId++,first:a.first,last:a.last,role:a.skills.includes('Betreuung')?'Betreuungskraft':'Haushaltshilfe',status:'aktiv',skills:a.skills.slice(),area:a.area,phone:a.phone,email:a.email,maxHours:20,days:[],window:'Flexibel',hasLogin:true,login:a.email,color:nextColor(),wage:STD_STUNDENLOHN,bonus:{earned:0,pending:100,reason:'Führungszeugnis + Erste-Hilfe ausstehend'},daysWorked:0,contracts:signedDocs,
     standortId:(a.standortId!=null?a.standortId:hannoverStandortId()),
     contractStart:(a.questionnaire&&a.questionnaire.contractStart)||todayISO(),
     contractHours:wizContractHours(a.questionnaire||{}),
@@ -5918,7 +5936,7 @@ function renderStaff(view){
     const confirmedMin=timesheets.filter(t=>t.staffId===myId&&t.status==='freigegeben').reduce((s,t)=>s+tsMinutes(t),0);
     const plannedMin=timesheets.filter(t=>t.staffId===myId).reduce((s,t)=>s+tsMinutes(t),0);
     const confirmedH=confirmedMin/60, plannedH=plannedMin/60;
-    const wage=m.wage||14;
+    const wage=staffWage(m);
     const earned=(confirmedH*wage);
     const bonus=m.bonus||{earned:0,pending:0,reason:''};
     const daysLeft=Math.max(0,70-(m.daysWorked||0));
@@ -6641,7 +6659,7 @@ function handleEnrollFile(input){
   reader.readAsDataURL(file);
 }
 /* --- Personalfragebogen: dynamische Helfer --- */
-const PFB_WAGE=17;   // €/Std. (einheitlich)
+const PFB_WAGE=STD_STUNDENLOHN;   // €/Std. (einheitlich)
 function pfbEmploymentChange(){
   const emp=(document.getElementById('pf_employment')||{}).value||'';
   const tz=document.getElementById('pf_teilzeitbox'); if(tz) tz.style.display=(emp==='Teilzeit')?'block':'none';
@@ -7595,7 +7613,15 @@ function ctUp(ev){
   document.body.style.userSelect='';
   try{ d.el.releasePointerCapture(d.pid); }catch(e){}
   d.el.classList.remove('dragging');
-  if(!d.aktiv||!d.bewegt){ refreshCal(); return; }   // nur getippt -> Klick oeffnet die Details
+  if(!d.aktiv||!d.bewegt){
+    // Nur getippt/geklickt: Kalender neu zeichnen und die Termin-Details
+    // SELBST oeffnen. Der nachfolgende Klick des Browsers wird unterdrueckt,
+    // damit sich das Fenster nicht doppelt oeffnet.
+    __ctJustDragged=true; setTimeout(function(){ __ctJustDragged=false; },260);
+    refreshCal();
+    if(typeof showAppt==='function') showAppt(d.id);
+    return;
+  }
   const a=d.a;
   const neuZeit=ctPxToTime(d.top), neuDauer=Math.max(15,d.dur), neuDatum=d.datum||a.date;
   const geaendert=(a.date!==neuDatum)||(a.time!==neuZeit)||((a.duration||60)!==neuDauer);
@@ -7769,7 +7795,9 @@ function rowToAppt(r){
   return { id:r.id, staffId:r.mitarbeiter_id, customerId:r.customer_id, date:r.date, time:r.time, duration:r.duration||60, note:r.note||'', status:r.status||'geplant', cancelReason:r.cancel_reason||'', cancelDetail:r.cancel_detail||'', type:r.type||'einsatz', problem:r.problem||'', problemAm:r.problem_am||null, wunsch:r.wunsch||'', wunschAm:r.wunsch_am||null };
 }
 function showAppt(id){
-  const a=appointments.find(x=>x.id===id);const cu=custById(a.customerId);
+  const a=appointments.find(x=>x.id===id);
+  if(!a){ toast('Termin nicht gefunden – bitte Kalender aktualisieren',true); return; }
+  const cu=custById(a.customerId);
   const cancelled=a.status==='abgesagt';
   const serieN = a.seriesId ? appointments.filter(x=>x.seriesId===a.seriesId).length
                             : appointments.filter(x=>v5ApptSig(x)===v5ApptSig(a)).length;
@@ -8139,7 +8167,11 @@ function downloadTsLN(tsId){
     cu:cu, monat:String(t.date||'').slice(0,7),
     rows:[{date:t.date, von:t.start, bis:t.end, mins:tsMinutes(t), signature:t.signature}]
   });
-  if(doc) doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+t.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+  if(doc){
+    doc.save(('Leistungsnachweis_'+fullName(cu)+'_'+t.date).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+    // Gedruckt = für die Rechnung erledigt -> automatisch abhaken
+    if(!t.lnGedruckt&&tsCanManage()){ tsMarkLn(t.id,true,true); if(typeof renderAdmin==='function'&&__lastAdminView) renderAdmin(__lastAdminView); }
+  }
 }
 // Abtretungserklärung zu einem einzelnen Stundenzettel (nur gesetzlich Versicherte)
 function downloadTsAbtretung(tsId){
@@ -8180,7 +8212,29 @@ function hoursBulkLN(){
   });
   if(!n){ toast('Keine passenden Stundenzettel in der Auswahl',true); return; }
   doc.save(('Leistungsnachweise_'+todayISO()).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
-  toast(n+' Leistungsnachweis(e) in einem PDF heruntergeladen');
+  lnAutoHaken(ids);
+  toast(n+' Leistungsnachweis(e) in einem PDF – als erledigt abgehakt');
+  if(typeof renderAdmin==='function'&&__lastAdminView) renderAdmin(__lastAdminView);
+}
+/* Sammel-Druck aus der Rechnungs-Ansicht (Checkboxen .rw-sel) */
+function rwBulkLN(){
+  const ids=[...document.querySelectorAll('.rw-sel:checked')].map(b=>+b.value);
+  if(!ids.length){ toastHint('Bitte Einsätze anhaken (Kästchen links)'); return; }
+  if(!window.jspdf||!window.jspdf.jsPDF){ toast('PDF-Bibliothek lädt noch – bitte kurz warten',true); return; }
+  const doc=new window.jspdf.jsPDF({unit:'pt',format:'a4'});
+  let n=0;
+  ids.forEach(id=>{
+    const t=timesheets.find(x=>x.id===id); if(!t) return;
+    const cu=custById(t.customerId); if(!cu) return;
+    renderLeistungsnachweisInto(doc,{cu:cu, monat:String(t.date||'').slice(0,7),
+      rows:[{date:t.date, von:t.start, bis:t.end, mins:tsMinutes(t), signature:t.signature}]}, n>0);
+    n++;
+  });
+  if(!n){ toast('Keine passenden Einsätze in der Auswahl',true); return; }
+  doc.save(('Leistungsnachweise_'+todayISO()).replace(/[^a-zA-Z0-9_-]+/g,'_')+'.pdf');
+  lnAutoHaken(ids);
+  toast(n+' Leistungsnachweis(e) gedruckt und abgehakt');
+  if(typeof renderAdmin==='function') renderAdmin('rechnungen');
 }
 function hoursBulkAbtretung(){
   const ids=hoursSelIds();
@@ -8365,10 +8419,183 @@ function saveTimesheet(){
   const start=val('ts_start'),end=val('ts_end');
   if(cid==='' ){toastHint('Bitte zuerst einen Kunden annehmen');return;}
   if(!start||!end||end<=start){toastHint('Bitte gültige Start-/Endzeit angeben');return;}
-  timesheets.push({id:nextTsId++,staffId:myId,customerId:+cid,date:val('ts_date'),start,end,task:val('ts_task')||'Einsatz',status:'offen',proof:false});
+  const ts={id:nextTsId++,staffId:myId,customerId:+cid,date:val('ts_date'),start,end,task:val('ts_task')||'Einsatz',status:'offen',proof:false};
+  timesheets.push(ts);
+  // Auch in der Datenbank speichern – sonst ist die Zeit nach dem
+  // Neuladen der App wieder verschwunden und taucht im Büro nie auf.
+  if(CLOUD){ cloudInsertAuto('stundenzettel',{mitarbeiter_id:myId,customer_id:+cid,date:ts.date,start:ts.start,ende:ts.end,task:ts.task,status:'offen',proof:false,billable:true,standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } }); }
   closeModal();toast('Zeit erfasst – wartet auf Freigabe durch das Büro');
   renderStaff('hours');
 }
+
+/* ============================================================
+   STUNDEN NACHTRAGEN / KORRIGIEREN  (Büro, Admin, Buchhaltung)
+   Einsätze, die ein Mitarbeiter nicht in der App erfasst hat
+   (z. B. Handy leer, Termin vergessen, Zettel im Nachhinein),
+   werden hier von Hand nachgetragen. Nachgetragene Einträge sind
+   in der Liste gekennzeichnet und können sofort freigegeben werden.
+   Dieselbe Maske korrigiert auch eine bereits erfasste Zeit.
+   ============================================================ */
+function tsCanManage(){ return hasRole('admin','buero','buchhaltung'); }
+/* Stundenlohn aller Mitarbeiter auf den Standard (17,00 €) setzen –
+   für Altbestände, in denen noch ein anderer Lohn gespeichert ist. */
+function setAllWagesStandard(){
+  if(!requireRoleAction('admin','buchhaltung')) return;
+  const betroffen=(staff||[]).filter(x=>Number(x.wage)!==STD_STUNDENLOHN);
+  if(!betroffen.length){ toast('Alle Mitarbeiter stehen bereits auf '+STD_STUNDENLOHN.toFixed(2).replace('.',',')+' €/Std.'); return; }
+  appConfirm('Bei '+betroffen.length+' Mitarbeiter(n) den Stundenlohn auf '+STD_STUNDENLOHN.toFixed(2).replace('.',',')+' € setzen?', function(){
+    betroffen.forEach(function(x){ x.wage=STD_STUNDENLOHN; if(CLOUD) cloudUpdate('mitarbeiter',x.id,{wage:STD_STUNDENLOHN}); });
+    logActivity('Stundenlohn auf '+STD_STUNDENLOHN.toFixed(2)+' € gesetzt ('+betroffen.length+' Mitarbeiter)');
+    toast(betroffen.length+' Stundenlohn/-löhne auf '+STD_STUNDENLOHN.toFixed(2).replace('.',',')+' € gesetzt');
+    if(typeof renderAdmin==='function') renderAdmin('payroll');
+  }, {title:'Stundenlohn vereinheitlichen', okLabel:'Setzen'});
+}
+function mtsStaffOptions(sel){
+  const list=(staff||[]).slice().sort((a,b)=>fullName(a).localeCompare(fullName(b)));
+  return list.map(function(x){
+    const aus=(x.status==='gekündigt'&&x.id!==sel);
+    return '<option value="'+x.id+'"'+(String(x.id)===String(sel)?' selected':'')+(aus?' disabled':'')+'>'+fullName(x)+(x.status&&x.status!=='aktiv'?' ('+x.status+')':'')+'</option>';
+  }).join('');
+}
+function mtsCustOptions(sel){
+  const list=(customers||[]).slice().sort((a,b)=>fullName(a).localeCompare(fullName(b)));
+  return list.map(function(c){
+    return '<option value="'+c.id+'"'+(String(c.id)===String(sel)?' selected':'')+'>'+fullName(c)+(c.area?' · '+c.area:'')+'</option>';
+  }).join('');
+}
+function adminAddTimesheet(prefStaffId, prefCustId){
+  if(!requireRoleAction('admin','buero','buchhaltung')) return;
+  if(!(staff||[]).length){ toast('Es ist noch kein Mitarbeiter angelegt',true); return; }
+  if(!(customers||[]).length){ toast('Es ist noch kein Kunde angelegt',true); return; }
+  mtsForm(null, prefStaffId, prefCustId);
+}
+function adminEditTimesheet(id){
+  if(!requireRoleAction('admin','buero','buchhaltung')) return;
+  const t=timesheets.find(x=>x.id===id);
+  if(!t){ toast('Stundenzettel nicht gefunden',true); return; }
+  mtsForm(t, null, null);
+}
+function mtsForm(t, prefStaffId, prefCustId){
+  const neu=!t;
+  const sid = neu ? (prefStaffId!=null?prefStaffId:((staff[0]||{}).id)) : t.staffId;
+  const cid = neu ? (prefCustId!=null?prefCustId:((customers[0]||{}).id)) : t.customerId;
+  document.getElementById('modalBox').classList.remove('wide');
+  document.getElementById('modalTitle').textContent = neu ? 'Stunden nachtragen' : 'Stunden korrigieren';
+  document.getElementById('modalBody').innerHTML=
+    '<p style="color:var(--muted);font-size:13.5px;margin-bottom:14px">'+
+      (neu
+        ? 'Für einen Einsatz, der in der App nicht erfasst wurde. Der Eintrag wird als <b>nachgetragen</b> gekennzeichnet – ohne Kundenunterschrift.'
+        : 'Datum und Uhrzeit dieses Einsatzes korrigieren. Eine vorhandene Kundenunterschrift bleibt erhalten.')+
+    '</p>'+
+    '<div class="content-form">'+
+    '<label>Mitarbeiter *</label><select id="mts_staff">'+mtsStaffOptions(sid)+'</select>'+
+    '<label>Kunde *</label><select id="mts_cust">'+mtsCustOptions(cid)+'</select>'+
+    '<label>Datum *</label><input id="mts_date" type="date" value="'+(neu?todayISO():(t.date||todayISO()))+'" max="'+todayISO()+'">'+
+    '<div class="form-row"><div><label>Beginn *</label><input id="mts_start" type="time" value="'+(neu?'09:00':(t.start||'09:00'))+'"></div>'+
+    '<div><label>Ende *</label><input id="mts_end" type="time" value="'+(neu?'11:00':(t.end||'11:00'))+'"></div></div>'+
+    '<label>Tätigkeit</label><input id="mts_task" value="'+String((t&&t.task)||'').replace(/"/g,'&quot;')+'" placeholder="z. B. Haushaltshilfe &amp; Einkauf">'+
+    '<label style="display:flex;align-items:center;gap:9px;margin-top:12px;font-weight:600"><input type="checkbox" id="mts_billable" style="width:17px;height:17px"'+((!t||t.billable!==false)?' checked':'')+'> Abrechenbar (Rechnung an den Kunden möglich)</label>'+
+    (neu?'<label style="display:flex;align-items:center;gap:9px;margin-top:8px;font-weight:600"><input type="checkbox" id="mts_approve" style="width:17px;height:17px" checked> Sofort freigeben (erscheint direkt unter „Bereit zur Abrechnung")</label>':'')+
+    '<div style="margin-top:12px"><label>Notiz zum Nachtrag</label><input id="mts_grund" value="'+String((t&&t.nachtragGrund)||'').replace(/"/g,'&quot;')+'" placeholder="z. B. Zettel vom Mitarbeiter, Handy war leer"></div>'+
+    '</div>';
+  document.getElementById('modalFoot').innerHTML=
+    '<button class="btn-ghost" onclick="closeModal()">Abbrechen</button>'+
+    '<button class="btn-primary" style="width:auto;padding:11px 20px" onclick="mtsSave('+(neu?'null':t.id)+')">'+(neu?'Nachtragen':'Speichern')+'</button>';
+  openModal();
+}
+function mtsSave(id){
+  if(!requireRoleAction('admin','buero','buchhaltung')) return;
+  const sid=+document.getElementById('mts_staff').value;
+  const cid=+document.getElementById('mts_cust').value;
+  const datum=val('mts_date'), start=val('mts_start'), end=val('mts_end');
+  const task=cleanInput(val('mts_task'),120)||'Einsatz';
+  const grund=cleanInput(val('mts_grund'),200);
+  const billable=!!(document.getElementById('mts_billable')||{}).checked;
+  if(!staff.find(x=>x.id===sid)){ toastHint('Bitte einen Mitarbeiter wählen'); return; }
+  if(!custById(cid)){ toastHint('Bitte einen Kunden wählen'); return; }
+  if(!datum){ toastHint('Bitte ein Datum angeben'); return; }
+  if(datum>todayISO()){ toastHint('Ein Einsatz in der Zukunft kann nicht nachgetragen werden'); return; }
+  if(!start||!end||end<=start){ toastHint('Bitte gültige Start-/Endzeit angeben'); return; }
+
+  if(id!=null){
+    const t=timesheets.find(x=>x.id===id); if(!t){ toast('Stundenzettel nicht gefunden',true); return; }
+    const vorher=fmtDate(t.date)+' '+t.start+'–'+t.end;
+    t.staffId=sid; t.customerId=cid; t.date=datum; t.start=start; t.end=end; t.task=task;
+    t.billable=billable; t.nachtragGrund=grund;
+    if(CLOUD) cloudUpdate('stundenzettel', t.id, {mitarbeiter_id:sid, customer_id:cid, date:datum, start:start, ende:end, task:task, billable:billable});
+    logActivity('Stundenzettel korrigiert: '+staffName(sid)+' · '+vorher+' → '+fmtDate(datum)+' '+start+'–'+end);
+    closeModal(); toast('Stundenzettel korrigiert');
+  } else {
+    const freigeben=!!(document.getElementById('mts_approve')||{}).checked;
+    const ts={id:nextTsId++, staffId:sid, customerId:cid, date:datum, start:start, end:end, task:task,
+              status:(freigeben?'freigegeben':'offen'), proof:false, billable:billable,
+              nachgetragen:true, nachtragGrund:grund};
+    timesheets.push(ts);
+    if(CLOUD){
+      cloudInsertAuto('stundenzettel',{mitarbeiter_id:sid, customer_id:cid, date:datum, start:start, ende:end,
+        task:task, status:ts.status, proof:false, billable:billable, nachgetragen:true,
+        standort_id:currentStandortId}).then(r=>{ if(r&&r.id){ ts.id=r.id; } });
+    }
+    if(freigeben){
+      proofs.push({id:nextProofId++, timesheetId:ts.id, staffId:sid, customerId:cid, date:datum, task:task, minutes:tsMinutes(ts), signed:false});
+    }
+    logActivity('Stunden nachgetragen: '+staffName(sid)+' · '+fmtDate(datum)+' '+start+'–'+end+(grund?' ('+grund+')':''));
+    closeModal();
+    toast(freigeben?'Stunden nachgetragen und freigegeben':'Stunden nachgetragen – warten auf Freigabe');
+  }
+  if(typeof renderAdmin==='function') renderAdmin(__lastAdminView==='rechnungen'?'rechnungen':'hours');
+}
+/* Nachgetragenen Eintrag wieder entfernen (nur Admin) */
+function adminDeleteTimesheet(id){
+  if(!requireRoleAction('admin')) return;
+  const t=timesheets.find(x=>x.id===id); if(!t) return;
+  if(rechnungen.find(r=>r.stundenzettelId===t.id)){ toast('Zu diesem Einsatz existiert bereits eine Rechnung – bitte zuerst stornieren',true); return; }
+  appConfirm('Diesen Stundenzettel ('+staffName(t.staffId)+' · '+fmtDate(t.date)+') endgültig löschen?', function(){
+    timesheets=timesheets.filter(x=>x.id!==id);
+    proofs=proofs.filter(pp=>pp.timesheetId!==id);
+    if(CLOUD) cloudDelete('stundenzettel', id);
+    logActivity('Stundenzettel gelöscht: '+staffName(t.staffId)+' · '+fmtDate(t.date));
+    toast('Stundenzettel gelöscht');
+    if(typeof renderAdmin==='function') renderAdmin('hours');
+  }, {title:'Stundenzettel löschen', okLabel:'Löschen'});
+}
+
+/* ============================================================
+   LEISTUNGSNACHWEIS „ABGEHAKT" (für die Rechnungsstellung)
+   Gedruckte Leistungsnachweise werden automatisch abgehakt und
+   können jederzeit von Hand gesetzt/entfernt werden. So ist auf
+   einen Blick klar, was für die Rechnung schon erledigt ist.
+   Spalte ln_gedruckt – siehe LN_GEDRUCKT_MIGRATION.sql.
+   ============================================================ */
+function tsMarkLn(id, on, quiet){
+  const t=timesheets.find(x=>x.id===id); if(!t) return;
+  t.lnGedruckt = on ? todayISO() : '';
+  if(CLOUD&&sb){
+    sb.from('stundenzettel').update({ln_gedruckt:(t.lnGedruckt||null)}).eq('id',id)
+      .then(function(r){ if(r&&r.error) console.warn('LN-Haken speichern: '+r.error.message+' – LN_GEDRUCKT_MIGRATION.sql ausführen'); }, function(){});
+  }
+  if(!quiet){
+    logActivity((on?'Leistungsnachweis abgehakt':'LN-Haken entfernt')+': '+staffName(t.staffId)+' · '+fmtDate(t.date));
+    toast(on?'Leistungsnachweis abgehakt – erledigt für die Rechnung':'Haken entfernt');
+    if(typeof renderAdmin==='function') renderAdmin(__lastAdminView==='rechnungen'?'rechnungen':'hours');
+  }
+}
+function tsToggleLn(id){ const t=timesheets.find(x=>x.id===id); if(!t) return; tsMarkLn(id, !t.lnGedruckt, false); }
+/* Kleiner Haken-Knopf für die Listen */
+function lnHakenHTML(t){
+  if(!t) return '';
+  return t.lnGedruckt
+    ? '<button class="btn-ghost btn-sm" style="color:var(--good);border-color:#bfe3cd;font-weight:700" title="Am '+fmtDate(t.lnGedruckt)+' abgehakt – nochmal klicken hebt es auf" onclick="event.stopPropagation();tsToggleLn('+t.id+')">✓ LN erledigt<div style="font-size:10px;font-weight:500;color:var(--muted)">'+fmtDate(t.lnGedruckt)+'</div></button>'
+    : '<button class="btn-ghost btn-sm" title="Leistungsnachweis als erledigt abhaken" onclick="event.stopPropagation();tsToggleLn('+t.id+')">☐ LN abhaken</button>';
+}
+/* Nach dem Drucken automatisch abhaken */
+function lnAutoHaken(ids){
+  (ids||[]).forEach(function(id){
+    const t=timesheets.find(x=>x.id===id);
+    if(t&&!t.lnGedruckt) tsMarkLn(id,true,true);
+  });
+}
+
 function approveTimesheet(id){
   if(!requireAdminAction()) return;
   const t=timesheets.find(x=>x.id===id); if(!t)return;
@@ -13582,7 +13809,7 @@ function v4RunCsvImport(){
         role:get(row,'role')||'Haushaltshilfe', status:'aktiv',
         skills:[], area:get(row,'area'), phone:get(row,'phone'), email:get(row,'email'),
         maxHours:20, days:[], window:'Flexibel', hasLogin:false, login:'',
-        color:nextColor(), wage:parseEuroNum(get(row,'wage'))||14,
+        color:nextColor(), wage:parseEuroNum(get(row,'wage'))||STD_STUNDENLOHN,
         bonus:{earned:0,pending:0,reason:''}, daysWorked:0,
         intern:{ birth:get(row,'birth'), address:get(row,'address'), taxId:get(row,'taxId'),
           taxClass:get(row,'taxClass')||'I', kvNr:get(row,'kvNr'), kasse:get(row,'kasse'),
@@ -15485,7 +15712,7 @@ function v5StaffRentabilitaet(){
     let min=0; timesheets.forEach(function(t){ if(t.staffId===s.id && t.status==='freigegeben' && String(t.date||'').slice(0,7)===mon) min+=tsMinutes(t); });
     const std=min/60;
     const umsatz=std*satz;
-    const lohn=std*(parseFloat(s.wage)||0);
+    const lohn=std*staffWage(s);
     const sach=v5ExtrasSum(s.id);
     const kosten=lohn+sach;
     const gewinn=umsatz-kosten;
